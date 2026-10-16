@@ -4,6 +4,7 @@ Each class becomes one table. Field descriptions become column comments and the 
 """
 
 from datetime import date
+from decimal import Decimal
 from typing import Annotated, ClassVar, Self
 from uuid import UUID
 
@@ -20,6 +21,7 @@ from catalyst.schemas.enums import (
     DrugNameKind,
     LineOfTherapy,
     Modality,
+    ModelCallStatus,
     OutcomeResult,
     TrialPhase,
 )
@@ -366,3 +368,39 @@ class Outcome(Entity):
         ):
             raise ValueError("an advisory vote outcome needs votes_for and votes_against")
         return self
+
+
+TokenCount = Annotated[int, Field(ge=0)]
+
+
+class ModelCall(Entity):
+    """One model call and what it cost (spec: every model call logged with its cost).
+
+    Daily spend caps are summed from this table, so every job shares one total per role.
+    """
+
+    __tablename__ = "model_call"
+    __checks__: ClassVar[dict[str, str]] = {
+        "counts_not_negative": (
+            "input_tokens >= 0 AND output_tokens >= 0 AND cache_read_tokens >= 0 "
+            "AND cache_write_tokens >= 0 AND cost_usd >= 0 AND latency_ms >= 0"
+        )
+    }
+
+    role: ShortText = Field(description="Agent role that made the call, for example 'extractor'.")
+    provider: ShortText = Field(description="Model provider, for example 'anthropic'.")
+    model: ShortText = Field(description="Model that answered.")
+    prompt_id: ShortText = Field(description="Prompt used.")
+    prompt_version: ShortText = Field(description="Version of that prompt.")
+    input_tokens: TokenCount = Field(description="Uncached input tokens billed.")
+    output_tokens: TokenCount = Field(description="Output tokens billed, including thinking.")
+    cache_read_tokens: TokenCount = Field(description="Input tokens read from the prompt cache.")
+    cache_write_tokens: TokenCount = Field(description="Input tokens written to the prompt cache.")
+    cost_usd: Decimal = Field(ge=0, description="Cost in US dollars at the prices in config/models.toml.")
+    latency_ms: TokenCount = Field(description="Wall-clock time of the call, in milliseconds.")
+    request_id: str | None = Field(
+        default=None, max_length=200, description="Provider's request id, for support."
+    )
+    status: ModelCallStatus = Field(description="How the call ended.")
+    called_at: AwareDatetime = Field(description="When the call started.")
+    config_version: ShortText = Field(description="Version of config/models.toml in force.")

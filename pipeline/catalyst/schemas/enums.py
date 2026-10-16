@@ -148,3 +148,14 @@ class CatalystField(StrEnum):
     WINDOW_RAW_TEXT = "window_raw_text"
     DATE_CONFIDENCE = "date_confidence"
     STATUS = "status"
+
+
+class ModelCallStatus(StrEnum):
+    """How a model call ended."""
+
+    OK = "ok"
+    REFUSED = "refused"
+    TRUNCATED = "truncated"
+    INVALID_OUTPUT = "invalid_output"
+    MODEL_SWITCHED = "model_switched"
+    ERROR = "error"

@@ -9,7 +9,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, Date, DateTime, String, Text, Uuid
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Numeric, String, Text, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeEngine
 
@@ -36,6 +36,7 @@ def _plain_type(model: type[Entity], name: str) -> str:
         (DateTime, "date and time (with time zone)"),
         (Date, "date"),
         (BigInteger, "whole number"),
+        (Numeric, "decimal number"),
         (Boolean, "yes or no"),
         (JSONB, "structured value (JSON)"),
     ]

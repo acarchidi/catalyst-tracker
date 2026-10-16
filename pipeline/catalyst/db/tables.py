@@ -7,6 +7,7 @@ key, and comment (the field description) all come from the model. No table is wr
 import hashlib
 import types
 from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any, Union, get_args, get_origin
 from uuid import UUID
@@ -24,6 +25,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     MetaData,
+    Numeric,
     String,
     Table,
     Text,
@@ -80,6 +82,7 @@ def _column_type(annotation: Any, markers: list[Any]) -> TypeEngine[Any]:
         date: Date(),
         bool: Boolean(),
         int: BigInteger(),
+        Decimal: Numeric(14, 8),
     }
     if annotation in simple:
         return simple[annotation]

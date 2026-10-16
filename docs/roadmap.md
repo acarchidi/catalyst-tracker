@@ -11,7 +11,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [x] Competitor research and spec
 - [ ] Repository skeleton: `AGENTS.md` conventions applied, CI pipeline, pre-commit hooks, decision-record template; then turn on branch protection for main requiring CI (via `gh api`; if refused, give the owner the click steps)
 - [x] Data schemas for every entity (Pydantic) with generated data dictionary and reversible migrations
-- [ ] Model interface (`ModelClient`), first provider adapter (Anthropic), contract tests, per-role spend caps
+- [x] Model interface (`ModelClient`), first provider adapter (Anthropic), contract tests, per-role spend caps
 - [ ] Collectors: SEC EDGAR, ClinicalTrials.gov, wire RSS, openFDA, Federal Register (recorded fixtures, idempotent)
 - [ ] Source snapshot store with SHA-256 hashes
 - [ ] Coverage list from SEC industry codes 2834, 2836, 8731 (therapeutics developers only)
@@ -69,6 +69,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-16 | ADR 0004: model roles, prices, and daily caps in config/models.toml; every call logged in model_call; no refusal fallback to another model; JSON-schema output validated client-side |
 | 2026-10-16 | ADR 0003: tables generated from Pydantic models; controlled lists as checked text; catalyst current values plus append-only change history; rules enforced in Pydantic and the database |
 | 2026-10-16 | ADR 0002: walking skeleton stores an 8-K's press-release exhibit; one row per URL and hash; local copies until the snapshot store; 8 SEC requests per second |
 | 2026-10-16 | ADR 0001: stack and layout; one `pyproject.toml` at the root, package in `pipeline/catalyst`, migrations checked up-down-up in CI |

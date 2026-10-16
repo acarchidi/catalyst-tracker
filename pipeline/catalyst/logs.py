@@ -39,3 +39,8 @@ def configure_logging(level: int = logging.INFO) -> None:
 def log_event(logger: logging.Logger, event: str, **fields: object) -> None:
     """Log an info-level event with structured fields. Never pass a secret as a field."""
     logger.info(event, extra={_FIELDS: fields})
+
+
+def log_alert(logger: logging.Logger, event: str, **fields: object) -> None:
+    """Log an error-level event that needs the owner's attention. Never pass a secret as a field."""
+    logger.error(event, extra={_FIELDS: fields})

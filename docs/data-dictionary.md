@@ -279,3 +279,30 @@ Rules:
 - Unique: `catalyst_id`
 - Database check `votes_present`: `result <> 'advisory_vote' OR (votes_for IS NOT NULL AND votes_against IS NOT NULL)`
 - Database check `votes_not_negative`: `coalesce(votes_for, 0) >= 0 AND coalesce(votes_against, 0) >= 0`
+
+## `model_call`
+
+One model call and what it cost (spec: every model call logged with its cost). Daily spend caps are summed from this table, so every job shares one total per role.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `role` | text, up to 100 characters | yes | Agent role that made the call, for example 'extractor'. |
+| `provider` | text, up to 100 characters | yes | Model provider, for example 'anthropic'. |
+| `model` | text, up to 100 characters | yes | Model that answered. |
+| `prompt_id` | text, up to 100 characters | yes | Prompt used. |
+| `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
+| `input_tokens` | whole number | yes | Uncached input tokens billed. |
+| `output_tokens` | whole number | yes | Output tokens billed, including thinking. |
+| `cache_read_tokens` | whole number | yes | Input tokens read from the prompt cache. |
+| `cache_write_tokens` | whole number | yes | Input tokens written to the prompt cache. |
+| `cost_usd` | decimal number | yes | Cost in US dollars at the prices in config/models.toml. |
+| `latency_ms` | whole number | yes | Wall-clock time of the call, in milliseconds. |
+| `request_id` | text, up to 200 characters | no | Provider's request id, for support. |
+| `status` | one of: `ok`, `refused`, `truncated`, `invalid_output`, `model_switched`, `error` | yes | How the call ended. |
+| `called_at` | date and time (with time zone) | yes | When the call started. |
+| `config_version` | text, up to 100 characters | yes | Version of config/models.toml in force. |
+
+Rules:
+
+- Database check `counts_not_negative`: `input_tokens >= 0 AND output_tokens >= 0 AND cache_read_tokens >= 0 AND cache_write_tokens >= 0 AND cost_usd >= 0 AND latency_ms >= 0`

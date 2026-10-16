@@ -15,6 +15,7 @@
 | `catalyst.collectors.sec.edgar` | EDGAR filing lists, index pages, polite HTTP client | SEC responses | Filing and exhibit references |
 | `catalyst.collectors.sec.press_release` | Walking skeleton: latest 8-K press release to one row | Company CIK | One `source_document` row |
 | `catalyst.logs` | JSON log lines | Events | Standard error |
+| `catalyst.llm` | `ModelClient`, provider adapters, prices, daily spend caps, prompt files | Role, prompt, document | Validated JSON plus cost; a `model_call` row per call |
 | `catalyst.cli` | `uv run catalyst ...` commands | Arguments | JSON on standard output |
 
 **Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`).
