@@ -28,7 +28,7 @@ TIMEOUT_SECONDS = 60
 
 
 class SnapshotStoreError(RuntimeError):
-    """The store could not complete a request; the message never includes the key."""
+    """The store could not complete a request; the message never includes the secret key."""
 
 
 class SnapshotNotFoundError(SnapshotStoreError):
@@ -147,7 +147,13 @@ class SupabaseSnapshotStore:
         response = self._client.get(f"/bucket/{self._bucket}")
         if response.status_code != 200:
             raise _failure("reading the snapshot bucket", response)
-        if response.json().get("public") is not False:
+        try:
+            public: object = response.json().get("public")
+        except (ValueError, AttributeError) as error:
+            raise SnapshotStoreError(
+                "Supabase Storage answered the bucket check with unreadable data"
+            ) from error
+        if public is not False:
             raise SnapshotStoreError(f"the {self._bucket} bucket is public; source copies must stay private")
 
     def put(self, content: bytes) -> Snapshot:

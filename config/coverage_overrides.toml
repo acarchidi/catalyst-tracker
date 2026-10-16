@@ -1,0 +1,71 @@
+# Hand-checked corrections to the coverage list (ADR 0009). Each entry needs a note naming its source.
+# ctgov_sponsors adds registry names that differ from the SEC name; include = true or false
+# includes or excludes a company regardless of trial evidence.
+
+[[company]]
+cik = 875320  # VRTX
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Vertex Pharmaceuticals Incorporated"]
+openfda_manufacturer = "Vertex"
+openfda_sponsors = ["VERTEX PHARMS INC", "VERTEX PHARMS"]
+
+[[company]]
+cik = 1682852  # MRNA
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["ModernaTX, Inc."]
+
+[[company]]
+cik = 872589  # REGN
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Regeneron Pharmaceuticals"]
+openfda_manufacturer = "Regeneron"
+openfda_sponsors = ["REGENERON PHARMACEUTICALS", "REGENERON PHARMACEUTICALS, INC"]
+
+[[company]]
+cik = 1178670  # ALNY
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Alnylam Pharmaceuticals"]
+openfda_manufacturer = "Alnylam"
+openfda_sponsors = ["ALNYLAM PHARMS INC"]
+
+[[company]]
+cik = 1048477  # BMRN
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["BioMarin Pharmaceutical"]
+openfda_manufacturer = "BioMarin"
+openfda_sponsors = ["BIOMARIN PHARM", "BIOMARIN"]
+
+[[company]]
+cik = 879169  # INCY
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Incyte Corporation"]
+openfda_manufacturer = "Incyte"
+openfda_sponsors = ["INCYTE CORP"]
+
+[[company]]
+cik = 873303  # SRPT
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Sarepta Therapeutics, Inc."]
+openfda_manufacturer = "Sarepta"
+openfda_sponsors = ["SAREPTA THERAPS INC"]
+
+[[company]]
+cik = 874015  # IONS
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Ionis Pharmaceuticals, Inc."]
+openfda_manufacturer = "Ionis"
+openfda_sponsors = ["IONIS PHARMS INC"]
+
+[[company]]
+cik = 914475  # NBIX
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Neurocrine Biosciences"]
+openfda_manufacturer = "Neurocrine"
+openfda_sponsors = ["NEUROCRINE"]
+
+[[company]]
+cik = 1104506  # INSM
+note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/pilot_companies.toml)"
+ctgov_sponsors = ["Insmed Incorporated"]
+openfda_manufacturer = "Insmed"
+openfda_sponsors = ["INSMED INC"]

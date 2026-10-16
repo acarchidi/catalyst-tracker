@@ -1,6 +1,7 @@
 # Ten pilot companies for checkpoint CP3. SEC numbers from https://www.sec.gov/files/company_tickers.json;
 # sponsor names as registered on ClinicalTrials.gov and in Drugs@FDA, checked 2026-10-16.
-# The coverage-list item replaces this file with companies chosen by SEC industry code.
+# The full list chosen by SEC industry code is config/coverage_companies.toml (ADR 0009);
+# this file stays as the small CP3 set and is the default for `catalyst collect`.
 
 [[company]]
 ticker = "VRTX"
