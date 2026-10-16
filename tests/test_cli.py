@@ -13,6 +13,7 @@ from catalyst import cli
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
+from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.snapshots import SnapshotStoreError
 
 
@@ -117,3 +118,44 @@ def test_an_unusable_snapshot_store_is_a_plain_message(
     err = capsys.readouterr().err
     assert "snapshot store is not usable" in err
     assert "Traceback" not in err
+
+
+def test_gate1_select_refuses_an_impossible_count(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["gate1-select", "--count", "3"]) == 2
+    assert "count must be between" in capsys.readouterr().err
+
+
+def test_gate1_select_writes_fifty_companies(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    out = tmp_path / "gate1.toml"
+    assert main(["gate1-select", "--out", str(out)]) == 0
+    assert json.loads(capsys.readouterr().out) == {"companies": 50, "out": str(out)}
+    assert out.read_text().count("[[company]]") == 50
+
+
+def test_check_links_needs_the_sec_contact_email(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["check-links"]) == 2
+    assert "docs/setup.md Part 4" in capsys.readouterr().err
+
+
+def test_check_links_fails_when_any_link_does_not_work(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = LinkReport([LinkResult("https://www.sec.gov/x", LinkStatus.BROKEN, "HTTP 404")])
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_links", lambda *_args: report)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["check-links", "--sample", "5"]) == 1
+    assert "0 of 1 links work" in capsys.readouterr().out
+
+
+def test_sample_records_prints_the_table(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "sample_records", lambda *_args: [])  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["sample-records"]) == 0
+    assert capsys.readouterr().out.startswith("| Company | Source |")

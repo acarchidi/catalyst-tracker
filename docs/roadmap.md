@@ -69,6 +69,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-16 | ADR 0010: Gate 1 uses the 10 pilot companies plus 40 drawn with seed 2026; 10 records sampled with the same seed; a link works only on HTTP 200 at its exact address; link checks obey robots.txt and source rate limits |
 | 2026-10-16 | ADR 0009: coverage = US-listed companies under SIC 2834, 2836, 8731 that are the industry lead sponsor of at least one interventional drug or biological trial under their own name; exact normalized name match; hand overrides with notes; review list for the rest |
 | 2026-10-16 | ADR 0008: copies keyed by their SHA-256 and re-checked on every read; local disk or a private Supabase Storage bucket, chosen explicitly; `catalyst snapshots-verify` audits every copy; development copies not migrated |
 | 2026-10-16 | ADR 0007: a merge robot merges `claude/` pull requests once CI and the Claude review pass; work no longer stops at checkpoints; the owner merges only changes to the robot or the review (owner decision) |
