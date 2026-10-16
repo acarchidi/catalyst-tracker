@@ -27,7 +27,16 @@ jobs:
       contents: write
       pull-requests: write
       checks: read
+      issues: write
     steps:
+      - name: Make sure the hold label exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          gh label create hold --repo "$REPO" --color B60205 \
+            --description "Merge robot: do not merge this pull request" 2>/dev/null || true
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

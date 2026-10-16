@@ -70,6 +70,8 @@ jobs:
             - a correctness bug, security hole, data-loss path, or non-idempotent job
             - a migration without a working downgrade, or data edited by hand
             - a model call outside ModelClient, or a spend cap bypassed
+            - a lowered coverage threshold, type strictness, lint rule, or test selection (for
+              example in pyproject.toml), or a check in .github/workflows made weaker
             - a pull request description that misstates what the change does or how it was tested
 
             Everything else (style, naming, small refactors, ideas) is optional. Do not invent

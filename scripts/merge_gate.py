@@ -5,8 +5,8 @@ pull request cannot change the rules that decide its own merge (ADR 0007). Print
 JSON object, `{"action": ..., "reason": ...}`, where action is:
 
 - "merge": every rule below holds;
-- "owner": everything passed, but the pull request changes the robot or the review
-  check, so the owner merges it by hand;
+- "owner": everything passed, but the pull request changes a path in OWNER_PATHS or
+  an instruction file in OWNER_FILE_NAMES, so the owner merges it by hand;
 - "wait": a required check has not finished on this commit yet;
 - "skip": the pull request is not eligible, or a required check did not succeed.
 
@@ -23,8 +23,23 @@ from typing import Any
 REQUIRED_CHECKS = ("Lint, types, tests, migrations", "Dependency audit", "Secret scan", "Claude review")
 CHECK_APP = "github-actions"
 HOLD_LABEL = "hold"
-# Paths that change who or what decides a merge. The robot never merges these.
-SELF_PATHS = (".github/workflows/", ".github/rulesets/", "scripts/merge_gate.py", "scripts/review_verdict.py")
+# Paths that change who or what decides a merge: the robot and the review, the rules the
+# reviewer judges by (it reads them from the pull request), settings that make a required
+# check weaker, and the spending caps. The robot never merges these; the owner does.
+OWNER_PATHS = (
+    ".github/workflows/",
+    ".github/rulesets/",
+    ".claude/",
+    "scripts/merge_gate.py",
+    "scripts/review_verdict.py",
+    "docs/spec.md",
+    "docs/quality-gates.md",
+    ".gitleaks.toml",
+    ".pre-commit-config.yaml",
+    "config/models.toml",
+)
+# Instruction files the reviewer loads, wherever they sit in the repository.
+OWNER_FILE_NAMES = ("AGENTS.md", "CLAUDE.md", ".mcp.json")
 
 
 def _decision(action: str, reason: str) -> dict[str, str]:
@@ -69,9 +84,11 @@ def decide(sha: str, pr: dict[str, Any], files: list[str], checks: list[dict[str
     problem = _check_problem(checks)
     if problem:
         return _decision(*problem)
-    own = sorted(f for f in files if f.startswith(SELF_PATHS) or f in SELF_PATHS)
+    own = sorted(f for f in files if f.startswith(OWNER_PATHS) or Path(f).name in OWNER_FILE_NAMES)
     if own:
-        return _decision("owner", "it changes the merge robot or the review check: " + ", ".join(own))
+        return _decision(
+            "owner", "it changes the merge rules, the review, or a protected setting: " + ", ".join(own)
+        )
     return _decision("merge", "every required check passed")
 
 

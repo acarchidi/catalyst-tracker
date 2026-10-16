@@ -417,7 +417,7 @@ You are building the product specified in docs/spec.md, following docs/roadmap.m
 4. Record any choice the spec leaves open as an ADR in docs/adr.
 5. Each pull request description states, in plain English: what changed, test results, risks, and anything you need from me.
 6. Read secrets from environment variables only. If a secret or account is missing, stop and tell me exactly what to create and where to paste it.
-7. Stop at the Phase 0 gate: 50 companies flowing from source to the database, each record with a working deep source link. Report the results and wait for my approval before Phase 1.
+7. At the Phase 0 gate (50 companies flowing from source to the database, each record with a working deep source link), report the results and continue to Phase 1; the owner chose on 2026-10-16 not to stop at checkpoints (ADR 0007).
 ```
 
 ### Model assignments

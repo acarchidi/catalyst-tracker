@@ -1,6 +1,6 @@
 # Owner-owned paths. GitHub enforces this file only with a ruleset, which needs a paid
-# plan for a private repository; on the free plan it only requests the owner as a
-# reviewer, and the merge robot does not wait for it (ADR 0006, ADR 0007).
+# plan for a private repository; on the free plan it has no effect. The merge robot's
+# own list of owner-merged paths is in scripts/merge_gate.py (ADR 0007).
 
 # Data that cannot be changed back easily
 /pipeline/migrations/          @acarchidi

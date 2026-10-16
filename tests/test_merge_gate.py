@@ -115,9 +115,20 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         ".github/rulesets/main.json",
         "scripts/merge_gate.py",
         "scripts/review_verdict.py",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "pipeline/catalyst/CLAUDE.md",
+        "web/AGENTS.md",
+        ".claude/settings.json",
+        ".mcp.json",
+        "docs/spec.md",
+        "docs/quality-gates.md",
+        ".gitleaks.toml",
+        ".pre-commit-config.yaml",
+        "config/models.toml",
     ],
 )
-def test_changes_to_the_robot_or_review_go_to_the_owner(path: str) -> None:
+def test_changes_to_the_rules_review_or_protected_settings_go_to_the_owner(path: str) -> None:
     decision = gate.decide(SHA, pr(), ["README.md", path], green())
     assert decision["action"] == "owner"
     assert path in decision["reason"]
@@ -138,3 +149,10 @@ def test_command_line_prints_the_decision(tmp_path: Path) -> None:
         [sys.executable, "-I", str(SCRIPT), SHA, *paths], capture_output=True, check=True, text=True
     )
     assert json.loads(done.stdout) == {"action": "merge", "reason": "every required check passed"}
+
+
+@pytest.mark.parametrize(
+    "path", ["docs/roadmap.md", "docs/adr/0008-x.md", "pyproject.toml", "pipeline/catalyst/cli.py"]
+)
+def test_ordinary_paths_merge(path: str) -> None:
+    assert action(pr(), green(), [path]) == "merge"

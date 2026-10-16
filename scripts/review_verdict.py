@@ -42,7 +42,7 @@ def judge(raw: str, *, key_present: bool = True) -> tuple[bool, str]:
     if not key_present:
         return False, (
             f"{HEADER}: not set up\n\nThe reviewer key `CATALYST_REVIEW_API_KEY` is not in the repository's "
-            "secrets yet, so no review ran. See docs/setup.md Part 6, step C.\n"
+            "secrets yet, so no review ran. See docs/setup.md Part 6.\n"
         )
     try:
         result: Any = json.loads(raw)

@@ -46,4 +46,4 @@ uv run catalyst report
 1. Start a Claude Code session on this repository (use the `catalyst-tracker` environment once Part 4 is done).
 2. Say: **start implementing**.
 
-Claude Code runs the setup check, reminds you of anything missing, works through the roadmap, and stops at each checkpoint for your approval. Reply **approved** to continue, or say what to change.
+Claude Code runs the setup check, reminds you of anything missing, works through the roadmap, and sends you a preview at each checkpoint without stopping (ADR 0007). Reply with anything you want changed, at any time.
