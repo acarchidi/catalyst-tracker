@@ -7,7 +7,7 @@ name: Claude review
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
 
 permissions: {}
 
@@ -19,6 +19,8 @@ jobs:
   review:
     name: Claude review
     # Drafts cannot merge, so they are not reviewed; marking one ready starts a review.
+    # A skipped job counts as a passing check, which is safe only because drafts cannot
+    # merge and the disable-auto-merge job below turns auto-merge off on the way to draft.
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -40,8 +42,6 @@ jobs:
       - name: Review
         id: review
         uses: anthropics/claude-code-action@374f254f5efaf968abfe15d399fd90972e8138b9 # v1.0.251
-        env:
-          GH_TOKEN: ${{ github.token }}
         with:
           anthropic_api_key: ${{ secrets.CATALYST_REVIEW_API_KEY }}
           github_token: ${{ github.token }}
@@ -78,7 +78,7 @@ jobs:
           claude_args: >-
             --model claude-opus-5-5
             --max-turns 60
-            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*),Bash(git log:*),Bash(git diff:*),Bash(git show:*)"
+            --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","summary","blocking","optional"],"properties":{"verdict":{"type":"string","enum":["pass","fail"]},"summary":{"type":"string"},"blocking":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","problem"],"properties":{"file":{"type":"string"},"line":{"type":"integer"},"problem":{"type":"string"}}}},"optional":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","problem"],"properties":{"file":{"type":"string"},"line":{"type":"integer"},"problem":{"type":"string"}}}}}}'
 
       - name: Pass only on an explicit pass with no blocking findings
@@ -129,9 +129,35 @@ jobs:
       contents: write
       pull-requests: write
     steps:
-      - name: Merge once every required check passes
+      - name: Merge once every required check passes, only if main is protected
         env:
           GH_TOKEN: ${{ github.token }}
           PR: ${{ github.event.pull_request.number }}
           REPO: ${{ github.repository }}
-        run: gh pr merge "$PR" --repo "$REPO" --auto --merge
+        run: |
+          rules=$(gh api "repos/$REPO/rules/branches/main")
+          missing=$(jq -r '
+            ["Lint, types, tests, migrations", "Dependency audit", "Secret scan", "Claude review"]
+            - [.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context]
+            | join(", ")' <<<"$rules")
+          owners=$(jq '[.[] | select(.type == "pull_request") | .parameters.require_code_owner_review] | any' <<<"$rules")
+          if [ -n "$missing" ] || [ "$owners" != "true" ]; then
+            echo "::warning::main is not protected as ADR 0006 requires (checks not required: ${missing:-none}; code-owner review required: $owners). Auto-merge was not turned on."
+            exit 0
+          fi
+          gh pr merge "$PR" --repo "$REPO" --auto --merge
+
+  disable-auto-merge:
+    name: Turn off auto-merge for drafts
+    if: ${{ github.event.action == 'converted_to_draft' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Turn off auto-merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: gh pr merge "$PR" --repo "$REPO" --disable-auto || echo "Auto-merge was not on."

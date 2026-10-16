@@ -5,6 +5,7 @@
 # Data that cannot be changed back easily
 /pipeline/migrations/          @acarchidi
 /pipeline/catalyst/db/         @acarchidi
+/alembic.ini                   @acarchidi
 
 # What may publish, who may see it, and what it costs (paths reserved for later phases)
 /pipeline/catalyst/verification/  @acarchidi
@@ -12,10 +13,13 @@
 /pipeline/catalyst/auth/          @acarchidi
 /pipeline/catalyst/billing/       @acarchidi
 /config/models.toml            @acarchidi
+/pipeline/catalyst/llm/        @acarchidi
+/pipeline/catalyst/settings.py @acarchidi
 
 # The rules, the gates, and the review itself
-/AGENTS.md                     @acarchidi
-/CLAUDE.md                     @acarchidi
+AGENTS.md                      @acarchidi
+CLAUDE.md                      @acarchidi
+/.claude/                      @acarchidi
 /docs/spec.md                  @acarchidi
 /docs/quality-gates.md         @acarchidi
 /.github/                      @acarchidi

@@ -25,6 +25,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 - Open each pull request as a draft. Mark it ready for review only when its work is done and the local checks pass. Marking it ready starts the Claude review (ADR 0006).
 - A pull request from a `claude/` branch into main merges itself once CI and the Claude review pass, unless it touches a path in `.github/CODEOWNERS`; those wait for the owner. The pull request that completes a checkpoint stays a draft until the owner says "approved".
 - Never approve or merge a pull request yourself, never turn auto-merge on by hand, and never weaken the review workflow, `scripts/review_verdict.py`, CODEOWNERS, or the ruleset to get a merge through.
+- When a pull request waits for the owner, tell them in plain words what it does and whether it meets the three merge conditions in `docs/setup.md` Part 6. For Dependabot pull requests and pull requests that change the review itself, run a separate reviewer subagent first and report its verdict.
 
 ## Development practices
 

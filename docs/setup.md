@@ -82,9 +82,25 @@ Claude Code tries this step itself with `gh secret set` (after asking you). If G
 
 ## Part 6 — Automatic review and merging (10 minutes, once)
 
-Do this after the open pull requests are merged. ADR 0006 explains the design.
+Do this after the open pull requests are merged, in the order below. ADR 0006 explains the design.
 
-**A. A separate key for the reviewer**
+**Before you start: the plan.** The repository is private. GitHub enforces main-branch protection and offers auto-merge on private repositories only with a paid plan (GitHub Pro or higher). On the free plan, steps B and C do nothing, and the automatic merging stays off. Check at **github.com/settings/billing**.
+
+**A. Protect main (first, so nothing can merge unchecked)**
+
+1. Open **github.com/acarchidi/catalyst-tracker/blob/main/.github/rulesets/main.json**. Click the **Download raw file** button (a downward arrow, top right of the file).
+2. Go to **github.com/acarchidi/catalyst-tracker/settings/rules**.
+3. Click the arrow next to **New ruleset**, then **Import a ruleset**. Choose the downloaded `main.json`.
+4. Check that the name says **Protect main** and the status says **Active**. Scroll down and click **Create**.
+5. If GitHub says the ruleset "contains an invalid actor": delete the entry under **Bypass list**, click **Add bypass**, tick **Repository admin**, click **Add selected**, set it to **For pull requests only**, then click **Create**.
+6. If GitHub says the rules will not be enforced on this repository, stop and tell Claude Code; it is the plan limit above.
+
+**B. Let pull requests merge themselves**
+
+1. Go to **github.com/acarchidi/catalyst-tracker/settings**. Stay on **General**.
+2. Scroll to **Pull Requests**. Tick **Allow auto-merge**. It saves by itself.
+
+**C. A separate key for the reviewer (last)**
 
 1. Go to **platform.claude.com/settings/workspaces**. Click **Add Workspace**. Name it `catalyst-review`. Click **Create**.
 2. Click the new workspace. Open the **Limits** tab, click **Change Limit**, and enter **30** ($30 a month).
@@ -92,20 +108,15 @@ Do this after the open pull requests are merged. ADR 0006 explains the design.
 4. Go to **github.com/acarchidi/catalyst-tracker/settings/secrets/actions**. Click **New repository secret**.
 5. Name: `CATALYST_REVIEW_API_KEY`. Paste the key into **Secret**. Click **Add secret**. Do not keep the key anywhere else.
 
-**B. Let pull requests merge themselves**
+**After this.** Pull requests that touch only ordinary code merge on their own once all checks pass. Pull requests that touch the rules, the database, dependencies, or model settings wait for you. Claude Code tells you when one is waiting and what it does.
 
-1. Go to **github.com/acarchidi/catalyst-tracker/settings**. Stay on **General**.
-2. Scroll to **Pull Requests**. Tick **Allow auto-merge**. It saves by itself.
+Merge a waiting pull request only when all three of these hold:
 
-**C. Protect main**
+1. Claude Code has told you it is ready.
+2. **Lint, types, tests, migrations**, **Dependency audit**, and **Secret scan** each show a green tick.
+3. The "Claude review" comment says **passed**. Two exceptions: dependency updates from Dependabot are never reviewed, and a pull request that changes the review itself (anything under `.github/`, `scripts/review_verdict.py`, `CLAUDE.md`, or `AGENTS.md`) cannot be trusted to report on itself. For both, Claude Code runs a separate review and tells you the result in plain words; go by that.
 
-1. Open **github.com/acarchidi/catalyst-tracker/blob/main/.github/rulesets/main.json**. Click the **Download raw file** button (a downward arrow, top right of the file).
-2. Go to **github.com/acarchidi/catalyst-tracker/settings/rules**.
-3. Click the arrow next to **New ruleset**, then **Import a ruleset**. Choose the downloaded `main.json`.
-4. Check that the name says **Protect main** and the status says **Active**. Scroll down and click **Create**.
-5. If GitHub says the ruleset "contains an invalid actor": delete the entry under **Bypass list**, click **Add bypass**, tick **Repository admin**, click **Add selected**, set it to **For pull requests only**, then click **Create**.
-
-**After this:** pull requests that touch only ordinary code merge on their own once all checks pass. Pull requests that touch the rules, the database, dependencies, or model settings wait for you. To merge one, open it, tick **Merge without waiting for requirements to be met (bypass rules)**, and click **Merge pull request** (sometimes labelled **Bypass rules and merge**).
+To merge: open the pull request, tick **Merge without waiting for requirements to be met (bypass rules)**, and click **Merge pull request** (sometimes labelled **Bypass rules and merge**). The bypass skips every check, so never use it when any of the three conditions fails.
 
 ## Later phases
 
