@@ -16,7 +16,7 @@ Claude Code checks these at the start of every session with `python3 scripts/che
 - [ ] Part 3 — Supabase account and project (5 min)
 - [ ] Part 4 — Claude Code cloud environment `catalyst-tracker` with the keys and allowed domains (5 min)
 - [ ] Part 5 — Same keys as GitHub Actions secrets (Claude Code tries this itself first)
-- [ ] Part 6 — Main-branch protection, auto-merge setting, then reviewer key (10 min, after the open pull requests merge; a private repository needs GitHub Pro)
+- [ ] Part 6 — Reviewer key, so pull requests merge themselves (5 min)
 - [ ] Choose a project email for SEC requests (goes in Part 4)
 
 Not needed yet; Claude Code says when: Vercel, Resend, Sentry, domain (Phase 2); business entity and Stripe (Gate 3); Tiingo price data (Phase 3).

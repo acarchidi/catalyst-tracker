@@ -1,13 +1,13 @@
 # Quality gates and checkpoints
 
-Work stops at every checkpoint below until the owner replies "approved". The owner does not read code. Each checkpoint therefore gives the owner something they can judge without reading code (a preview), and gives the code to a fresh reviewer that did not write it.
+Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 0007): each one is reviewed, previewed to the owner, and passed by its pass criteria, and work continues. An objection from the owner, whenever it comes, becomes the next item. The owner does not read code. Each checkpoint therefore gives the owner something they can judge without reading code (a preview), and gives the code to a fresh reviewer that did not write it.
 
 ## What happens at every checkpoint
 
 1. **Automated checks pass** in CI: lint, strict types, tests, coverage thresholds, evaluation gate, secret scan.
-2. **Fresh-eyes review.** Run `/ultrareview` (or a reviewer subagent with no access to the writing session's reasoning) and fix what it finds. Checkpoints marked **Opus** must be reviewed with the Opus model: ask the owner to run `/model opus` first.
+2. **Fresh-eyes review.** Run `/ultrareview` (or a reviewer subagent with no access to the writing session's reasoning) and fix what it finds. Checkpoints marked **Opus** are reviewed by a reviewer subagent on the Opus model.
 3. **Preview for the owner.** A plain-English summary with no jargon, plus the artifact named in the table (sample records with clickable links, a screenshot, a preview URL).
-4. **Stop and wait.** Post the summary and the question "Approve checkpoint X?" Do not start the next item until the owner approves.
+4. **Post and continue.** Post the summary to the owner and continue with the next item. Pass criteria that need the owner's judgment (CAL1, CAL2) or the owner's own action (Gate 3) are recorded as waiting on the owner; work that does not depend on them continues.
 
 ## Checkpoints
 

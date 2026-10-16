@@ -1,6 +1,6 @@
 # 0006 — Automatic review and merging
 
-- **Status:** accepted
+- **Status:** accepted; the auto-merge part (decisions 3–5) is superseded by ADR 0007
 - **Date:** 2026-10-16
 - **Roadmap item:** Repository skeleton: branch protection for main (owner request, 2026-10-16)
 

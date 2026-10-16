@@ -9,7 +9,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 ## Phase 0 — Foundations (weeks 1–3)
 
 - [x] Competitor research and spec
-- [ ] Repository skeleton: `AGENTS.md` conventions applied, CI pipeline, pre-commit hooks, decision-record template; then turn on branch protection for main requiring CI (via `gh api`; if refused, give the owner the click steps)
+- [x] Repository skeleton: `AGENTS.md` conventions applied, CI pipeline, pre-commit hooks, decision-record template; then turn on branch protection for main requiring CI (via `gh api`; if refused, give the owner the click steps). GitHub's free plan cannot protect a private repository; the merge robot requires CI and the review for its merges instead (owner decision, ADR 0007)
 - [x] Data schemas for every entity (Pydantic) with generated data dictionary and reversible migrations
 - [x] Model interface (`ModelClient`), first provider adapter (Anthropic), contract tests, per-role spend caps
 - [x] Collectors: SEC EDGAR, ClinicalTrials.gov, wire RSS, openFDA, Federal Register (recorded fixtures, idempotent)
@@ -69,6 +69,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-16 | ADR 0007: a merge robot merges `claude/` pull requests once CI and the Claude review pass; work no longer stops at checkpoints; the owner merges only changes to the robot or the review (owner decision) |
 | 2026-10-16 | Owner stays on GitHub's free plan for now: main is not protected, auto-merge stays off, and the owner merges every pull request. The skeleton item's branch-protection step waits for GitHub Pro |
 | 2026-10-16 | ADR 0006: a fresh Claude reviews every ready pull request as a required check; `claude/` pull requests merge themselves after CI and that review pass; CODEOWNERS paths wait for the owner; main protected by an imported ruleset (owner decision) |
 | 2026-10-16 | ADR 0005: documents keyed by each source's own identity; exact-name company links; per-host rate limits; ClinicalTrials.gov API used despite its robots.txt (owner decision); only PR Newswire among wires is reachable |
