@@ -136,3 +136,44 @@ def test_a_sample_checks_the_same_links_every_time(
     second = [r.url for r in check_links(session_factory, client, sample=1, seed=7).results]
     assert len(first) == 1
     assert first == second
+
+
+FR_URL = (
+    "https://www.federalregister.gov/documents/2026/09/16/2026-18920/"
+    "microbiology-devices-panel-of-the-medical-devices-advisory-committee-notice-of-meeting-establishment"
+)
+FR_API = "https://www.federalregister.gov/api/v1/documents/2026-18920.json?fields%5B%5D=html_url"
+HUMAN_CHECK = httpx.Response(302, headers={"location": "https://unblock.federalregister.gov"})
+
+
+def test_a_federal_register_notice_is_confirmed_through_its_api() -> None:
+    answers: dict[str, httpx.Response | Exception] = {
+        FR_URL: HUMAN_CHECK,
+        FR_API: httpx.Response(200, json={"html_url": FR_URL}),
+    }
+    client = link_client("data@example.org", serve(answers), rate_limits=False)
+    result = client.check(FR_URL)
+    assert result.status == LinkStatus.OK
+    assert "Federal Register API" in result.detail
+
+
+def test_a_federal_register_notice_at_a_new_address_has_moved() -> None:
+    new_url = FR_URL.replace("2026/09/16", "2026/09/17")
+    answers: dict[str, httpx.Response | Exception] = {FR_API: httpx.Response(200, json={"html_url": new_url})}
+    client = link_client("data@example.org", serve(answers), rate_limits=False)
+    result = client.check(FR_URL)
+    assert result.status == LinkStatus.MOVED
+    assert new_url in result.detail
+
+
+def test_a_withdrawn_federal_register_notice_is_missing() -> None:
+    client = link_client("data@example.org", serve({FR_API: httpx.Response(404)}), rate_limits=False)
+    assert client.check(FR_URL).status == LinkStatus.BROKEN
+
+
+def test_a_redirect_to_a_human_check_page_is_a_refusal_not_a_move() -> None:
+    url = "https://www.federalregister.gov/public-inspection/current"
+    client = link_client("data@example.org", serve({url: HUMAN_CHECK}), rate_limits=False)
+    result = client.check(url)
+    assert result.status == LinkStatus.REFUSED
+    assert "human check" in result.detail

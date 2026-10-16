@@ -8,9 +8,11 @@ site's robots.txt obeyed, redirects never followed. A link passes only when the 
 from __future__ import annotations
 
 import random
+import re
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import StrEnum
+from urllib.parse import urlsplit
 
 import httpx
 from sqlalchemy import select
@@ -29,6 +31,14 @@ LINK_HOSTS = {
     "www.federalregister.gov": 1.0,
     "www.prnewswire.com": 0.5,
 }
+
+
+# Pages a site sends scripted visitors to instead of the document (ADR 0005, ADR 0010).
+HUMAN_CHECK_HOSTS = frozenset({"unblock.federalregister.gov"})
+_FEDREG_DOCUMENT = re.compile(
+    r"^https://www\.federalregister\.gov/documents/\d{4}/\d{2}/\d{2}/(?P<number>[0-9A-Za-z-]+)/"
+)
+FEDREG_API = "https://www.federalregister.gov/api/v1/documents/{number}.json"
 
 
 class LinkStatus(StrEnum):
@@ -54,12 +64,16 @@ class LinkResult:
 class LinkClient:
     """Fetches source links politely and turns each answer into a verdict."""
 
-    def __init__(self, http: PoliteHttpClient) -> None:
-        """Wrap a polite client limited to the source sites."""
+    def __init__(self, http: PoliteHttpClient, api: PoliteHttpClient) -> None:
+        """Wrap a polite client for source pages and one for documented APIs (ADR 0005)."""
         self._http = http
+        self._api = api
 
     def check(self, url: str) -> LinkResult:
         """Fetch `url` once and return its verdict."""
+        notice = _FEDREG_DOCUMENT.match(url)
+        if notice:
+            return self._check_notice(url, notice.group("number"))
         try:
             self._http.get(url)
         except RobotsDisallowedError:
@@ -72,13 +86,32 @@ class LinkClient:
             return LinkResult(url, LinkStatus.FAILED, type(error).__name__)
         return LinkResult(url, LinkStatus.OK)
 
+    def _check_notice(self, url: str, number: str) -> LinkResult:
+        """Confirm a Federal Register notice through its API, which scripted requests may use.
+
+        The notice pages send scripted visitors to a human check, so the API's own address for
+        the document is compared with the stored one instead.
+        """
+        try:
+            response = self._api.get(FEDREG_API.format(number=number), params={"fields[]": "html_url"})
+        except httpx.HTTPStatusError as error:
+            return _from_status(url, error.response)
+        except httpx.HTTPError as error:
+            return LinkResult(url, LinkStatus.FAILED, type(error).__name__)
+        current = response.json().get("html_url")
+        if current == url:
+            return LinkResult(url, LinkStatus.OK, "confirmed through the Federal Register API")
+        return LinkResult(url, LinkStatus.MOVED, f"moved to {current}")
+
 
 def _from_status(url: str, response: httpx.Response) -> LinkResult:
     code = response.status_code
     if 300 <= code < 400:
-        return LinkResult(
-            url, LinkStatus.MOVED, f"moved to {response.headers.get('location', '(no address)')}"
-        )
+        location = str(response.headers.get("location", ""))
+        host = urlsplit(location).hostname
+        if host in HUMAN_CHECK_HOSTS:
+            return LinkResult(url, LinkStatus.REFUSED, f"the site sent a human check ({location})")
+        return LinkResult(url, LinkStatus.MOVED, f"moved to {location or '(no address)'}")
     if code in (404, 410):
         return LinkResult(url, LinkStatus.BROKEN, f"HTTP {code}")
     if code in (401, 403, 429):
@@ -96,7 +129,13 @@ def link_client(
 
     hosts = {host: HostPolicy(limiter(host, rate), check_robots=True) for host, rate in LINK_HOSTS.items()}
     hosts["www.sec.gov"] = HostPolicy(SEC_LIMITER if rate_limits else NoWait(), check_robots=True)
-    return LinkClient(PoliteHttpClient(contact_email, hosts, transport))
+    # The Federal Register API is a documented public API, used under its own terms like the
+    # collector uses it (ADR 0005); it shares the site's rate limit.
+    fedreg = "www.federalregister.gov"
+    api = {fedreg: HostPolicy(limiter(fedreg, LINK_HOSTS[fedreg]))}
+    return LinkClient(
+        PoliteHttpClient(contact_email, hosts, transport), PoliteHttpClient(contact_email, api, transport)
+    )
 
 
 @dataclass

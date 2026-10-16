@@ -25,5 +25,5 @@ Gate 1's preview is "50 companies end to end; random 10 records for the owner to
 ## Consequences
 
 - Checking every ClinicalTrials.gov link takes time at 45 a minute (1,562 links took about 35 minutes in the CP3 data). The weekly job (Phase 1) can check all of them; Gate 1 checks every link of the 50 companies.
-- Federal Register pages may answer scripted requests with an access check (ADR 0005); if they do, those links show as refused rather than missing, and the report says so.
+- Federal Register notice pages send scripted requests to a human check (unblock.federalregister.gov), and the site's robots.txt answers 403. Notice links are therefore confirmed through the Federal Register API, a documented public API used under its own terms as the collector uses it (ADR 0005): the link works when the API's `html_url` for the document number equals the stored link. A redirect to a human-check page on any other link counts as refused, not moved. In the dress rehearsal this turned 7 false "moved" verdicts into 7 confirmed links.
 - The live Gate 1 run still needs Supabase (setup Part 3): the same commands run with `--snapshot-store supabase` and `CATALYST_DATABASE_URL` pointing at the live database.
