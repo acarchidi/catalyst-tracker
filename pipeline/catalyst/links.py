@@ -98,7 +98,13 @@ class LinkClient:
             return _from_status(url, error.response)
         except httpx.HTTPError as error:
             return LinkResult(url, LinkStatus.FAILED, type(error).__name__)
-        current = response.json().get("html_url")
+        try:
+            body: object = response.json()
+        except ValueError:
+            body = None
+        current = body.get("html_url") if isinstance(body, dict) else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        if not isinstance(current, str):
+            return LinkResult(url, LinkStatus.FAILED, "the Federal Register API sent an unusable answer")
         if current == url:
             return LinkResult(url, LinkStatus.OK, "confirmed through the Federal Register API")
         return LinkResult(url, LinkStatus.MOVED, f"moved to {current}")
