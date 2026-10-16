@@ -79,4 +79,4 @@ def test_clients_share_one_rate_limiter_by_default() -> None:
     transport = httpx.MockTransport(lambda _: httpx.Response(200))
     first = EdgarClient("data@example.org", transport)
     second = EdgarClient("data@example.org", transport)
-    assert first._limiter is second._limiter  # pyright: ignore[reportPrivateUsage]
+    assert first._hosts["www.sec.gov"].limiter is second._hosts["data.sec.gov"].limiter  # pyright: ignore[reportPrivateUsage]

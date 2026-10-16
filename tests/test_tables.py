@@ -87,6 +87,8 @@ EXPECTED_FOREIGN_KEYS = {
     ("catalyst_change", "claim_id", "claim"),
     ("outcome", "catalyst_id", "catalyst"),
     ("outcome", "resolution_claim_id", "claim"),
+    ("company_document", "company_id", "company"),
+    ("company_document", "source_document_id", "source_document"),
 }
 
 
@@ -133,6 +135,7 @@ def chain(engine: Engine) -> Iterator[dict[str, UUID]]:
     drug = Drug(company_id=company.id, preferred_name="povetacicept")
     indication = Indication(mesh_id="D005922", name="IgA nephropathy")
     source = SourceDocument(
+        source_key="sec:0000875320-26-000256:ex-991_q22026.htm",
         url="https://www.sec.gov/Archives/edgar/data/875320/000087532026000256/ex-991_q22026.htm",
         publisher="SEC EDGAR",
         source_tier=SourceTier.REGULATOR_OR_SEC,

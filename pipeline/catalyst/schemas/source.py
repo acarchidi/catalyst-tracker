@@ -30,8 +30,15 @@ class SourceDocument(Entity):
     """One primary document we retrieved, with a hash of the private copy we stored."""
 
     __tablename__ = "source_document"
-    __unique__ = (("url", "sha256"),)
+    # The source's own identity for the document (an SEC accession and file name, an NCT number
+    # and its update date, ...). Re-fetching the same key adds nothing (ADR 0005).
+    __unique__ = (("source_key",),)
 
+    source_key: str = Field(
+        pattern=r"^[a-z]+:.+$",
+        max_length=300,
+        description="The source's own identity for this document version, such as 'sec:<accession>:<file>'.",
+    )
     url: DeepLink = Field(description="Deep link to the exact document, for example an 8-K's Exhibit 99.1.")
     publisher: str = Field(
         min_length=1, max_length=200, description="Who published the document, for example 'SEC EDGAR'."

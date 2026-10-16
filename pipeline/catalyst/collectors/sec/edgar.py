@@ -4,16 +4,15 @@ EDGAR rules (sec.gov/os/accessing-edgar-data): declare a User-Agent with a conta
 email, and send no more than 10 requests per second.
 """
 
-import logging
 from datetime import date
 from html.parser import HTMLParser
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urljoin
 
 import httpx
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
-from catalyst.collectors.ratelimit import MinIntervalLimiter
-from catalyst.logs import log_event
+from catalyst.collectors.http import HostPolicy, PoliteHttpClient
+from catalyst.collectors.ratelimit import Limiter, MinIntervalLimiter
 
 SEC_HOSTS = frozenset({"www.sec.gov", "data.sec.gov"})
 SEC_WEB_ROOT = "https://www.sec.gov"
@@ -21,9 +20,6 @@ ARCHIVES_URL = f"{SEC_WEB_ROOT}/Archives/edgar/data"
 SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 PRESS_RELEASE_EXHIBITS = ("EX-99.1", "EX-99")
 REQUESTS_PER_SECOND = 8
-TIMEOUT_SECONDS = 30
-
-_log = logging.getLogger(__name__)
 
 # One limiter for every EdgarClient in this process, so two clients cannot double the rate.
 # Separate processes (two jobs at once) are kept apart by a shared GitHub Actions concurrency group.
@@ -77,11 +73,24 @@ class _Filings(BaseModel):
 
 class _Submissions(BaseModel):
     cik: int
+    name: str
+    sic: str = ""
     filings: _Filings
+
+
+def company_profile(submissions_json: bytes) -> tuple[int, str, str | None]:
+    """Return the company's SEC number, name, and four-digit industry code (if it has one)."""
+    data = _Submissions.model_validate_json(submissions_json)
+    return data.cik, data.name, data.sic if len(data.sic) == 4 else None
 
 
 def recent_filings(submissions_json: bytes, form: str) -> list[FilingRef]:
     """Return the company's recent filings of exactly `form` (amendments excluded), newest first."""
+    return recent_filings_of(submissions_json, frozenset({form}))
+
+
+def recent_filings_of(submissions_json: bytes, forms: frozenset[str]) -> list[FilingRef]:
+    """Return the company's recent filings whose form is in `forms` (exact match), newest first."""
     data = _Submissions.model_validate_json(submissions_json)
     recent = data.filings.recent
     rows = zip(
@@ -102,7 +111,7 @@ def recent_filings(submissions_json: bytes, form: str) -> list[FilingRef]:
             primary_document=primary,
         )
         for accession, filed_on, accepted_at, row_form, primary in rows
-        if row_form == form
+        if row_form in forms
     ]
     return sorted(filings, key=lambda filing: filing.accepted_at, reverse=True)
 
@@ -176,34 +185,17 @@ def find_press_release(index_html: str) -> ExhibitRef | None:
     return None
 
 
-class EdgarClient:
-    """HTTP client for SEC hosts only: declared User-Agent, rate limit, and a log line per request."""
+class EdgarClient(PoliteHttpClient):
+    """HTTP client for SEC hosts only, sharing one rate limiter per process."""
+
+    host_label = "SEC hosts"
 
     def __init__(
         self,
         contact_email: str,
         transport: httpx.BaseTransport | None = None,
-        limiter: MinIntervalLimiter = SEC_LIMITER,
+        limiter: Limiter = SEC_LIMITER,
     ) -> None:
-        """Create a client that identifies itself with `contact_email`, as the SEC requires.
-
-        Redirects are never followed, so a response can only come from the SEC host requested.
-        `transport` is replaceable for tests and fixture recording.
-        """
-        self._http = httpx.Client(transport=transport, timeout=TIMEOUT_SECONDS, follow_redirects=False)
-        self._limiter = limiter
-        self._headers = {
-            "User-Agent": f"catalyst-tracker {contact_email}",
-            "Accept-Encoding": "gzip, deflate",
-        }
-
-    def get(self, url: str) -> httpx.Response:
-        """Fetch `url` from an SEC host, raising for any non-success status."""
-        host = urlsplit(url).hostname
-        if host not in SEC_HOSTS:
-            raise ValueError(f"EdgarClient only fetches from SEC hosts, not {host!r}")
-        self._limiter.wait()
-        response = self._http.get(url, headers=self._headers)
-        log_event(_log, "sec_request", url=url, status=response.status_code, bytes=len(response.content))
-        response.raise_for_status()
-        return response
+        """Create a client that identifies itself with `contact_email`, as the SEC requires."""
+        policy = HostPolicy(limiter)
+        super().__init__(contact_email, dict.fromkeys(SEC_HOSTS, policy), transport)

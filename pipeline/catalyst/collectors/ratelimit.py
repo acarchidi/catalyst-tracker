@@ -3,8 +3,24 @@
 import threading
 import time
 from collections.abc import Callable
+from typing import Protocol
 
 SEC_MAX_REQUESTS_PER_SECOND = 10
+
+
+class Limiter(Protocol):
+    """Anything that can make a request wait its turn."""
+
+    def wait(self) -> None:
+        """Block until the next request may start."""
+        ...
+
+
+class NoWait:
+    """A limiter that never waits; only for tests that replay recorded responses."""
+
+    def wait(self) -> None:
+        """Return at once."""
 
 
 class MinIntervalLimiter:

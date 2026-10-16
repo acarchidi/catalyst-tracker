@@ -18,6 +18,7 @@ from catalyst.schemas.enums import (
     ClaimSubject,
     DateConfidence,
     DatePrecision,
+    DocumentMatch,
     DrugNameKind,
     LineOfTherapy,
     Modality,
@@ -60,6 +61,17 @@ class Company(Entity):
     sic_code: SicCode | None = Field(
         default=None, description="SEC industry code, for example 2834 (pharmaceutical preparations)."
     )
+
+
+class CompanyDocument(Entity):
+    """Links a source document to a company it concerns, and says how the link was made."""
+
+    __tablename__ = "company_document"
+    __unique__ = (("company_id", "source_document_id"),)
+
+    company_id: Annotated[UUID, References("company")] = Field(description="The company.")
+    source_document_id: Annotated[UUID, References("source_document")] = Field(description="The document.")
+    matched_by: DocumentMatch = Field(description="How the link was made, for example by SEC number.")
 
 
 class CompanyTicker(Entity):
