@@ -177,3 +177,18 @@ def test_a_redirect_to_a_human_check_page_is_a_refusal_not_a_move() -> None:
     result = client.check(url)
     assert result.status == LinkStatus.REFUSED
     assert "human check" in result.detail
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        httpx.Response(200, content=b"<html>maintenance</html>"),
+        httpx.Response(200, json=["not", "an", "object"]),
+        httpx.Response(200, json={"document_number": "2026-18920"}),
+    ],
+)
+def test_an_unusable_federal_register_answer_is_a_site_error_not_a_crash(answer: httpx.Response) -> None:
+    client = link_client("data@example.org", serve({FR_API: answer}), rate_limits=False)
+    result = client.check(FR_URL)
+    assert result.status == LinkStatus.FAILED
+    assert "unusable" in result.detail

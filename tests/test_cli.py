@@ -159,3 +159,19 @@ def test_sample_records_prints_the_table(
     monkeypatch.setattr(cli, "sample_records", lambda *_args: [])  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["sample-records"]) == 0
     assert capsys.readouterr().out.startswith("| Company | Source |")
+
+
+def test_coverage_build_reports_an_unreadable_answer_plainly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    def garbled(*_args: Any, **_kwargs: Any) -> Any:
+        raise ValueError("Expecting value: line 1 column 1 (char 0)")
+
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "build_coverage", garbled)
+    out = tmp_path / "coverage.toml"
+    assert main(["coverage-build", "--out", str(out), "--overrides", str(tmp_path / "none")]) == 1
+    err = capsys.readouterr().err
+    assert "a source sent an answer that could not be read" in err
+    assert "Traceback" not in err
+    assert not out.exists()

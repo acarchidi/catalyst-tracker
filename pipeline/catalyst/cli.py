@@ -9,6 +9,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import httpx
+from defusedxml.ElementTree import ParseError
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
@@ -154,6 +155,9 @@ def _coverage(args: argparse.Namespace) -> int:
         entries = build_coverage(clients.sec, clients.web, load_overrides(args.overrides))
     except httpx.HTTPError as error:
         print(f"Nothing written: a request failed ({error}).", file=sys.stderr)
+        return 1
+    except (ValueError, ParseError) as error:  # malformed JSON or XML from a source
+        print(f"Nothing written: a source sent an answer that could not be read ({error}).", file=sys.stderr)
         return 1
     today = datetime.now(NEW_YORK).date()
     args.out.write_text(coverage_toml(entries, today), encoding="utf-8")
