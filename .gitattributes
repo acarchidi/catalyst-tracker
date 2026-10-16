@@ -1,0 +1,2 @@
+# Recorded source documents are kept byte-for-byte; never convert line endings.
+tests/fixtures/** -text

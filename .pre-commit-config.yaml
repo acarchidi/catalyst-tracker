@@ -1,4 +1,6 @@
 # Install once with: uv run pre-commit install
+# Recorded source documents must stay byte-for-byte as served, so no hook rewrites them.
+exclude: ^tests/fixtures/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v6.0.0

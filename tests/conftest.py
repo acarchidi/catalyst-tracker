@@ -1,5 +1,6 @@
 """Shared test fixtures. Database tests use a disposable Postgres, never the live database."""
 
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -50,3 +51,18 @@ def session_factory(engine: Engine) -> Iterator[sessionmaker[Session]]:
     yield sessionmaker(engine)
     with engine.begin() as connection:
         connection.exec_driver_sql("TRUNCATE source_document")
+
+
+def sec_fixture_responses(cik: int) -> dict[str, tuple[bytes, str]]:
+    """Map each recorded SEC URL to its saved body and content type."""
+    folder = FIXTURES / "sec" / str(cik)
+    index: dict[str, dict[str, str]] = json.loads((folder / "responses.json").read_text())
+    return {
+        url: ((folder / entry["file"]).read_bytes(), entry["content_type"]) for url, entry in index.items()
+    }
+
+
+@pytest.fixture
+def vertex_sec() -> dict[str, tuple[bytes, str]]:
+    """Return recorded EDGAR responses for Vertex Pharmaceuticals (CIK 875320), 2026-10-16."""
+    return sec_fixture_responses(875320)

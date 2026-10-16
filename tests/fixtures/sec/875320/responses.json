@@ -1,0 +1,22 @@
+{
+  "https://data.sec.gov/submissions/CIK0000875320.json": {
+    "file": "submissions_CIK0000875320.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://www.sec.gov/Archives/edgar/data/875320/000087532026000264/0000875320-26-000264-index.htm": {
+    "file": "Archives_edgar_data_875320_000087532026000264_0000875320-26-000264-index.htm",
+    "status": 200,
+    "content_type": "text/html; charset=UTF-8"
+  },
+  "https://www.sec.gov/Archives/edgar/data/875320/000087532026000256/0000875320-26-000256-index.htm": {
+    "file": "Archives_edgar_data_875320_000087532026000256_0000875320-26-000256-index.htm",
+    "status": 200,
+    "content_type": "text/html; charset=UTF-8"
+  },
+  "https://www.sec.gov/Archives/edgar/data/875320/000087532026000256/ex-991_q22026.htm": {
+    "file": "Archives_edgar_data_875320_000087532026000256_ex-991_q22026.htm",
+    "status": 200,
+    "content_type": "text/html"
+  }
+}
