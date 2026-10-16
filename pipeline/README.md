@@ -23,6 +23,6 @@
 | `catalyst.llm` | `ModelClient`, provider adapters, prices, daily spend caps, prompt files | Role, prompt, document | Validated JSON plus cost; a `model_call` row per call |
 | `catalyst.cli` | `uv run catalyst ...` commands | Arguments | JSON on standard output |
 
-**Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`). Every collector: `uv run catalyst collect --since 2026-07-01`, then `uv run catalyst report`.
+**Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`). Every collector: `uv run catalyst collect --since 2026-07-01`, then `uv run catalyst report`. Check every stored copy against its hash: `uv run catalyst snapshots-verify` (add `--snapshot-store supabase` for the live bucket; ADR 0008).
 
 **Test it.** `eval "$(scripts/local_db.sh)"` once, then `uv run pytest`. Tests use recorded copies of real responses in `tests/fixtures/`, never live websites; `scripts/record_fixtures.py` records them.

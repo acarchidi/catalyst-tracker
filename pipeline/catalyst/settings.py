@@ -35,3 +35,20 @@ def catalyst_anthropic_api_key() -> str:
             "CATALYST_ANTHROPIC_API_KEY is missing. See docs/setup.md Part 2, then Part 4."
         )
     return value
+
+
+def _required(name: str, step: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise MissingSettingError(f"{name} is missing. See docs/setup.md {step}.")
+    return value
+
+
+def supabase_url() -> str:
+    """Return the Supabase project address, for example https://<project>.supabase.co."""
+    return _required("SUPABASE_URL", "Part 3, then Part 4")
+
+
+def supabase_secret_key() -> str:
+    """Return the Supabase secret key for server-side access (storage and database)."""
+    return _required("SUPABASE_SECRET_KEY", "Part 3, then Part 4")

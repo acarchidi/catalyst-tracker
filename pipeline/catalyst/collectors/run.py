@@ -26,7 +26,7 @@ from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
 from catalyst.db.repository import known_source_keys, upsert_company
 from catalyst.logs import log_alert, log_event
 from catalyst.schemas import DocumentMatch
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import SnapshotStore
 
 _log = logging.getLogger(__name__)
 
@@ -84,7 +84,7 @@ def build_clients(
 class Collector:
     """Stores what collectors yield and keeps per-source counts."""
 
-    store: LocalSnapshotStore
+    store: SnapshotStore
     session_factory: sessionmaker[Session]
     now: Callable[[], datetime]
 
@@ -114,7 +114,7 @@ def _utc_now() -> datetime:
 def collect_all(
     companies: list[PilotCompany],
     clients: Clients,
-    store: LocalSnapshotStore,
+    store: SnapshotStore,
     session_factory: sessionmaker[Session],
     since: date,
     now: Callable[[], datetime] = _utc_now,

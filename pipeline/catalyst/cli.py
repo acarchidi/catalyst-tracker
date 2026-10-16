@@ -18,7 +18,13 @@ from catalyst.collectors.run import build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.logs import configure_logging
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import (
+    LocalSnapshotStore,
+    SnapshotStore,
+    SupabaseSnapshotStore,
+    VerifyReport,
+    verify_snapshots,
+)
 
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
 DEFAULT_COMPANIES = Path("config/pilot_companies.toml")
@@ -31,17 +37,43 @@ def _parser() -> argparse.ArgumentParser:
         "sec-press-release", help="Fetch a company's latest 8-K press release and record it."
     )
     press.add_argument("--cik", type=int, required=True, help="SEC company number, for example 875320.")
-    press.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR, help="Where copies go.")
+    _store_arguments(press)
     collect = commands.add_parser("collect", help="Run every collector for a company list.")
     collect.add_argument("--companies", type=Path, default=DEFAULT_COMPANIES, help="Company list (TOML).")
     collect.add_argument(
         "--since", type=date.fromisoformat, required=True, help="Earliest SEC filing date, YYYY-MM-DD."
     )
-    collect.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR, help="Where copies go.")
+    _store_arguments(collect)
     commands.add_parser(
         "report", help="Print each company's latest document per source, with links (Markdown)."
     )
+    verify = commands.add_parser(
+        "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
+    )
+    _store_arguments(verify)
     return parser
+
+
+def _store_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--snapshot-store",
+        choices=("local", "supabase"),
+        default="local",
+        help="Where source copies are kept: local disk, or the project's private Supabase Storage bucket.",
+    )
+    parser.add_argument(
+        "--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR, help="Folder for the local store."
+    )
+
+
+def _open_store(args: argparse.Namespace, *, create_bucket: bool) -> SnapshotStore:
+    """Open the chosen store; raises MissingSettingError when Supabase settings are absent."""
+    if args.snapshot_store == "local":
+        return LocalSnapshotStore(args.snapshot_dir)
+    store = SupabaseSnapshotStore(settings.supabase_url(), settings.supabase_secret_key())
+    if create_bucket:
+        store.ensure_bucket()
+    return store
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -56,24 +88,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             engine.dispose()
         return 0
     try:
-        email = settings.sec_contact_email()
+        email = "" if args.command == "snapshots-verify" else settings.sec_contact_email()
+        store = _open_store(args, create_bucket=args.command != "snapshots-verify")
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     engine = create_engine(settings.database_url())
     try:
+        if args.command == "snapshots-verify":
+            return _verify(store, sessionmaker(engine))
         if args.command == "collect":
-            return _collect(args, email, sessionmaker(engine))
-        return _press_release(args, email, sessionmaker(engine))
+            return _collect(args, email, store, sessionmaker(engine))
+        return _press_release(args, email, store, sessionmaker(engine))
     finally:
         engine.dispose()
 
 
-def _collect(args: argparse.Namespace, email: str, session_factory: sessionmaker[Session]) -> int:
+def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
+    report: VerifyReport = verify_snapshots(session_factory, store)
+    summary = {
+        "checked": report.checked,
+        "missing": report.missing,
+        "changed": report.changed,
+        "unreadable": report.unreadable,
+    }
+    print(json.dumps(summary, indent=2))
+    return 0 if report.ok else 1
+
+
+def _collect(
+    args: argparse.Namespace, email: str, store: SnapshotStore, session_factory: sessionmaker[Session]
+) -> int:
     stats = collect_all(
         load_companies(args.companies),
         build_clients(email),
-        LocalSnapshotStore(args.snapshot_dir),
+        store,
         session_factory,
         args.since,
     )
@@ -84,11 +133,11 @@ def _collect(args: argparse.Namespace, email: str, session_factory: sessionmaker
     return 1 if any(s.error for s in stats) else 0
 
 
-def _press_release(args: argparse.Namespace, email: str, session_factory: sessionmaker[Session]) -> int:
+def _press_release(
+    args: argparse.Namespace, email: str, store: SnapshotStore, session_factory: sessionmaker[Session]
+) -> int:
     try:
-        document, created = collect_latest_press_release(
-            EdgarClient(email), LocalSnapshotStore(args.snapshot_dir), session_factory, args.cik
-        )
+        document, created = collect_latest_press_release(EdgarClient(email), store, session_factory, args.cik)
     except NoPressReleaseError as error:
         print(f"Nothing stored: {error}.", file=sys.stderr)
         return 1
