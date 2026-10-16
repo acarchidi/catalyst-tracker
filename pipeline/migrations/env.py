@@ -1,0 +1,42 @@
+"""Alembic environment: migrations run against `CATALYST_DATABASE_URL` using the table metadata."""
+
+from logging.config import fileConfig
+
+from alembic import context
+from sqlalchemy import create_engine, pool
+
+from catalyst.db.models import Base
+from catalyst.settings import database_url
+
+if context.config.config_file_name is not None and context.config.attributes.get("configure_logger", True):
+    fileConfig(context.config.config_file_name)
+
+target_metadata = Base.metadata
+
+
+def _url() -> str:
+    """Prefer a URL passed in by the caller (tests), else the environment setting."""
+    return context.config.attributes.get("database_url") or database_url()
+
+
+def run_migrations_offline() -> None:
+    """Emit SQL to standard output without connecting."""
+    context.configure(url=_url(), target_metadata=target_metadata, literal_binds=True)
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def run_migrations_online() -> None:
+    """Connect and apply migrations."""
+    engine = create_engine(_url(), poolclass=pool.NullPool)
+    with engine.connect() as connection:
+        context.configure(connection=connection, target_metadata=target_metadata, compare_type=True)
+        with context.begin_transaction():
+            context.run_migrations()
+    engine.dispose()
+
+
+if context.is_offline_mode():
+    run_migrations_offline()
+else:
+    run_migrations_online()
