@@ -4,8 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from catalyst.db.models import SourceDocumentRow
+from catalyst.db.tables import TABLES
 from catalyst.schemas import SourceDocument
+
+_SOURCE_DOCUMENT = TABLES[SourceDocument]
 
 
 def save_source_document(session: Session, doc: SourceDocument) -> tuple[SourceDocument, bool]:
@@ -15,15 +17,19 @@ def save_source_document(session: Session, doc: SourceDocument) -> tuple[SourceD
     exists, the stored record keeps its original id and retrieval time.
     """
     statement = (
-        insert(SourceDocumentRow)
+        insert(_SOURCE_DOCUMENT)
         .values(**doc.model_dump())
         .on_conflict_do_nothing(constraint="uq_source_document_url_sha256")
-        .returning(SourceDocumentRow.id)
+        .returning(_SOURCE_DOCUMENT.c.id)
     )
     created = session.execute(statement).scalar_one_or_none() is not None
-    row = session.execute(
-        select(SourceDocumentRow).where(
-            SourceDocumentRow.url == doc.url, SourceDocumentRow.sha256 == doc.sha256
+    row = (
+        session.execute(
+            select(_SOURCE_DOCUMENT).where(
+                _SOURCE_DOCUMENT.c.url == doc.url, _SOURCE_DOCUMENT.c.sha256 == doc.sha256
+            )
         )
-    ).scalar_one()
-    return SourceDocument.model_validate(row, from_attributes=True), created
+        .mappings()
+        .one()
+    )
+    return SourceDocument.model_validate(dict(row)), created

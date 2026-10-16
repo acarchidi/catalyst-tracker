@@ -1,13 +1,11 @@
-"""Pydantic models: the single source of truth for every stored entity (spec: Engineering standards).
-
-The walking skeleton defines only `SourceDocument`. The "Data schemas" roadmap item adds the rest.
-"""
+"""Source documents: the primary documents every claim points back to (spec: Provenance)."""
 
 from typing import Annotated
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, AwareDatetime, Field
+
+from catalyst.schemas.base import Entity
 
 
 def _deep_https_link(url: str) -> str:
@@ -27,12 +25,12 @@ def _deep_https_link(url: str) -> str:
 DeepLink = Annotated[str, AfterValidator(_deep_https_link)]
 
 
-class SourceDocument(BaseModel):
+class SourceDocument(Entity):
     """One primary document we retrieved, with a hash of the private copy we stored."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    __tablename__ = "source_document"
+    __unique__ = (("url", "sha256"),)
 
-    id: UUID = Field(default_factory=uuid4, description="Internal identifier.")
     url: DeepLink = Field(description="Deep link to the exact document, for example an 8-K's Exhibit 99.1.")
     publisher: str = Field(
         min_length=1, max_length=200, description="Who published the document, for example 'SEC EDGAR'."

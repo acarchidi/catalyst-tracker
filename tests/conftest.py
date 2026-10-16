@@ -11,6 +11,8 @@ from alembic.config import Config
 from sqlalchemy import Engine, create_engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.db.tables import metadata
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -47,12 +49,18 @@ def engine(database_url: str) -> Iterator[Engine]:
     engine.dispose()
 
 
+def truncate_all(engine: Engine) -> None:
+    """Empty every table in the test database."""
+    names = ", ".join(table.name for table in metadata.sorted_tables)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(f"TRUNCATE {names}")
+
+
 @pytest.fixture
 def session_factory(engine: Engine) -> Iterator[sessionmaker[Session]]:
     """Session factory; every table is emptied after each test."""
     yield sessionmaker(engine)
-    with engine.begin() as connection:
-        connection.exec_driver_sql("TRUNCATE source_document")
+    truncate_all(engine)
 
 
 def sec_fixture_responses(cik: int) -> dict[str, tuple[bytes, str]]:

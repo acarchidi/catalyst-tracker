@@ -7,8 +7,9 @@
 | Module | Job | Inputs | Outputs |
 | --- | --- | --- | --- |
 | `catalyst.settings` | Read settings from environment variables | Environment | Values, or an error naming the setup step |
-| `catalyst.schemas` | Pydantic models; the source of truth for data | — | Validated records |
-| `catalyst.db` | Tables (`models`) and idempotent writes (`repository`) | Records | Database rows |
+| `catalyst.schemas` | Pydantic models for every entity; the source of truth for data | — | Validated records |
+| `catalyst.db` | Tables generated from the models (`tables`) and idempotent writes (`repository`) | Records | Database rows |
+| `catalyst.data_dictionary` | Writes `docs/data-dictionary.md` from the models | Models | Markdown |
 | `catalyst.snapshots` | Private copies of source documents, named by SHA-256 | Bytes | Hash and storage key |
 | `catalyst.collectors.ratelimit` | Request spacing, capped at the SEC's 10 per second | — | Waits |
 | `catalyst.collectors.sec.edgar` | EDGAR filing lists, index pages, polite HTTP client | SEC responses | Filing and exhibit references |

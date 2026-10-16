@@ -14,7 +14,8 @@ from catalyst import cli
 from catalyst.collectors.ratelimit import MinIntervalLimiter
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
-from catalyst.db.models import SourceDocumentRow
+from catalyst.db.tables import TABLES
+from catalyst.schemas import SourceDocument
 from catalyst.snapshots import LocalSnapshotStore
 
 EXHIBIT = "https://www.sec.gov/Archives/edgar/data/875320/000087532026000256/ex-991_q22026.htm"
@@ -50,7 +51,7 @@ def _client(server: _Recorded) -> EdgarClient:
 
 def _rows(session_factory: sessionmaker[Session]) -> int:
     with session_factory() as session:
-        return session.execute(select(func.count()).select_from(SourceDocumentRow)).scalar_one()
+        return session.execute(select(func.count()).select_from(TABLES[SourceDocument])).scalar_one()
 
 
 def test_latest_press_release_becomes_one_row_with_a_deep_link(

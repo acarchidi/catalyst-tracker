@@ -5,13 +5,13 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import create_engine, pool
 
-from catalyst.db.models import Base
+from catalyst.db.tables import metadata
 from catalyst.settings import database_url
 
 if context.config.config_file_name is not None and context.config.attributes.get("configure_logger", True):
     fileConfig(context.config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = metadata
 
 
 def _url() -> str:

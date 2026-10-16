@@ -5,8 +5,8 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from catalyst.db.models import SourceDocumentRow
 from catalyst.db.repository import save_source_document
+from catalyst.db.tables import TABLES
 from catalyst.schemas import SourceDocument
 
 
@@ -24,7 +24,7 @@ def _doc(sha: str = "b" * 64) -> SourceDocument:
 
 
 def _count(session: Session) -> int:
-    return session.execute(select(func.count()).select_from(SourceDocumentRow)).scalar_one()
+    return session.execute(select(func.count()).select_from(TABLES[SourceDocument])).scalar_one()
 
 
 def test_first_save_creates_a_row(session_factory: sessionmaker[Session]) -> None:
