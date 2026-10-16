@@ -14,7 +14,7 @@ The spec requires a private copy and SHA-256 hash of every source document, "so 
 2. **Every read proves the copy.** `get` re-hashes the bytes and raises `SnapshotIntegrityError` when they no longer match the key; a missing copy raises `SnapshotNotFoundError`. Malformed keys are refused before any lookup.
 3. **Two stores, one interface.** `LocalSnapshotStore` (disk, for development and tests) and `SupabaseSnapshotStore` (a private bucket named `source-snapshots`). Commands choose with `--snapshot-store local|supabase`; the default is `local`, and `supabase` without `SUPABASE_URL` and `SUPABASE_SECRET_KEY` stops with the setup step. There is no silent fallback from one to the other.
 4. **Supabase details.** Requests go to `<SUPABASE_URL>/storage/v1` over https only, with the secret key in the `apikey` header and no `Authorization` header, because Supabase's new secret keys are not JWTs. Uploads never overwrite (`x-upsert: false`); Storage's "Duplicate" answer (HTTP 400 or 409 with status `409` in the body) counts as already stored. Before writing, the collector creates the bucket if needed and refuses to use it if it is public, since copies are for verification, not redistribution.
-5. **Verification command.** `catalyst snapshots-verify` re-reads the copy behind every `source_document` row and lists the source keys whose copy is missing or changed; it exits non-zero if any are. The auditor agent (Phase 1) can run it on a schedule.
+5. **Verification command.** `catalyst snapshots-verify` re-reads the copy behind every `source_document` row and lists the source keys whose copy is missing, changed, or unreadable (a storage or network error); one unreadable copy does not stop the audit. It exits non-zero if any are listed. It only reads, so it does not create the bucket or check that it is private; collection runs do that before every write. The auditor agent (Phase 1) can run it on a schedule.
 6. **Local copies are not migrated.** The only local copies are from development runs against the local database; the live database starts empty and fills from the live store.
 
 ## Alternatives
@@ -27,4 +27,5 @@ The spec requires a private copy and SHA-256 hash of every source document, "so 
 
 - Tests use a fake of the Storage API built from Supabase's published routes; no live request has been made, because the project has no Supabase account yet (setup Part 3). The first live run should be `catalyst snapshots-verify --snapshot-store supabase` after a small collection.
 - If Supabase Storage ever rejects the `apikey`-only header, the fix is in one place (`SupabaseSnapshotStore.__init__`).
+- Storing bytes whose key already exists is accepted without re-reading the stored copy, so a copy damaged in storage stays damaged until `snapshots-verify` reports it.
 - Copies are never deleted by this code. A retention rule, if needed, is a later decision.

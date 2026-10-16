@@ -3,11 +3,19 @@
 from datetime import UTC, datetime
 from pathlib import Path
 
+import httpx
+import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.repository import save_source_document
 from catalyst.schemas import SourceDocument, SourceTier
-from catalyst.snapshots import LocalSnapshotStore, Snapshot, snapshot_key, verify_snapshots
+from catalyst.snapshots import (
+    LocalSnapshotStore,
+    Snapshot,
+    SnapshotStoreError,
+    snapshot_key,
+    verify_snapshots,
+)
 
 
 def _record(session_factory: sessionmaker[Session], snapshot: Snapshot, name: str) -> None:
@@ -67,3 +75,35 @@ def test_a_row_whose_key_does_not_match_its_hash_counts_as_changed(
     report = verify_snapshots(session_factory, store)
     assert report.changed == ["sec:0000000001-24-000001:wrong.htm"]
     assert snapshot_key(other_hash) != real.key
+
+
+class _FlakyStore(LocalSnapshotStore):
+    """Fails on one key, works for the rest."""
+
+    def __init__(self, root: Path, bad_key: str, error: Exception) -> None:
+        super().__init__(root)
+        self.bad_key = bad_key
+        self.error = error
+
+    def get(self, key: str) -> bytes:
+        if key == self.bad_key:
+            raise self.error
+        return super().get(key)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [SnapshotStoreError("HTTP 500"), httpx.ConnectError("refused"), ValueError("not a snapshot key")],
+)
+def test_one_unreadable_copy_is_listed_and_the_audit_continues(
+    session_factory: sessionmaker[Session], tmp_path: Path, error: Exception
+) -> None:
+    plain = LocalSnapshotStore(tmp_path)
+    bad = plain.put(b"bad")
+    _record(session_factory, bad, "a-bad.htm")
+    _record(session_factory, plain.put(b"good"), "b-good.htm")
+    report = verify_snapshots(session_factory, _FlakyStore(tmp_path, bad.key, error))
+    assert report.checked == 2
+    assert report.unreadable == ["sec:0000000001-24-000001:a-bad.htm"]
+    assert (report.missing, report.changed) == ([], [])
+    assert not report.ok

@@ -202,15 +202,20 @@ class VerifyReport:
     checked: int = 0
     missing: list[str] = field(default_factory=list[str])
     changed: list[str] = field(default_factory=list[str])
+    unreadable: list[str] = field(default_factory=list[str])
 
     @property
     def ok(self) -> bool:
-        """True when every recorded copy exists and matches its hash."""
-        return not self.missing and not self.changed
+        """True when every recorded copy was read, exists, and matches its hash."""
+        return not self.missing and not self.changed and not self.unreadable
 
 
 def verify_snapshots(session_factory: sessionmaker[Session], store: SnapshotStore) -> VerifyReport:
-    """Re-read every source document's copy and check it against the recorded hash."""
+    """Re-read every source document's copy and check it against the recorded hash.
+
+    One copy that cannot be read (a storage or network error, a malformed row) is listed as
+    unreadable and the audit continues, so one failure never hides the rest of the report.
+    """
     table = TABLES[SourceDocument]
     with session_factory() as session:
         rows = session.execute(
@@ -228,4 +233,6 @@ def verify_snapshots(session_factory: sessionmaker[Session], store: SnapshotStor
             report.missing.append(source_key)
         except SnapshotIntegrityError:
             report.changed.append(source_key)
+        except (SnapshotStoreError, httpx.HTTPError, ValueError):
+            report.unreadable.append(source_key)
     return report

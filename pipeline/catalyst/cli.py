@@ -106,7 +106,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
     report: VerifyReport = verify_snapshots(session_factory, store)
-    summary = {"checked": report.checked, "missing": report.missing, "changed": report.changed}
+    summary = {
+        "checked": report.checked,
+        "missing": report.missing,
+        "changed": report.changed,
+        "unreadable": report.unreadable,
+    }
     print(json.dumps(summary, indent=2))
     return 0 if report.ok else 1
 
