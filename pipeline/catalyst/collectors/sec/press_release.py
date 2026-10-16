@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.collectors.sec.edgar import SUBMISSIONS_URL, EdgarClient, find_press_release, recent_filings
 from catalyst.db.repository import save_source_document
 from catalyst.logs import log_event
-from catalyst.schemas import SourceDocument
+from catalyst.schemas import SourceDocument, SourceTier
 from catalyst.snapshots import LocalSnapshotStore
 
 PUBLISHER = "SEC EDGAR"
@@ -50,6 +50,7 @@ def collect_latest_press_release(
         document = SourceDocument(
             url=exhibit.url,
             publisher=PUBLISHER,
+            source_tier=SourceTier.REGULATOR_OR_SEC,
             document_type=f"{filing.form} {exhibit.type}",
             published_at=filing.accepted_at,
             retrieved_at=now(),

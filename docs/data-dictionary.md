@@ -12,6 +12,7 @@ One primary document we retrieved, with a hash of the private copy we stored.
 | `id` | identifier | yes | Internal identifier. |
 | `url` | text | yes | Deep link to the exact document, for example an 8-K's Exhibit 99.1. |
 | `publisher` | text, up to 200 characters | yes | Who published the document, for example 'SEC EDGAR'. |
+| `source_tier` | one of: `regulator_or_sec`, `company_site`, `wire`, `registry`, `conference_or_journal` | yes | Rank in the provenance ranking; decides which claim wins when sources disagree. |
 | `document_type` | text, up to 100 characters | yes | Form and exhibit type as the publisher labels it, for example '8-K EX-99.1'. |
 | `published_at` | date and time (with time zone) | yes | When the publisher made the document public. |
 | `retrieved_at` | date and time (with time zone) | yes | When we downloaded the copy that `sha256` describes. |
@@ -232,8 +233,11 @@ One fact taken from one source document, with the exact words that state it (spe
 
 Rules:
 
+- Unique: `source_document_id`, `field`, `quote_start`, `quote_end`, `agent`, `prompt_id`, `prompt_version`, `model`
 - Database check `forward_span`: `quote_start >= 0 AND quote_end > quote_start`
+- Database check `span_matches_quote`: `quote_end - quote_start = length(quote)`
 - Database check `quote_not_blank`: `length(btrim(quote)) > 0`
+- Database check `has_value`: `value <> 'null'::jsonb`
 
 ## `catalyst_change`
 
@@ -243,7 +247,7 @@ One change to a catalyst field (spec: Change history). Append-only: rows are add
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
 | `catalyst_id` | link to `catalyst` | yes | The catalyst that changed. |
-| `field` | text, up to 100 characters | yes | Which field changed. |
+| `field` | one of: `catalyst_type`, `company_id`, `drug_id`, `indication_id`, `title`, `window_start`, `window_end`, `window_precision`, `window_raw_text`, `date_confidence`, `status` | yes | Which catalyst field changed. |
 | `old_value` | structured value (JSON) | no | Value before the change; empty for a first value. |
 | `new_value` | structured value (JSON) | yes | Value after the change. |
 | `claim_id` | link to `claim` | yes | The claim that caused the change. |
@@ -253,6 +257,7 @@ One change to a catalyst field (spec: Change history). Append-only: rows are add
 Rules:
 
 - Database check `changes_something`: `old_value IS DISTINCT FROM new_value`
+- Database check `has_new_value`: `new_value <> 'null'::jsonb`
 
 ## `outcome`
 

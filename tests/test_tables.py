@@ -19,17 +19,20 @@ from catalyst.schemas import (
     ALL_MODELS,
     Catalyst,
     CatalystChange,
+    CatalystField,
     CatalystStatus,
     CatalystType,
     Claim,
     ClaimSubject,
     Company,
+    CompanyTicker,
     DateConfidence,
     DatePrecision,
     Drug,
     Entity,
     Indication,
     SourceDocument,
+    SourceTier,
 )
 from conftest import truncate_all
 
@@ -56,16 +59,44 @@ def test_columns_match_fields(model: type[Entity]) -> None:
 
 @pytest.mark.parametrize("model", ALL_MODELS, ids=lambda m: m.__name__)
 def test_text_column_lengths_match_the_model_limits(model: type[Entity]) -> None:
+    # Pydantic's own JSON schema is the independent source for each field's length limit.
     properties = model.model_json_schema()["properties"]
-    table = TABLES[model]
-    allowed_lists = {c.name for c in table.constraints if str(c.name).endswith("_allowed")}
-    for name, column in table.columns.items():
-        has_allowed_list = f"ck_{table.name}_{name}_allowed" in allowed_lists
-        if isinstance(column.type, String) and column.type.length and not has_allowed_list:
-            limits = [properties[name].get("maxLength")] + [
-                option.get("maxLength") for option in properties[name].get("anyOf", [])
-            ]
-            assert column.type.length in limits, f"{model.__name__}.{name}"
+    for name, column in TABLES[model].columns.items():
+        options = [properties[name], *properties[name].get("anyOf", [])]
+        limits = {option["maxLength"] for option in options if "maxLength" in option}
+        if limits:
+            assert isinstance(column.type, String), f"{model.__name__}.{name} should be limited text"
+            assert {column.type.length} == limits, f"{model.__name__}.{name}"
+
+
+# Written from the spec's Data model, not from the generator.
+EXPECTED_FOREIGN_KEYS = {
+    ("company_ticker", "company_id", "company"),
+    ("company_name", "company_id", "company"),
+    ("drug", "company_id", "company"),
+    ("drug_name", "drug_id", "drug"),
+    ("drug_target", "drug_id", "drug"),
+    ("drug_target", "target_id", "target"),
+    ("catalyst", "company_id", "company"),
+    ("catalyst", "drug_id", "drug"),
+    ("catalyst", "indication_id", "indication"),
+    ("catalyst_trial", "catalyst_id", "catalyst"),
+    ("catalyst_trial", "trial_id", "trial"),
+    ("claim", "source_document_id", "source_document"),
+    ("catalyst_change", "catalyst_id", "catalyst"),
+    ("catalyst_change", "claim_id", "claim"),
+    ("outcome", "catalyst_id", "catalyst"),
+    ("outcome", "resolution_claim_id", "claim"),
+}
+
+
+def test_foreign_keys_are_exactly_the_expected_links() -> None:
+    found = {
+        (table.name, fk.parent.name, fk.column.table.name)
+        for table in TABLES.values()
+        for fk in table.foreign_keys
+    }
+    assert found == EXPECTED_FOREIGN_KEYS
 
 
 def test_unsupported_field_types_are_refused() -> None:
@@ -104,6 +135,7 @@ def chain(engine: Engine) -> Iterator[dict[str, UUID]]:
     source = SourceDocument(
         url="https://www.sec.gov/Archives/edgar/data/875320/000087532026000256/ex-991_q22026.htm",
         publisher="SEC EDGAR",
+        source_tier=SourceTier.REGULATOR_OR_SEC,
         document_type="8-K EX-99.1",
         published_at=datetime(2026, 8, 3, 20, 9, 43, tzinfo=UTC),
         retrieved_at=NOW,
@@ -228,7 +260,7 @@ def test_a_blank_quote_is_refused_by_the_database(chain: dict[str, UUID], engine
 def _change(chain: dict[str, UUID]) -> CatalystChange:
     return CatalystChange(
         catalyst_id=chain["catalyst"],
-        field="window_end",
+        field=CatalystField.WINDOW_END,
         old_value=None,
         new_value="2026-11-30",
         claim_id=chain["claim"],
@@ -250,3 +282,47 @@ def test_change_history_cannot_be_edited_or_deleted(
     _insert(engine, _change(chain), TABLES[CatalystChange])
     with pytest.raises(DBAPIError, match="append-only"), engine.begin() as connection:
         connection.execute(text(statement))
+
+
+def test_every_check_in_the_models_exists_in_the_migrated_database(engine: Engine) -> None:
+    # Alembic's drift check cannot see CHECK constraints; their names carry a hash of their SQL.
+    expected = {
+        str(c.name) for table in TABLES.values() for c in table.constraints if str(c.name).startswith("ck_")
+    }
+    with engine.connect() as connection:
+        query = text(
+            "SELECT c.conname FROM pg_constraint c "
+            "JOIN pg_class t ON t.oid = c.conrelid "
+            "JOIN pg_namespace n ON n.oid = t.relnamespace "
+            "WHERE c.contype = 'c' AND n.nspname = 'public'"
+        )
+        found = set(connection.execute(query).scalars())
+    assert expected <= found, f"missing from migrations: {sorted(expected - found)}"
+    assert found <= expected, f"in the database but not the models: {sorted(found - expected)}"
+
+
+def test_the_same_claim_cannot_be_stored_twice(chain: dict[str, UUID], engine: Engine) -> None:
+    with engine.connect() as connection:
+        row = dict(connection.execute(text("SELECT * FROM claim")).mappings().one())
+    row["id"] = uuid4()
+    with pytest.raises(IntegrityError, match="uq_claim"), engine.begin() as connection:
+        connection.execute(insert(TABLES[Claim]).values(**row))
+
+
+def test_a_ticker_can_be_current_for_only_one_company(chain: dict[str, UUID], engine: Engine) -> None:
+    other = Company(cik=1682852, name="Moderna Inc")
+    _insert(engine, other, TABLES[Company])
+    for company_id in (chain["company"], other.id):
+        values = {"company_id": company_id, "ticker": "ABCD", "valid_from": date(2020, 1, 1)}
+        if company_id == other.id:
+            with pytest.raises(IntegrityError, match="ix_company_ticker_current"):
+                _raw_insert(engine, TABLES[CompanyTicker], values)
+        else:
+            _raw_insert(engine, TABLES[CompanyTicker], values)
+
+
+def test_an_empty_old_value_is_stored_as_sql_null(chain: dict[str, UUID], engine: Engine) -> None:
+    _insert(engine, _change(chain), TABLES[CatalystChange])
+    with engine.connect() as connection:
+        empty = connection.execute(text("SELECT count(*) FROM catalyst_change WHERE old_value IS NULL"))
+        assert empty.scalar_one() == 1

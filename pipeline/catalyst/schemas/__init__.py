@@ -21,6 +21,7 @@ from catalyst.schemas.entities import (
     Trial,
 )
 from catalyst.schemas.enums import (
+    CatalystField,
     CatalystStatus,
     CatalystType,
     ClaimSubject,
@@ -30,6 +31,7 @@ from catalyst.schemas.enums import (
     LineOfTherapy,
     Modality,
     OutcomeResult,
+    SourceTier,
     TrialPhase,
 )
 from catalyst.schemas.source import SourceDocument
@@ -57,6 +59,7 @@ __all__ = [
     "ALL_MODELS",
     "Catalyst",
     "CatalystChange",
+    "CatalystField",
     "CatalystStatus",
     "CatalystTrial",
     "CatalystType",
@@ -79,6 +82,7 @@ __all__ = [
     "OutcomeResult",
     "References",
     "SourceDocument",
+    "SourceTier",
     "Target",
     "Trial",
     "TrialPhase",

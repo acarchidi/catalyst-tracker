@@ -7,10 +7,11 @@ from datetime import date
 from typing import Annotated, ClassVar, Self
 from uuid import UUID
 
-from pydantic import AwareDatetime, Field, JsonValue, model_validator
+from pydantic import AwareDatetime, ConfigDict, Field, JsonValue, model_validator
 
 from catalyst.schemas.base import Entity, References
 from catalyst.schemas.enums import (
+    CatalystField,
     CatalystStatus,
     CatalystType,
     ClaimSubject,
@@ -64,6 +65,9 @@ class CompanyTicker(Entity):
 
     __tablename__ = "company_ticker"
     __unique__ = (("company_id", "ticker", "valid_from"),)
+    __partial_unique__: ClassVar[dict[str, tuple[tuple[str, ...], str]]] = {
+        "ix_company_ticker_current": (("ticker",), "valid_to IS NULL")
+    }
     __checks__: ClassVar[dict[str, str]] = {"period": "valid_to IS NULL OR valid_to >= valid_from"}
 
     company_id: Annotated[UUID, References("company")] = Field(description="The company.")
@@ -237,10 +241,28 @@ class CatalystTrial(Entity):
 class Claim(Entity):
     """One fact taken from one source document, with the exact words that state it (spec: Provenance)."""
 
+    # Quotes are verbatim, so surrounding spaces are kept.
+    model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=False)
+
     __tablename__ = "claim"
+    # Re-running an extractor on the same document with the same prompt and model adds nothing.
+    __unique__ = (
+        (
+            "source_document_id",
+            "field",
+            "quote_start",
+            "quote_end",
+            "agent",
+            "prompt_id",
+            "prompt_version",
+            "model",
+        ),
+    )
     __checks__: ClassVar[dict[str, str]] = {
         "forward_span": "quote_start >= 0 AND quote_end > quote_start",
+        "span_matches_quote": "quote_end - quote_start = length(quote)",
         "quote_not_blank": "length(btrim(quote)) > 0",
+        "has_value": "value <> 'null'::jsonb",
     }
 
     source_document_id: Annotated[UUID, References("source_document")] = Field(
@@ -270,8 +292,14 @@ class Claim(Entity):
 
     @model_validator(mode="after")
     def _span(self) -> Self:
+        if not self.quote.strip():
+            raise ValueError("quote cannot be blank")
         if self.quote_end <= self.quote_start:
             raise ValueError("quote_end must be after quote_start")
+        if self.quote_end - self.quote_start != len(self.quote):
+            raise ValueError("the quote span must be as long as the quote")
+        if self.value is None:
+            raise ValueError("a claim must carry a value")
         return self
 
 
@@ -282,10 +310,13 @@ class CatalystChange(Entity):
     """
 
     __tablename__ = "catalyst_change"
-    __checks__: ClassVar[dict[str, str]] = {"changes_something": "old_value IS DISTINCT FROM new_value"}
+    __checks__: ClassVar[dict[str, str]] = {
+        "changes_something": "old_value IS DISTINCT FROM new_value",
+        "has_new_value": "new_value <> 'null'::jsonb",
+    }
 
     catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst that changed.")
-    field: ShortText = Field(description="Which field changed.")
+    field: CatalystField = Field(description="Which catalyst field changed.")
     old_value: JsonValue | None = Field(
         default=None, description="Value before the change; empty for a first value."
     )
@@ -298,6 +329,8 @@ class CatalystChange(Entity):
 
     @model_validator(mode="after")
     def _changes(self) -> Self:
+        if self.new_value is None:
+            raise ValueError("new_value is required")
         if self.old_value == self.new_value:
             raise ValueError("new_value must differ from old_value")
         return self

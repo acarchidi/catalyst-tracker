@@ -23,7 +23,8 @@ class Entity(BaseModel):
     `__unique__` lists column groups that must be unique; empty values never clash.
     `__unique_nulls_equal__` lists groups where empty counts as a value, so two rows that
     differ only by both being empty clash. `__checks__` maps a name to a SQL condition that
-    the database enforces in addition to the Pydantic rules.
+    the database enforces in addition to the Pydantic rules. `__partial_unique__` maps an index
+    name to columns that must be unique among rows matching a SQL condition.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid", str_strip_whitespace=True)
@@ -32,5 +33,6 @@ class Entity(BaseModel):
     __unique__: ClassVar[tuple[tuple[str, ...], ...]] = ()
     __unique_nulls_equal__: ClassVar[tuple[tuple[str, ...], ...]] = ()
     __checks__: ClassVar[dict[str, str]] = {}
+    __partial_unique__: ClassVar[dict[str, tuple[tuple[str, ...], str]]] = {}
 
     id: UUID = Field(default_factory=uuid4, description="Internal identifier.")

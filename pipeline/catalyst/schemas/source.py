@@ -6,6 +6,7 @@ from urllib.parse import urlsplit
 from pydantic import AfterValidator, AwareDatetime, Field
 
 from catalyst.schemas.base import Entity
+from catalyst.schemas.enums import SourceTier
 
 
 def _deep_https_link(url: str) -> str:
@@ -34,6 +35,9 @@ class SourceDocument(Entity):
     url: DeepLink = Field(description="Deep link to the exact document, for example an 8-K's Exhibit 99.1.")
     publisher: str = Field(
         min_length=1, max_length=200, description="Who published the document, for example 'SEC EDGAR'."
+    )
+    source_tier: SourceTier = Field(
+        description="Rank in the provenance ranking; decides which claim wins when sources disagree."
     )
     document_type: str = Field(
         min_length=1,

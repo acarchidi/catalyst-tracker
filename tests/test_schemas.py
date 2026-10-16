@@ -11,6 +11,7 @@ from catalyst.schemas import SourceDocument
 VALID: dict[str, Any] = {
     "url": "https://www.sec.gov/Archives/edgar/data/875320/000087532024000001/ex99-1.htm",
     "publisher": "SEC EDGAR",
+    "source_tier": "regulator_or_sec",
     "document_type": "8-K EX-99.1",
     "published_at": datetime(2024, 10, 30, 20, 5, tzinfo=UTC),
     "retrieved_at": datetime(2024, 10, 31, 12, 0, tzinfo=UTC),

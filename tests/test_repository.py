@@ -7,13 +7,14 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.repository import save_source_document
 from catalyst.db.tables import TABLES
-from catalyst.schemas import SourceDocument
+from catalyst.schemas import SourceDocument, SourceTier
 
 
 def _doc(sha: str = "b" * 64) -> SourceDocument:
     return SourceDocument(
         url="https://www.sec.gov/Archives/edgar/data/1/000000000124000001/ex99.htm",
         publisher="SEC EDGAR",
+        source_tier=SourceTier.REGULATOR_OR_SEC,
         document_type="8-K EX-99.1",
         published_at=datetime(2024, 10, 30, 20, 5, tzinfo=UTC),
         retrieved_at=datetime(2024, 10, 31, 12, 0, tzinfo=UTC),

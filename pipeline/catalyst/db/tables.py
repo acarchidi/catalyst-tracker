@@ -4,6 +4,7 @@ Each model field becomes a column: its type, NOT NULL, length limit, allowed val
 key, and comment (the field description) all come from the model. No table is written by hand.
 """
 
+import hashlib
 import types
 from datetime import date, datetime
 from enum import StrEnum
@@ -21,12 +22,14 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     MetaData,
     String,
     Table,
     Text,
     UniqueConstraint,
     Uuid,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.types import TypeEngine
@@ -84,7 +87,7 @@ def _column_type(annotation: Any, markers: list[Any]) -> TypeEngine[Any]:
         length = next((m.max_length for m in markers if isinstance(m, MaxLen)), None)
         return String(length) if length else Text()
     if annotation is JsonValue or get_origin(annotation) in (dict, list):
-        return JSONB()
+        return JSONB(none_as_null=True)
     raise TypeError(f"no column type for {annotation!r}; add it to catalyst.db.tables")
 
 
@@ -102,13 +105,23 @@ def _column(name: str, field: FieldInfo) -> Column[Any]:
     )
 
 
+def _check(name: str, sql: str) -> CheckConstraint:
+    """Build a CHECK constraint whose name ends in a hash of its SQL.
+
+    Alembic cannot compare CHECK constraints, so a changed rule gets a new name; a test then
+    finds any rule that exists in the models but not in the migrated database, or the reverse.
+    """
+    digest = hashlib.sha256(sql.encode()).hexdigest()[:8]
+    return CheckConstraint(sql, name=f"{name}_{digest}")
+
+
 def _enum_checks(model: type[Entity]) -> list[CheckConstraint]:
     checks: list[CheckConstraint] = []
     for name, field in model.model_fields.items():
         annotation, _, _ = resolve_field(field)
         if isinstance(annotation, type) and issubclass(annotation, StrEnum):
             allowed = ", ".join(f"'{member.value}'" for member in annotation)
-            checks.append(CheckConstraint(f"{name} IN ({allowed})", name=f"{name}_allowed"))
+            checks.append(_check(f"{name}_allowed", f"{name} IN ({allowed})"))
     return checks
 
 
@@ -119,8 +132,8 @@ def build_table(model: type[Entity], target: MetaData) -> Table:
     uniques += [
         UniqueConstraint(*group, postgresql_nulls_not_distinct=True) for group in model.__unique_nulls_equal__
     ]
-    checks = [CheckConstraint(sql, name=name) for name, sql in model.__checks__.items()]
-    return Table(
+    checks = [_check(name, sql) for name, sql in model.__checks__.items()]
+    table = Table(
         model.__tablename__,
         target,
         *columns,
@@ -129,6 +142,9 @@ def build_table(model: type[Entity], target: MetaData) -> Table:
         *_enum_checks(model),
         comment=(model.__doc__ or "").strip().splitlines()[0],
     )
+    for index_name, (columns, where) in model.__partial_unique__.items():
+        Index(index_name, *(table.c[c] for c in columns), unique=True, postgresql_where=text(where))
+    return table
 
 
 TABLES: dict[type[Entity], Table] = {model: build_table(model, metadata) for model in ALL_MODELS}

@@ -16,6 +16,7 @@ from catalyst.schemas import (
     ALL_MODELS,
     Catalyst,
     CatalystChange,
+    CatalystField,
     CatalystStatus,
     CatalystType,
     Claim,
@@ -30,6 +31,7 @@ from catalyst.schemas import (
     Modality,
     Outcome,
     OutcomeResult,
+    SourceTier,
     Target,
     Trial,
 )
@@ -275,8 +277,8 @@ IDENTIFIER_CASES: list[tuple[type[BaseModel], dict[str, Any], str, list[object],
         Indication,
         {"name": "IgA nephropathy", "mesh_id": "D005922"},
         "icd10_code",
-        ["N02.8", "C34", "C34.90", None],
-        ["34.9", "C3"],
+        ["N02.8", "C34", "C34.90", "C7A.010", "D3A.00", "M1A.0110", "Z3A.20", None],
+        ["34.9", "C3", "C34.12345"],
     ),
     (
         Indication,
@@ -329,3 +331,63 @@ def test_validity_periods_cannot_end_before_they_start(model: type[BaseModel]) -
     allowed = set(model.model_fields)
     with pytest.raises(ValidationError, match="valid_to"):
         model.model_validate({k: v for k, v in data.items() if k in allowed})
+
+
+# --- Review fixes (CP2 fresh-eyes review) ---
+
+
+def test_a_quote_is_stored_exactly_as_written() -> None:
+    claim = Claim.model_validate(_claim(quote=" 2H26 ", quote_start=10, quote_end=16))
+    assert claim.quote == " 2H26 "
+
+
+def test_a_quote_span_must_match_the_quote_length() -> None:
+    with pytest.raises(ValidationError, match="span"):
+        Claim.model_validate(_claim(quote="2H26", quote_start=10, quote_end=500))
+
+
+def test_a_claim_must_carry_a_value() -> None:
+    with pytest.raises(ValidationError, match="value"):
+        Claim.model_validate(_claim(value=None))
+
+
+def test_a_change_must_carry_a_new_value() -> None:
+    with pytest.raises(ValidationError, match="new_value"):
+        CatalystChange.model_validate(
+            {
+                "catalyst_id": uuid4(),
+                "field": "status",
+                "new_value": None,
+                "claim_id": uuid4(),
+                "learned_at": NOW,
+            }
+        )
+
+
+def test_a_change_names_a_real_catalyst_field() -> None:
+    with pytest.raises(ValidationError):
+        CatalystChange.model_validate(
+            {
+                "catalyst_id": uuid4(),
+                "field": "anything at all",
+                "new_value": 1,
+                "claim_id": uuid4(),
+                "learned_at": NOW,
+            }
+        )
+
+
+def test_every_changeable_catalyst_field_can_be_named() -> None:
+    assert {f.value for f in CatalystField} == set(Catalyst.model_fields) - {"id"}
+
+
+def test_source_tiers_follow_the_provenance_ranking_and_exclude_news() -> None:
+    # Spec, Provenance: five tiers; "News is a lead, never a source."
+    assert [t.value for t in SourceTier] == [
+        "regulator_or_sec",
+        "company_site",
+        "wire",
+        "registry",
+        "conference_or_journal",
+    ]
+    assert not any("news" in t.value for t in SourceTier)

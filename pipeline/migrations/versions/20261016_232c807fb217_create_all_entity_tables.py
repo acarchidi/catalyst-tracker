@@ -1,8 +1,8 @@
 """Create every entity table, generated from the Pydantic models; make change history append-only.
 
-Revision ID: faa499d8d602
+Revision ID: 232c807fb217
 Revises: 9a538a478fa1
-Create Date: 2026-10-16 16:02:09.380579
+Create Date: 2026-10-16 16:13:46.990040
 """
 
 from collections.abc import Sequence
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "faa499d8d602"
+revision: str = "232c807fb217"
 down_revision: str | None = "9a538a478fa1"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
@@ -65,7 +65,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "line_of_therapy IN ('first_line', 'second_line', 'third_line_plus', 'maintenance', 'adjuvant', 'neoadjuvant')",
-            name=op.f("ck_indication_line_of_therapy_allowed"),
+            name=op.f("ck_indication_line_of_therapy_allowed_1458a536"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_indication")),
         sa.UniqueConstraint(
@@ -114,7 +114,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "phase IN ('early_phase_1', 'phase_1', 'phase_1_2', 'phase_2', 'phase_2_3', 'phase_3', 'phase_4', 'not_applicable')",
-            name=op.f("ck_trial_phase_allowed"),
+            name=op.f("ck_trial_phase_allowed_18e13725"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_trial")),
         sa.UniqueConstraint("nct_id", name=op.f("uq_trial_nct_id")),
@@ -146,7 +146,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "value",
-            postgresql.JSONB(astext_type=sa.Text()),
+            postgresql.JSONB(none_as_null=True, astext_type=sa.Text()),
             nullable=False,
             comment="The extracted value, as JSON.",
         ),
@@ -190,11 +190,15 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "subject_type IN ('company', 'drug', 'target', 'indication', 'trial', 'catalyst', 'outcome')",
-            name=op.f("ck_claim_subject_type_allowed"),
+            name=op.f("ck_claim_subject_type_allowed_faae1b11"),
         ),
-        sa.CheckConstraint("length(btrim(quote)) > 0", name=op.f("ck_claim_quote_not_blank")),
+        sa.CheckConstraint("value <> 'null'::jsonb", name=op.f("ck_claim_has_value_0c41b167")),
+        sa.CheckConstraint("length(btrim(quote)) > 0", name=op.f("ck_claim_quote_not_blank_712e3bef")),
         sa.CheckConstraint(
-            "quote_start >= 0 AND quote_end > quote_start", name=op.f("ck_claim_forward_span")
+            "quote_end - quote_start = length(quote)", name=op.f("ck_claim_span_matches_quote_94ccce89")
+        ),
+        sa.CheckConstraint(
+            "quote_start >= 0 AND quote_end > quote_start", name=op.f("ck_claim_forward_span_ad07bb0a")
         ),
         sa.ForeignKeyConstraint(
             ["source_document_id"],
@@ -203,6 +207,19 @@ def upgrade() -> None:
             ondelete="RESTRICT",
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_claim")),
+        sa.UniqueConstraint(
+            "source_document_id",
+            "field",
+            "quote_start",
+            "quote_end",
+            "agent",
+            "prompt_id",
+            "prompt_version",
+            "model",
+            name=op.f(
+                "uq_claim_source_document_id_field_quote_start_quote_end_agent_prompt_id_prompt_version_model"
+            ),
+        ),
         comment="One fact taken from one source document, with the exact words that state it (spec: Provenance).",
     )
     op.create_table(
@@ -216,7 +233,7 @@ def upgrade() -> None:
         ),
         sa.CheckConstraint(
             "valid_to IS NULL OR valid_from IS NULL OR valid_to >= valid_from",
-            name=op.f("ck_company_name_period"),
+            name=op.f("ck_company_name_period_c5eabe5e"),
         ),
         sa.ForeignKeyConstraint(
             ["company_id"],
@@ -249,7 +266,7 @@ def upgrade() -> None:
             comment="Last day the ticker applied; empty if still current.",
         ),
         sa.CheckConstraint(
-            "valid_to IS NULL OR valid_to >= valid_from", name=op.f("ck_company_ticker_period")
+            "valid_to IS NULL OR valid_to >= valid_from", name=op.f("ck_company_ticker_period_7c21788f")
         ),
         sa.ForeignKeyConstraint(
             ["company_id"],
@@ -262,6 +279,13 @@ def upgrade() -> None:
             "company_id", "ticker", "valid_from", name=op.f("uq_company_ticker_company_id_ticker_valid_from")
         ),
         comment="A ticker a company traded under, with the dates it was valid.",
+    )
+    op.create_index(
+        "ix_company_ticker_current",
+        "company_ticker",
+        ["ticker"],
+        unique=True,
+        postgresql_where=sa.text("valid_to IS NULL"),
     )
     op.create_table(
         "drug",
@@ -280,7 +304,7 @@ def upgrade() -> None:
         sa.Column("chembl_id", sa.String(length=20), nullable=True, comment="ChEMBL compound identifier."),
         sa.CheckConstraint(
             "modality IN ('small_molecule', 'antibody', 'adc', 'bispecific', 'cell_therapy', 'gene_therapy', 'rnai', 'antisense', 'mrna', 'vaccine', 'radiopharmaceutical', 'peptide', 'other')",
-            name=op.f("ck_drug_modality_allowed"),
+            name=op.f("ck_drug_modality_allowed_1ea9102e"),
         ),
         sa.ForeignKeyConstraint(
             ["company_id"], ["company.id"], name=op.f("fk_drug_company_id_company"), ondelete="RESTRICT"
@@ -322,24 +346,24 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=8), nullable=False, comment="Upcoming, slipped, or resolved."),
         sa.CheckConstraint(
             "(window_precision = 'day') = (window_start = window_end)",
-            name=op.f("ck_catalyst_day_is_single_day"),
+            name=op.f("ck_catalyst_day_is_single_day_2eb68001"),
         ),
         sa.CheckConstraint(
             "catalyst_type IN ('pdufa_date', 'advisory_committee', 'topline_readout', 'conference_presentation', 'regulatory_submission', 'regulatory_acceptance', 'chmp_opinion', 'complete_response_letter', 'label_expansion', 'enrollment_completion', 'offering', 'shelf_filing', 'merger_acquisition', 'earnings')",
-            name=op.f("ck_catalyst_catalyst_type_allowed"),
+            name=op.f("ck_catalyst_catalyst_type_allowed_a07a372f"),
         ),
         sa.CheckConstraint(
             "date_confidence IN ('company_confirmed', 'regulator_scheduled', 'registry_estimate', 'inferred')",
-            name=op.f("ck_catalyst_date_confidence_allowed"),
+            name=op.f("ck_catalyst_date_confidence_allowed_21876f46"),
         ),
         sa.CheckConstraint(
-            "status IN ('upcoming', 'slipped', 'resolved')", name=op.f("ck_catalyst_status_allowed")
+            "status IN ('upcoming', 'slipped', 'resolved')", name=op.f("ck_catalyst_status_allowed_b8a8528d")
         ),
         sa.CheckConstraint(
             "window_precision IN ('day', 'month', 'quarter', 'half', 'year')",
-            name=op.f("ck_catalyst_window_precision_allowed"),
+            name=op.f("ck_catalyst_window_precision_allowed_132ed7c7"),
         ),
-        sa.CheckConstraint("window_start <= window_end", name=op.f("ck_catalyst_window_order")),
+        sa.CheckConstraint("window_start <= window_end", name=op.f("ck_catalyst_window_order_2b6f1c15")),
         sa.ForeignKeyConstraint(
             ["company_id"], ["company.id"], name=op.f("fk_catalyst_company_id_company"), ondelete="RESTRICT"
         ),
@@ -368,7 +392,9 @@ def upgrade() -> None:
             nullable=False,
             comment="Code name, generic (INN) name, or brand name.",
         ),
-        sa.CheckConstraint("kind IN ('code', 'inn', 'brand')", name=op.f("ck_drug_name_kind_allowed")),
+        sa.CheckConstraint(
+            "kind IN ('code', 'inn', 'brand')", name=op.f("ck_drug_name_kind_allowed_bb1f3f8a")
+        ),
         sa.ForeignKeyConstraint(
             ["drug_id"], ["drug.id"], name=op.f("fk_drug_name_drug_id_drug"), ondelete="RESTRICT"
         ),
@@ -401,16 +427,16 @@ def upgrade() -> None:
         "catalyst_change",
         sa.Column("id", sa.Uuid(), nullable=False, comment="Internal identifier."),
         sa.Column("catalyst_id", sa.Uuid(), nullable=False, comment="The catalyst that changed."),
-        sa.Column("field", sa.String(length=100), nullable=False, comment="Which field changed."),
+        sa.Column("field", sa.String(length=16), nullable=False, comment="Which catalyst field changed."),
         sa.Column(
             "old_value",
-            postgresql.JSONB(astext_type=sa.Text()),
+            postgresql.JSONB(none_as_null=True, astext_type=sa.Text()),
             nullable=True,
             comment="Value before the change; empty for a first value.",
         ),
         sa.Column(
             "new_value",
-            postgresql.JSONB(astext_type=sa.Text()),
+            postgresql.JSONB(none_as_null=True, astext_type=sa.Text()),
             nullable=False,
             comment="Value after the change.",
         ),
@@ -425,7 +451,14 @@ def upgrade() -> None:
             comment="True when the change fixes our own earlier error.",
         ),
         sa.CheckConstraint(
-            "old_value IS DISTINCT FROM new_value", name=op.f("ck_catalyst_change_changes_something")
+            "field IN ('catalyst_type', 'company_id', 'drug_id', 'indication_id', 'title', 'window_start', 'window_end', 'window_precision', 'window_raw_text', 'date_confidence', 'status')",
+            name=op.f("ck_catalyst_change_field_allowed_9717b233"),
+        ),
+        sa.CheckConstraint(
+            "new_value <> 'null'::jsonb", name=op.f("ck_catalyst_change_has_new_value_84a7b03a")
+        ),
+        sa.CheckConstraint(
+            "old_value IS DISTINCT FROM new_value", name=op.f("ck_catalyst_change_changes_something_69187b1c")
         ),
         sa.ForeignKeyConstraint(
             ["catalyst_id"],
@@ -464,7 +497,7 @@ def upgrade() -> None:
         sa.Column("result", sa.String(length=24), nullable=False, comment="Result category."),
         sa.Column(
             "key_numbers",
-            postgresql.JSONB(astext_type=sa.Text()),
+            postgresql.JSONB(none_as_null=True, astext_type=sa.Text()),
             nullable=False,
             comment="Headline numbers by name, for example response rate, hazard ratio, p-value.",
         ),
@@ -481,15 +514,15 @@ def upgrade() -> None:
         sa.Column("resolved_on", sa.Date(), nullable=False, comment="Day the result became public."),
         sa.CheckConstraint(
             "result <> 'advisory_vote' OR (votes_for IS NOT NULL AND votes_against IS NOT NULL)",
-            name=op.f("ck_outcome_votes_present"),
+            name=op.f("ck_outcome_votes_present_e87243c3"),
         ),
         sa.CheckConstraint(
             "result IN ('approved', 'complete_response_letter', 'advisory_vote', 'endpoint_met', 'endpoint_missed', 'mixed', 'delayed', 'withdrawn')",
-            name=op.f("ck_outcome_result_allowed"),
+            name=op.f("ck_outcome_result_allowed_ae0c87e1"),
         ),
         sa.CheckConstraint(
             "coalesce(votes_for, 0) >= 0 AND coalesce(votes_against, 0) >= 0",
-            name=op.f("ck_outcome_votes_not_negative"),
+            name=op.f("ck_outcome_votes_not_negative_a45b33da"),
         ),
         sa.ForeignKeyConstraint(
             ["catalyst_id"],
@@ -506,6 +539,24 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("id", name=op.f("pk_outcome")),
         sa.UniqueConstraint("catalyst_id", name=op.f("uq_outcome_catalyst_id")),
         comment="What happened once a catalyst's date passed (spec: Outcomes). Price reaction arrives in Phase 3.",
+    )
+    # Rows stored before this migration are all SEC filings, the top tier.
+    op.add_column(
+        "source_document",
+        sa.Column(
+            "source_tier",
+            sa.String(length=21),
+            nullable=False,
+            server_default=sa.text("'regulator_or_sec'"),
+            comment="Rank in the provenance ranking; decides which claim wins when sources disagree.",
+        ),
+    )
+    op.alter_column("source_document", "source_tier", server_default=None)
+    # Autogenerate does not add CHECK constraints to existing tables.
+    op.create_check_constraint(
+        op.f("ck_source_document_source_tier_allowed_26a327c3"),
+        "source_document",
+        "source_tier IN ('regulator_or_sec', 'company_site', 'wire', 'registry', 'conference_or_journal')",
     )
     op.alter_column(
         "source_document",
@@ -677,6 +728,7 @@ def downgrade() -> None:
         existing_comment="Internal identifier.",
         existing_nullable=False,
     )
+    op.drop_column("source_document", "source_tier")
     op.drop_table("outcome")
     op.drop_table("catalyst_trial")
     op.drop_table("catalyst_change")
@@ -684,6 +736,9 @@ def downgrade() -> None:
     op.drop_table("drug_name")
     op.drop_table("catalyst")
     op.drop_table("drug")
+    op.drop_index(
+        "ix_company_ticker_current", table_name="company_ticker", postgresql_where=sa.text("valid_to IS NULL")
+    )
     op.drop_table("company_ticker")
     op.drop_table("company_name")
     op.drop_table("claim")

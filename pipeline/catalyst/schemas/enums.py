@@ -122,3 +122,29 @@ class OutcomeResult(StrEnum):
     MIXED = "mixed"
     DELAYED = "delayed"
     WITHDRAWN = "withdrawn"
+
+
+class SourceTier(StrEnum):
+    """Source ranking, highest first (spec: Provenance, item 1). News is a lead, never a source."""
+
+    REGULATOR_OR_SEC = "regulator_or_sec"
+    COMPANY_SITE = "company_site"
+    WIRE = "wire"
+    REGISTRY = "registry"
+    CONFERENCE_OR_JOURNAL = "conference_or_journal"
+
+
+class CatalystField(StrEnum):
+    """Catalyst fields whose changes are recorded in change history."""
+
+    CATALYST_TYPE = "catalyst_type"
+    COMPANY_ID = "company_id"
+    DRUG_ID = "drug_id"
+    INDICATION_ID = "indication_id"
+    TITLE = "title"
+    WINDOW_START = "window_start"
+    WINDOW_END = "window_end"
+    WINDOW_PRECISION = "window_precision"
+    WINDOW_RAW_TEXT = "window_raw_text"
+    DATE_CONFIDENCE = "date_confidence"
+    STATUS = "status"
