@@ -1,13 +1,12 @@
 # Coverage review list
 
-Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 212 companies are listed on a US exchange under SEC industry codes 2834, 2836, or 8731 but are not in the coverage list. Most have no industry drug or biological trial on ClinicalTrials.gov under their SEC name: they may not develop therapeutics, or they may register trials under another name. A correction in `config/coverage_overrides.toml` adds a company.
+Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 211 companies are listed on a US exchange under SEC industry codes 2834, 2836, or 8731 but are not in the coverage list. Most have no industry drug or biological trial on ClinicalTrials.gov under their SEC name: they may not develop therapeutics, or they may register trials under another name. A correction in `config/coverage_overrides.toml` adds a company.
 
 | Company | Ticker | Industry code | Reason | SEC filings |
 | --- | --- | --- | --- | --- |
 | ABBOTT LABORATORIES | ABT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1800) |
 | NRC HEALTH | NRC | 8731 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=70487) |
 | NATURES SUNSHINE PRODUCTS INC | NATR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=275053) |
-| NOVO NORDISK A S | NVO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=353278) |
 | Anixa Biosciences Inc | ANIX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=715446) |
 | Ernexa Therapeutics Inc. | ERNA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=748592) |
 | CHAMPIONS ONCOLOGY, INC. | CSBR | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=771856) |

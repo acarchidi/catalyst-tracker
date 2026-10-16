@@ -1,5 +1,5 @@
 # Coverage list built 2026-10-16 by `catalyst coverage-build` (ADR 0009). Do not edit:
-# corrections go in config/coverage_overrides.toml. 465 of 677 listed companies included.
+# corrections go in config/coverage_overrides.toml. 466 of 677 listed companies included.
 
 [[company]]
 ticker = "BMY"
@@ -62,7 +62,7 @@ name = "JOHNSON & JOHNSON"
 sic = 2834
 exchange = "NYSE"
 ctgov_sponsors = ["Janssen Pharmaceutica N.V., Belgium", "Janssen Pharmaceutical K.K.", "Janssen Research & Development, LLC", "Janssen-Cilag International NV"]
-ctgov_trials = 0
+ctgov_trials = 1061
 
 [[company]]
 ticker = "MRK"
@@ -71,7 +71,7 @@ name = "Merck & Co., Inc."
 sic = 2834
 exchange = "NYSE"
 ctgov_sponsors = ["Afferent Pharmaceuticals, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "ArQule, Inc., a subsidiary of Merck Sharp & Dohme LLC, a subsidiary of Merck & Co., Inc. (Rahway, NJ USA)", "Cidara Therapeutics Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Cubist Pharmaceuticals LLC, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Harpoon Therapeutics, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Immune Design, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Merck Sharp & Dohme LLC", "NovaCardia, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Oncoethix GmbH, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Oncoimmune, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Peloton Therapeutics, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Prometheus Biosciences, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Trius Therapeutics LLC, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)"]
-ctgov_trials = 61
+ctgov_trials = 893
 
 [[company]]
 ticker = "AMGN"
@@ -99,6 +99,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Lisata Therapeutics, Inc."]
 ctgov_trials = 16
+
+[[company]]
+ticker = "NVO"
+cik = 353278
+name = "NOVO NORDISK A S"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Dicerna Pharmaceuticals, Inc., a Novo Nordisk company", "Novo Nordisk A/S"]
+ctgov_trials = 966
 
 [[company]]
 ticker = "CVM"
@@ -690,7 +699,7 @@ name = "GSK plc"
 sic = 2834
 exchange = "NYSE"
 ctgov_sponsors = ["Bellus Health Inc. - a GSK company", "GlaxoSmithKline", "Human Genome Sciences Inc., a GSK Company", "IDRX, Inc., a wholly owned subsidiary of GSK, LLC", "Sierra Oncology LLC - a GSK company", "Sirtris, a GSK Company", "Stiefel, a GSK Company", "ViiV Healthcare"]
-ctgov_trials = 116
+ctgov_trials = 1267
 
 [[company]]
 ticker = "GALT"
@@ -1178,7 +1187,7 @@ name = "TAKEDA PHARMACEUTICAL CO LTD"
 sic = 2834
 exchange = "NYSE"
 ctgov_sponsors = ["Millennium Pharmaceuticals, Inc.", "Shire", "Takeda"]
-ctgov_trials = 0
+ctgov_trials = 1045
 
 [[company]]
 ticker = "SNDX"
@@ -2510,7 +2519,7 @@ name = "Moderna, Inc."
 sic = 2836
 exchange = "Nasdaq"
 ctgov_sponsors = ["ModernaTX, Inc."]
-ctgov_trials = 0
+ctgov_trials = 97
 
 [[company]]
 ticker = "SPRB"
