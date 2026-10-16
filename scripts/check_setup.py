@@ -46,9 +46,10 @@ TIMEOUT_SECONDS = 15
 
 def _get(url: str, headers: dict[str, str]) -> int:
     """Return the HTTP status of a GET request, or 0 if the host is unreachable."""
-    request = urllib.request.Request(url, headers=headers, method="GET")
+    # Only fixed https endpoints and the owner's SUPABASE_URL reach this function.
+    request = urllib.request.Request(url, headers=headers, method="GET")  # noqa: S310
     try:
-        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:
+        with urllib.request.urlopen(request, timeout=TIMEOUT_SECONDS) as response:  # noqa: S310
             return int(response.status)
     except urllib.error.HTTPError as error:
         return int(error.code)
@@ -97,7 +98,7 @@ def github_secret_names() -> set[str] | None:
         return None
     try:
         completed = subprocess.run(
-            ["gh", "secret", "list", "--json", "name"],
+            ["gh", "secret", "list", "--json", "name"],  # noqa: S607 - gh is found on PATH by design
             capture_output=True,
             text=True,
             timeout=TIMEOUT_SECONDS,
@@ -115,7 +116,7 @@ def github_secret_names() -> set[str] | None:
 
 def main() -> int:
     """Print the setup report and return 1 if a required setting is missing."""
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "Setup check").splitlines()[0])
     parser.add_argument("--online", action="store_true", help="also check that each key works")
     args = parser.parse_args()
 
@@ -131,7 +132,9 @@ def main() -> int:
     secrets = github_secret_names()
     print("\nGitHub Actions secrets (needed for scheduled jobs, Part 5):")
     if secrets is None:
-        print("  [unknown] could not list them from here; Claude Code will try `gh secret set`, or see Part 5")
+        print(
+            "  [unknown] could not list them from here; Claude Code will try `gh secret set`, or see Part 5"
+        )
     else:
         for req in REQUIREMENTS:
             mark = "ok     " if req.name in secrets else "MISSING"

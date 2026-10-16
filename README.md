@@ -22,6 +22,17 @@ Not needed yet; Claude Code says when: Vercel, Resend, Sentry, domain (Phase 2);
 
 None of these block the start: the first roadmap items need no keys.
 
+## Run the walking skeleton locally
+
+Needs Docker, [uv](https://docs.astral.sh/uv/), and `SEC_CONTACT_EMAIL` set in your shell.
+
+```bash
+scripts/demo.sh            # fetches Vertex Pharmaceuticals' latest 8-K press release
+scripts/demo.sh 1682852    # or any company's SEC number (CIK)
+```
+
+It starts a throwaway local database, builds the tables, fetches one SEC filing, stores a copy, and prints the database row with its source link. Developer details: [pipeline/README.md](pipeline/README.md).
+
 ## How to start building
 
 1. Start a Claude Code session on this repository (use the `catalyst-tracker` environment once Part 4 is done).
