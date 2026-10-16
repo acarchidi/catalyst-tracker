@@ -11,7 +11,7 @@ The spec (Engineering standards: Stack) and AGENTS.md (Starting conventions) fix
 ## Decision
 
 - Python 3.12 managed by `uv`, with `uv.lock` committed. One `pyproject.toml` at the repository root; the package `catalyst` lives in `pipeline/catalyst`, built with `uv_build`.
-- Pydantic v2 models in `catalyst.schemas` are the source of truth. SQLAlchemy 2.0 tables in `catalyst.db.models` mirror them field for field, and a test fails if they drift.
+- Pydantic v2 models in `catalyst.schemas` are the source of truth. For the one table in the walking skeleton, the SQLAlchemy 2.0 table in `catalyst.db.models` mirrors its model by hand, and a test fails if names, NOT NULL, or text lengths drift. The spec says tables are generated from the schemas; the "Data schemas" item does that before more tables are added.
 - Alembic migrations in `pipeline/migrations`, configured by `alembic.ini` at the root. CI runs upgrade, downgrade, upgrade, then `alembic check` to prove the migrations match the tables.
 - Supabase Postgres in production. Local work and CI use a disposable Postgres 16 (Docker locally, a service container in CI).
 - Quality tools: ruff (lint and format, including docstring rules `D` and complexity limit C901 at 10), pyright strict, pytest with coverage, pre-commit hooks, gitleaks, pip-audit, Dependabot for `uv` and GitHub Actions.
@@ -21,7 +21,7 @@ The spec (Engineering standards: Stack) and AGENTS.md (Starting conventions) fix
 ## Alternatives
 
 - A `pyproject.toml` inside `pipeline/`: keeps Python files together, but every tool and CI step would need a working-directory switch. Rejected for simplicity.
-- Generating SQLAlchemy tables from Pydantic automatically (for example SQLModel): fewer duplicated lines, but less control over constraints and types. Revisit in the "Data schemas" item if the mirror test becomes a burden.
+- Generating tables from Pydantic now: what the spec asks for, but one table does not justify the generator yet. It is the first task of the "Data schemas" item, which adds about ten entities.
 
 ## Consequences
 

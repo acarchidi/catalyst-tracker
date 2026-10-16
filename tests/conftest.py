@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -31,6 +31,8 @@ def database_url() -> str:
             "CATALYST_TEST_DATABASE_URL is not set. Start a disposable Postgres with "
             "scripts/local_db.sh and export the address it prints."
         )
+    if not make_url(url).database or not str(make_url(url).database).endswith("_test"):
+        pytest.fail("CATALYST_TEST_DATABASE_URL must name a database ending in _test; tests empty it.")
     return url
 
 

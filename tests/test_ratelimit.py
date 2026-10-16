@@ -1,6 +1,8 @@
 """The rate limiter keeps SEC EDGAR requests under its 10-per-second limit (spec: Data sources)."""
 
 import itertools
+import threading
+import time
 
 import pytest
 
@@ -61,7 +63,26 @@ def test_idle_time_is_not_banked_into_a_burst() -> None:
     assert clock.now - before == pytest.approx(1 / 8)
 
 
-@pytest.mark.parametrize("rate", [0, -1, 10.5, 11])
+@pytest.mark.parametrize("rate", [0, -1, 10, 10.5, 11])
 def test_rates_above_the_sec_limit_or_non_positive_are_refused(rate: float) -> None:
     with pytest.raises(ValueError, match="max_per_second"):
         MinIntervalLimiter(max_per_second=rate)
+
+
+def test_threads_sharing_one_limiter_never_start_together() -> None:
+    limiter = MinIntervalLimiter(max_per_second=8)
+    starts: list[float] = []
+
+    def worker() -> None:
+        for _ in range(3):
+            limiter.wait()
+            starts.append(time.monotonic())
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    gaps = [later - earlier for earlier, later in itertools.pairwise(sorted(starts))]
+    assert len(starts) == 12
+    assert min(gaps) >= 1 / 8 - 0.01

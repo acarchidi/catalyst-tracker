@@ -7,7 +7,8 @@ cd "$(dirname "$0")/.."
 
 CIK="${1:-875320}"
 if [[ -z "${CATALYST_DATABASE_URL:-}" ]]; then
-  eval "$(scripts/local_db.sh)"
+  db_env="$(scripts/local_db.sh)"  # a failure here stops the script; inside eval it would not
+  eval "$db_env"
 fi
 uv sync --locked --quiet
 uv run alembic upgrade head

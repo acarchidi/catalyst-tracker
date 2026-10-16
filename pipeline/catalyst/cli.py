@@ -6,12 +6,14 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+import httpx
 from sqlalchemy import create_engine
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from catalyst import settings
 from catalyst.collectors.sec.edgar import EdgarClient
-from catalyst.collectors.sec.press_release import collect_latest_press_release
+from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.logs import configure_logging
 from catalyst.snapshots import LocalSnapshotStore
 
@@ -43,6 +45,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         document, created = collect_latest_press_release(
             client, LocalSnapshotStore(args.snapshot_dir), sessionmaker(engine), args.cik
         )
+    except NoPressReleaseError as error:
+        print(f"Nothing stored: {error}.", file=sys.stderr)
+        return 1
+    except httpx.HTTPError as error:
+        print(f"Nothing stored: the SEC request failed ({error}).", file=sys.stderr)
+        return 1
+    except OperationalError:
+        print("Nothing stored: cannot reach the database. Is it running? See README.", file=sys.stderr)
+        return 1
     finally:
         engine.dispose()
     print(json.dumps({"created": created, **document.model_dump(mode="json")}, indent=2))

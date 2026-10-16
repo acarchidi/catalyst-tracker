@@ -1,0 +1,5 @@
+# Changes here need the owner's review, and an Opus-class review by the developer agent
+# before it asks for one (spec: Development practices, "Protected main branch").
+/pipeline/migrations/     @acarchidi
+/pipeline/catalyst/db/    @acarchidi
+/.github/                 @acarchidi

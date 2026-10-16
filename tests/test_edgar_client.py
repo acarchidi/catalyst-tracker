@@ -18,7 +18,7 @@ class _NoWait(MinIntervalLimiter):
 
 def _client(handler: httpx.MockTransport) -> tuple[EdgarClient, _NoWait]:
     limiter = _NoWait()
-    return EdgarClient("data@example.org", httpx.Client(transport=handler), limiter), limiter
+    return EdgarClient("data@example.org", handler, limiter), limiter
 
 
 def test_every_request_declares_a_user_agent_with_the_contact_email() -> None:
@@ -61,9 +61,22 @@ def test_error_statuses_raise(status: int) -> None:
 
 
 def test_redirects_are_not_followed_off_sec() -> None:
+    seen: list[str] = []
+
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(302, headers={"location": "https://example.org/elsewhere"})
+        seen.append(str(request.url))
+        if request.url.host == "www.sec.gov":
+            return httpx.Response(302, headers={"location": "https://example.org/elsewhere"})
+        return httpx.Response(200, content=b"not from the SEC")
 
     client, _ = _client(httpx.MockTransport(handler))
     with pytest.raises(httpx.HTTPStatusError):
         client.get("https://www.sec.gov/Archives/edgar/data/1/2/x.htm")
+    assert seen == ["https://www.sec.gov/Archives/edgar/data/1/2/x.htm"]
+
+
+def test_clients_share_one_rate_limiter_by_default() -> None:
+    transport = httpx.MockTransport(lambda _: httpx.Response(200))
+    first = EdgarClient("data@example.org", transport)
+    second = EdgarClient("data@example.org", transport)
+    assert first._limiter is second._limiter  # pyright: ignore[reportPrivateUsage]

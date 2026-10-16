@@ -18,7 +18,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from catalyst import settings
-from catalyst.collectors.sec.edgar import TIMEOUT_SECONDS, EdgarClient
+from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import collect_latest_press_release
 from catalyst.snapshots import LocalSnapshotStore
 
@@ -53,9 +53,7 @@ def main() -> None:
     args = parser.parse_args()
 
     transport = RecordingTransport()
-    client = EdgarClient(
-        settings.sec_contact_email(), httpx.Client(transport=transport, timeout=TIMEOUT_SECONDS)
-    )
+    client = EdgarClient(settings.sec_contact_email(), transport)
     engine = create_engine(settings.database_url())
     with tempfile.TemporaryDirectory() as snapshots:
         collect_latest_press_release(

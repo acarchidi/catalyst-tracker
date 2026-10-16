@@ -25,6 +25,10 @@ TIMEOUT_SECONDS = 30
 
 _log = logging.getLogger(__name__)
 
+# One limiter for every EdgarClient in this process, so two clients cannot double the rate.
+# Separate processes (two jobs at once) are kept apart by a shared GitHub Actions concurrency group.
+SEC_LIMITER = MinIntervalLimiter(REQUESTS_PER_SECOND)
+
 
 class FilingRef(BaseModel):
     """One filing from a company's EDGAR filing list."""
@@ -178,12 +182,16 @@ class EdgarClient:
     def __init__(
         self,
         contact_email: str,
-        http: httpx.Client | None = None,
-        limiter: MinIntervalLimiter | None = None,
+        transport: httpx.BaseTransport | None = None,
+        limiter: MinIntervalLimiter = SEC_LIMITER,
     ) -> None:
-        """Create a client that identifies itself with `contact_email`, as the SEC requires."""
-        self._http = http or httpx.Client(timeout=TIMEOUT_SECONDS, follow_redirects=False)
-        self._limiter = limiter or MinIntervalLimiter(REQUESTS_PER_SECOND)
+        """Create a client that identifies itself with `contact_email`, as the SEC requires.
+
+        Redirects are never followed, so a response can only come from the SEC host requested.
+        `transport` is replaceable for tests and fixture recording.
+        """
+        self._http = httpx.Client(transport=transport, timeout=TIMEOUT_SECONDS, follow_redirects=False)
+        self._limiter = limiter
         self._headers = {
             "User-Agent": f"catalyst-tracker {contact_email}",
             "Accept-Encoding": "gzip, deflate",

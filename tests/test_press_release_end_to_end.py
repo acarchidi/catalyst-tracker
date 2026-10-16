@@ -45,7 +45,7 @@ class _Recorded:
 
 
 def _client(server: _Recorded) -> EdgarClient:
-    return EdgarClient("data@example.org", httpx.Client(transport=httpx.MockTransport(server)), _NoWait())
+    return EdgarClient("data@example.org", httpx.MockTransport(server), _NoWait())
 
 
 def _rows(session_factory: sessionmaker[Session]) -> int:
@@ -101,11 +101,7 @@ def test_no_press_release_in_recent_filings_raises(
             return httpx.Response(200, content=officer_index[0], headers={"content-type": officer_index[1]})
         return server(request)
 
-    client = EdgarClient(
-        "data@example.org",
-        httpx.Client(transport=httpx.MockTransport(every_index_lacks_an_exhibit)),
-        _NoWait(),
-    )
+    client = EdgarClient("data@example.org", httpx.MockTransport(every_index_lacks_an_exhibit), _NoWait())
     with pytest.raises(NoPressReleaseError, match="875320"):
         collect_latest_press_release(client, LocalSnapshotStore(tmp_path), session_factory, 875320)
     assert len(server.requests) == 1 + 10
