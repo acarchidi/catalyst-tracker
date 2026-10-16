@@ -1,0 +1,405 @@
+{
+  "meta": {
+    "disclaimer": "Do not rely on openFDA to make decisions regarding medical care. While we make every effort to ensure that data is accurate, you should assume all results are unvalidated. We may limit or otherwise restrict your access to the API in line with our Terms of Service.",
+    "terms": "https://open.fda.gov/terms/",
+    "license": "https://open.fda.gov/license/",
+    "last_updated": "2026-10-14",
+    "results": {
+      "skip": 0,
+      "limit": 100,
+      "total": 2
+    }
+  },
+  "results": [
+    {
+      "submissions": [
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "4",
+          "submission_status": "AP",
+          "submission_status_date": "20200313",
+          "review_priority": "STANDARD",
+          "submission_class_code": "LABELING",
+          "submission_class_code_description": "Labeling",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "62146",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2020/207356s004lbl.pdf",
+              "date": "20200316",
+              "type": "Label"
+            },
+            {
+              "id": "62147",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2020/207356s004lbl.pdf#page=15",
+              "date": "20200316",
+              "type": "Medication Guide"
+            },
+            {
+              "id": "62157",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/appletter/2020/207356Orig1s004ltr.pdf",
+              "date": "20200317",
+              "type": "Letter"
+            }
+          ]
+        },
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "12",
+          "submission_status": "AP",
+          "submission_status_date": "20230210",
+          "review_priority": "STANDARD",
+          "submission_class_code": "LABELING",
+          "submission_class_code_description": "Labeling",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "73467",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/appletter/2023/207356Orig1s012ltr.pdf",
+              "date": "20230213",
+              "type": "Letter"
+            },
+            {
+              "id": "73475",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2023/207356s012lbl.pdf",
+              "date": "20230213",
+              "type": "Label"
+            }
+          ]
+        },
+        {
+          "submission_type": "ORIG",
+          "submission_number": "1",
+          "submission_status": "AP",
+          "submission_status_date": "20180928",
+          "review_priority": "PRIORITY",
+          "submission_class_code": "TYPE 3",
+          "submission_class_code_description": "Type 3 - New Dosage Form",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "55673",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2018/207356s000lbl.pdf",
+              "date": "20180928",
+              "type": "Label"
+            },
+            {
+              "id": "55859",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/appletter/2018/207356Orig1s000ltr.pdf",
+              "date": "20181010",
+              "type": "Letter"
+            },
+            {
+              "id": "58788",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/nda/2018/207356Orig1s000TOC.html",
+              "date": "20190520",
+              "type": "Review"
+            }
+          ]
+        },
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "19",
+          "submission_status": "AP",
+          "submission_status_date": "20251205",
+          "review_priority": "STANDARD",
+          "submission_class_code": "LABELING",
+          "submission_class_code_description": "Labeling",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "84367",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/appletter/2025/207356Orig1s019ltr.pdf",
+              "date": "20251209",
+              "type": "Letter"
+            },
+            {
+              "id": "84405",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2025/207356s019lbl.pdf",
+              "date": "20251215",
+              "type": "Label"
+            }
+          ]
+        },
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "25",
+          "submission_status": "AP",
+          "submission_status_date": "20260625",
+          "review_priority": "STANDARD",
+          "submission_class_code": "LABELING",
+          "submission_class_code_description": "Labeling",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "86370",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/appletter/2026/207356Orig1s025ltr.pdf",
+              "date": "20260629",
+              "type": "Letter"
+            },
+            {
+              "id": "86379",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/label/2026/207356s025lbl.pdf",
+              "date": "20260629",
+              "type": "Label"
+            }
+          ]
+        },
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "3",
+          "submission_status": "AP",
+          "submission_status_date": "20201019",
+          "review_priority": "STANDARD",
+          "submission_class_code": "EFFICACY",
+          "submission_class_code_description": "Efficacy",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "64964",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/appletter/2020/207356Orig1s003ltr.pdf",
+              "date": "20201021",
+              "type": "Letter"
+            },
+            {
+              "id": "74619",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2020/207356Orig1s003Lbl.pdf",
+              "date": "20230623",
+              "type": "Label"
+            }
+          ]
+        },
+        {
+          "submission_type": "SUPPL",
+          "submission_number": "13",
+          "submission_status": "AP",
+          "submission_status_date": "20230601",
+          "review_priority": "STANDARD",
+          "submission_class_code": "LABELING",
+          "submission_class_code_description": "Labeling",
+          "submission_property_type": [
+            {
+              "code": "Orphan"
+            }
+          ],
+          "application_docs": [
+            {
+              "id": "74425",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/appletter/2023/207356Orig1s013ltr.pdf",
+              "date": "20230602",
+              "type": "Letter"
+            }
+          ]
+        }
+      ],
+      "application_number": "NDA207356",
+      "sponsor_name": "INSMED INC",
+      "openfda": {
+        "application_number": [
+          "NDA207356"
+        ],
+        "brand_name": [
+          "ARIKAYCE"
+        ],
+        "generic_name": [
+          "AMIKACIN"
+        ],
+        "manufacturer_name": [
+          "Insmed Incorporated"
+        ],
+        "product_ndc": [
+          "71558-590"
+        ],
+        "product_type": [
+          "HUMAN PRESCRIPTION DRUG"
+        ],
+        "route": [
+          "RESPIRATORY (INHALATION)"
+        ],
+        "substance_name": [
+          "AMIKACIN"
+        ],
+        "rxcui": [
+          "2059184",
+          "2059189"
+        ],
+        "spl_id": [
+          "8b162ccf-7672-4cd4-9448-7d104971418f"
+        ],
+        "spl_set_id": [
+          "499ab990-2b21-474f-aaba-d86388965f40"
+        ],
+        "package_ndc": [
+          "71558-590-28"
+        ],
+        "nui": [
+          "N0000175477",
+          "M0000946"
+        ],
+        "pharm_class_epc": [
+          "Aminoglycoside Antibacterial [EPC]"
+        ],
+        "pharm_class_cs": [
+          "Aminoglycosides [CS]"
+        ],
+        "unii": [
+          "84319SGC3C"
+        ]
+      },
+      "products": [
+        {
+          "product_number": "001",
+          "reference_drug": "Yes",
+          "brand_name": "ARIKAYCE KIT",
+          "active_ingredients": [
+            {
+              "name": "AMIKACIN SULFATE",
+              "strength": "EQ 590MG BASE/8.4ML"
+            }
+          ],
+          "reference_standard": "Yes",
+          "dosage_form": "SUSPENSION, LIPOSOMAL",
+          "route": "INHALATION",
+          "marketing_status": "Prescription"
+        }
+      ]
+    },
+    {
+      "submissions": [
+        {
+          "submission_type": "ORIG",
+          "submission_number": "1",
+          "submission_status": "AP",
+          "submission_status_date": "20250812",
+          "review_priority": "PRIORITY",
+          "submission_class_code": "TYPE 1",
+          "submission_class_code_description": "Type 1 - New Molecular Entity",
+          "application_docs": [
+            {
+              "id": "83096",
+              "url": "http://www.accessdata.fda.gov/drugsatfda_docs/label/2025/217673s000lbl.pdf",
+              "date": "20250812",
+              "type": "Label"
+            },
+            {
+              "id": "83099",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/appletter/2025/217673Orig1s000ltr.pdf",
+              "date": "20250813",
+              "type": "Letter"
+            },
+            {
+              "id": "83307",
+              "url": "https://www.accessdata.fda.gov/drugsatfda_docs/nda/2025/217673Orig1s000TOC.html",
+              "date": "20250909",
+              "type": "Review"
+            }
+          ]
+        }
+      ],
+      "application_number": "NDA217673",
+      "sponsor_name": "INSMED INC",
+      "openfda": {
+        "application_number": [
+          "NDA217673"
+        ],
+        "brand_name": [
+          "BRINSUPRI"
+        ],
+        "generic_name": [
+          "BRENSOCATIB"
+        ],
+        "manufacturer_name": [
+          "Insmed Incorporated"
+        ],
+        "product_ndc": [
+          "71558-001",
+          "71558-002"
+        ],
+        "product_type": [
+          "HUMAN PRESCRIPTION DRUG"
+        ],
+        "route": [
+          "ORAL"
+        ],
+        "substance_name": [
+          "BRENSOCATIB"
+        ],
+        "rxcui": [
+          "2721885",
+          "2721891",
+          "2721893",
+          "2721895"
+        ],
+        "spl_id": [
+          "43046e5b-e40b-423d-a98d-a2fecc2cbd2e"
+        ],
+        "spl_set_id": [
+          "b56986ae-e7db-421e-b622-a7f41e321f3d"
+        ],
+        "package_ndc": [
+          "71558-002-30",
+          "71558-001-30"
+        ],
+        "unii": [
+          "25CG88L0BB"
+        ]
+      },
+      "products": [
+        {
+          "product_number": "002",
+          "reference_drug": "Yes",
+          "brand_name": "BRINSUPRI",
+          "active_ingredients": [
+            {
+              "name": "BRENSOCATIB",
+              "strength": "25MG"
+            }
+          ],
+          "reference_standard": "Yes",
+          "dosage_form": "TABLET",
+          "route": "ORAL",
+          "marketing_status": "Prescription"
+        },
+        {
+          "product_number": "001",
+          "reference_drug": "Yes",
+          "brand_name": "BRINSUPRI",
+          "active_ingredients": [
+            {
+              "name": "BRENSOCATIB",
+              "strength": "10MG"
+            }
+          ],
+          "reference_standard": "No",
+          "dosage_form": "TABLET",
+          "route": "ORAL",
+          "marketing_status": "Prescription"
+        }
+      ]
+    }
+  ]
+}

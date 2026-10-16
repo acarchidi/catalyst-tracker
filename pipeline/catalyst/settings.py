@@ -25,3 +25,13 @@ def sec_contact_email() -> str:
             "SEC_CONTACT_EMAIL is missing or is not an email address. See docs/setup.md Part 4."
         )
     return value
+
+
+def catalyst_anthropic_api_key() -> str:
+    """Return the product's own Anthropic key. Never falls back to ANTHROPIC_API_KEY (AGENTS.md)."""
+    value = os.environ.get("CATALYST_ANTHROPIC_API_KEY", "").strip()
+    if not value:
+        raise MissingSettingError(
+            "CATALYST_ANTHROPIC_API_KEY is missing. See docs/setup.md Part 2, then Part 4."
+        )
+    return value

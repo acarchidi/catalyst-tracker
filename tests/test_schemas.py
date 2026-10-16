@@ -4,15 +4,15 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pytest
-from annotated_types import MaxLen
 from pydantic import ValidationError
 
-from catalyst.db.models import SourceDocumentRow
 from catalyst.schemas import SourceDocument
 
 VALID: dict[str, Any] = {
+    "source_key": "sec:0000875320-24-000001:ex99-1.htm",
     "url": "https://www.sec.gov/Archives/edgar/data/875320/000087532024000001/ex99-1.htm",
     "publisher": "SEC EDGAR",
+    "source_tier": "regulator_or_sec",
     "document_type": "8-K EX-99.1",
     "published_at": datetime(2024, 10, 30, 20, 5, tzinfo=UTC),
     "retrieved_at": datetime(2024, 10, 31, 12, 0, tzinfo=UTC),
@@ -59,22 +59,14 @@ def test_every_field_has_a_description() -> None:
         assert field.description, f"{name} has no description"
 
 
-def test_database_table_matches_the_pydantic_model() -> None:
-    columns = SourceDocumentRow.__table__.columns
-    assert set(columns.keys()) == set(SourceDocument.model_fields)
-    for name, field in SourceDocument.model_fields.items():
-        column = columns[name]
-        assert not column.nullable, f"{name}: model requires a value, so the column must be NOT NULL"
-        model_max = next((m.max_length for m in field.metadata if isinstance(m, MaxLen)), None)
-        column_length: int | None = getattr(column.type, "length", None)
-        if column_length is not None:
-            assert model_max == column_length, (
-                f"{name}: model allows {model_max} chars, column {column_length}"
-            )
-
-
 def test_longest_valid_values_fit_the_columns() -> None:
     longest = {"publisher": "x" * 200, "document_type": "x" * 100, "content_type": "x" * 200}
     SourceDocument.model_validate({**VALID, **longest})
     with pytest.raises(ValidationError):
         SourceDocument.model_validate({**VALID, "document_type": "x" * 101})
+
+
+@pytest.mark.parametrize("key", ["", "noprefix", "SEC:upper:x", "sec:"])
+def test_source_keys_name_their_source_first(key: str) -> None:
+    with pytest.raises(ValidationError):
+        SourceDocument.model_validate({**VALID, "source_key": key})

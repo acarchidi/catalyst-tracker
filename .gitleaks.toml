@@ -1,0 +1,16 @@
+# Secret-scan settings. Extends gitleaks' default rules.
+[extend]
+useDefault = true
+
+# ClinicalTrials.gov pagination cursors (in recorded fixtures) trip the generic-api-key rule. They
+# are public and issued to every visitor. Only that rule is relaxed, and only when the matched text
+# is the cursor itself, so any other secret on the same line is still reported.
+[[rules]]
+id = "generic-api-key"
+[[rules.allowlists]]
+description = "ClinicalTrials.gov page cursors"
+regexTarget = "match"
+regexes = [
+  '''pageToken=[A-Za-z0-9_-]+''',
+  '''nextPageToken":"[A-Za-z0-9_-]+"''',
+]

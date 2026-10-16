@@ -1,13 +1,12 @@
-"""Pydantic models: the single source of truth for every stored entity (spec: Engineering standards).
-
-The walking skeleton defines only `SourceDocument`. The "Data schemas" roadmap item adds the rest.
-"""
+"""Source documents: the primary documents every claim points back to (spec: Provenance)."""
 
 from typing import Annotated
 from urllib.parse import urlsplit
-from uuid import UUID, uuid4
 
-from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, AwareDatetime, Field
+
+from catalyst.schemas.base import Entity
+from catalyst.schemas.enums import SourceTier
 
 
 def _deep_https_link(url: str) -> str:
@@ -27,15 +26,25 @@ def _deep_https_link(url: str) -> str:
 DeepLink = Annotated[str, AfterValidator(_deep_https_link)]
 
 
-class SourceDocument(BaseModel):
+class SourceDocument(Entity):
     """One primary document we retrieved, with a hash of the private copy we stored."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    __tablename__ = "source_document"
+    # The source's own identity for the document (an SEC accession and file name, an NCT number
+    # and its update date, ...). Re-fetching the same key adds nothing (ADR 0005).
+    __unique__ = (("source_key",),)
 
-    id: UUID = Field(default_factory=uuid4, description="Internal identifier.")
+    source_key: str = Field(
+        pattern=r"^[a-z]+:.+$",
+        max_length=300,
+        description="The source's own identity for this document version, such as 'sec:<accession>:<file>'.",
+    )
     url: DeepLink = Field(description="Deep link to the exact document, for example an 8-K's Exhibit 99.1.")
     publisher: str = Field(
         min_length=1, max_length=200, description="Who published the document, for example 'SEC EDGAR'."
+    )
+    source_tier: SourceTier = Field(
+        description="Rank in the provenance ranking; decides which claim wins when sources disagree."
     )
     document_type: str = Field(
         min_length=1,

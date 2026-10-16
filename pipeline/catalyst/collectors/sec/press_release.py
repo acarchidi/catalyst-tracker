@@ -9,13 +9,13 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.collectors.sec.edgar import SUBMISSIONS_URL, EdgarClient, find_press_release, recent_filings
-from catalyst.db.repository import save_source_document
+from catalyst.collectors.sec.filings import PUBLISHER, source_key
 from catalyst.logs import log_event
-from catalyst.schemas import SourceDocument
+from catalyst.schemas import SourceDocument, SourceTier
 from catalyst.snapshots import LocalSnapshotStore
 
-PUBLISHER = "SEC EDGAR"
 MAX_FILINGS_TO_CHECK = 10
 
 _log = logging.getLogger(__name__)
@@ -46,19 +46,17 @@ def collect_latest_press_release(
         if exhibit is None:
             continue
         response = client.get(exhibit.url)
-        snapshot = store.put(response.content)
-        document = SourceDocument(
+        fetched = FetchedDocument(
+            source_key=source_key(filing, exhibit),
             url=exhibit.url,
             publisher=PUBLISHER,
+            source_tier=SourceTier.REGULATOR_OR_SEC,
             document_type=f"{filing.form} {exhibit.type}",
             published_at=filing.accepted_at,
-            retrieved_at=now(),
-            sha256=snapshot.sha256,
-            snapshot_key=snapshot.key,
+            content=response.content,
             content_type=response.headers.get("content-type", "application/octet-stream").split(";")[0],
         )
-        with session_factory.begin() as session:
-            saved, created = save_source_document(session, document)
+        saved, created = store_fetched(fetched, store, session_factory, now=now)
         log_event(_log, "source_document_saved", id=str(saved.id), url=saved.url, created=created)
         return saved, created
     raise NoPressReleaseError(f"no 8-K with a press-release exhibit among CIK {cik}'s latest filings")
