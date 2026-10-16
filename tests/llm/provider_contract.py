@@ -56,6 +56,10 @@ class ProviderContract(ABC):
         """Return a provider response whose answer is `text`."""
 
     @abstractmethod
+    def thinking_then_text_body(self, text: str, model: str) -> dict[str, Any]:
+        """Return a provider response with reasoning output before the answer."""
+
+    @abstractmethod
     def refusal_body(self) -> dict[str, Any]:
         """Return a provider response that declines the request."""
 
@@ -79,6 +83,11 @@ class ProviderContract(ABC):
         assert completion.usage.input > 0
         assert completion.usage.output > 0
         assert completion.request_id
+
+    def test_reasoning_output_before_the_answer_is_not_part_of_the_answer(self) -> None:
+        body = self.thinking_then_text_body(json.dumps(ANSWER), self.model)
+        completion = self._complete(self.adapter([(200, body)]))
+        assert json.loads(completion.text) == ANSWER
 
     def test_the_requested_model_and_document_are_sent(self) -> None:
         self._complete(self.adapter([(200, self.success_body(json.dumps(ANSWER), self.model))]))

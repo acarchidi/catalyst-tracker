@@ -6,6 +6,7 @@ No server-side fallback is requested: a refusal is reported, never re-run on ano
 """
 
 import copy
+import os
 from typing import Any
 
 import anthropic
@@ -16,37 +17,17 @@ from catalyst.llm.pricing import TokenUsage
 from catalyst.llm.prompts import Prompt
 from catalyst.settings import catalyst_anthropic_api_key
 
-# JSON Schema keywords the structured-output feature does not accept. They are removed from the
-# copy sent to the API; `ModelClient` still validates the answer against the full schema.
-UNSUPPORTED_SCHEMA_KEYWORDS = frozenset(
-    {
-        "minLength",
-        "maxLength",
-        "pattern",
-        "minimum",
-        "maximum",
-        "exclusiveMinimum",
-        "exclusiveMaximum",
-        "multipleOf",
-        "minItems",
-        "maxItems",
-        "uniqueItems",
-    }
-)
+ANTHROPIC_API_URL = "https://api.anthropic.com"
 TIMEOUT_SECONDS = 600.0
 
 
 def api_schema(schema: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of `schema` without the keywords the API rejects."""
+    """Return a copy of `schema` in the form the JSON-schema output format accepts.
 
-    def strip(node: Any) -> Any:
-        if isinstance(node, dict):
-            return {k: strip(v) for k, v in node.items() if k not in UNSUPPORTED_SCHEMA_KEYWORDS}  # pyright: ignore[reportUnknownVariableType]
-        if isinstance(node, list):
-            return [strip(item) for item in node]  # pyright: ignore[reportUnknownVariableType]
-        return node
-
-    return strip(copy.deepcopy(schema))
+    The SDK's converter moves unsupported limits (lengths, patterns, numeric bounds) into
+    descriptions. `ModelClient` still validates every answer against the full schema.
+    """
+    return anthropic.transform_schema(copy.deepcopy(schema))
 
 
 def _usage(usage: anthropic.types.Usage) -> TokenUsage:
@@ -69,10 +50,20 @@ class AnthropicAdapter:
         transport: httpx2.BaseTransport | None = None,
         max_retries: int = 2,
     ) -> None:
-        """Create the adapter. `transport` is replaceable for tests."""
+        """Create the adapter. `transport` is replaceable for tests.
+
+        The API address is fixed, so the product key cannot follow an ANTHROPIC_BASE_URL set for
+        some other tool; ANTHROPIC_CUSTOM_HEADERS would add headers to every request, so it is refused.
+        """
+        if os.environ.get("ANTHROPIC_CUSTOM_HEADERS"):
+            raise RuntimeError("ANTHROPIC_CUSTOM_HEADERS is set; unset it before running product model calls")
         http_client = anthropic.DefaultHttpxClient(transport=transport) if transport else None
         self._client = anthropic.Anthropic(
-            api_key=api_key, max_retries=max_retries, timeout=TIMEOUT_SECONDS, http_client=http_client
+            api_key=api_key,
+            base_url=ANTHROPIC_API_URL,
+            max_retries=max_retries,
+            timeout=TIMEOUT_SECONDS,
+            http_client=http_client,
         )
 
     def complete(
@@ -99,8 +90,12 @@ class AnthropicAdapter:
         usage = _usage(message.usage)
         if message.stop_reason == "refusal":
             raise ModelRefusalError(f"{model} declined the request", usage=usage)
-        if message.stop_reason == "max_tokens":
-            raise ModelTruncatedError(f"{model} hit max_tokens={max_tokens}", usage=usage)
+        if message.stop_reason in ("max_tokens", "model_context_window_exceeded"):
+            raise ModelTruncatedError(f"{model} stopped early: {message.stop_reason}", usage=usage)
+        if message.stop_reason != "end_turn":
+            raise ModelCallError(
+                f"{model} stopped for an unexpected reason: {message.stop_reason}", usage=usage
+            )
         text = "".join(block.text for block in message.content if block.type == "text")
         return Completion(
             text=text,

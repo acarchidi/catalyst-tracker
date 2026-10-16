@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any, Protocol
+from uuid import UUID
 
 from jsonschema import Draft202012Validator
 
@@ -98,6 +99,7 @@ class ModelResult:
     cost_usd: Decimal
     latency_ms: int
     request_id: str | None
+    call_id: UUID
 
 
 def _utc_now() -> datetime:
@@ -123,9 +125,18 @@ class ModelClient:
     def run(self, role: str, prompt: Prompt, document: str) -> ModelResult:
         """Run `prompt` on `document` as `role` and return the validated answer."""
         settings = self._config.roles[role]
-        self._check_cap(role, prompt, document)
+        started_at = self._now()
+        worst_case = self._check_cap(role, prompt, document, started_at)
         adapter = self._adapters[settings.provider]
         started = time.monotonic()
+
+        def record(
+            model: str, usage: TokenUsage, request_id: str | None, status: ModelCallStatus
+        ) -> ModelCall:
+            return self._record(
+                role, settings.provider, model, prompt, usage, started, started_at, request_id, status
+            )
+
         try:
             completion = adapter.complete(
                 model=settings.model,
@@ -135,22 +146,22 @@ class ModelClient:
                 effort=settings.effort,
             )
         except ModelError as error:
-            self._record(
-                role, settings.provider, settings.model, prompt, error.usage, started, None, _status(error)
-            )
+            record(settings.model, error.usage, None, _status(error))
+            raise
+        except BaseException:
+            # The request may have been billed; record the worst case so the cap still counts it.
+            self._record(role, settings.provider, settings.model, prompt, TokenUsage(), started, started_at,
+                         None, ModelCallStatus.ERROR, cost=worst_case)  # fmt: skip
             raise
         if completion.model != settings.model:
-            self._record(role, settings.provider, completion.model, prompt, completion.usage, started,
-                         completion.request_id, ModelCallStatus.MODEL_SWITCHED)  # fmt: skip
+            record(completion.model, completion.usage, completion.request_id, ModelCallStatus.MODEL_SWITCHED)
             raise ModelSwitchedError(f"{role}: asked for {settings.model}, got {completion.model}")
         try:
             data = _validated(completion.text, prompt)
         except ModelOutputInvalidError:
-            self._record(role, settings.provider, completion.model, prompt, completion.usage, started,
-                         completion.request_id, ModelCallStatus.INVALID_OUTPUT)  # fmt: skip
+            record(completion.model, completion.usage, completion.request_id, ModelCallStatus.INVALID_OUTPUT)
             raise
-        call = self._record(role, settings.provider, completion.model, prompt, completion.usage, started,
-                            completion.request_id, ModelCallStatus.OK)  # fmt: skip
+        call = record(completion.model, completion.usage, completion.request_id, ModelCallStatus.OK)
         return ModelResult(
             data=data,
             provider=settings.provider,
@@ -161,16 +172,18 @@ class ModelClient:
             cost_usd=call.cost_usd,
             latency_ms=call.latency_ms,
             request_id=completion.request_id,
+            call_id=call.id,
         )
 
-    def _check_cap(self, role: str, prompt: Prompt, document: str) -> None:
+    def _check_cap(self, role: str, prompt: Prompt, document: str, at: datetime) -> Decimal:
+        """Stop if the next call could take the role past its cap; return that call's worst-case cost."""
         settings = self._config.roles[role]
         characters = len(prompt.system) + len(document) + len(json.dumps(prompt.output_schema))
         worst_case = cost_usd(
             self._config.pricing[settings.model],
             TokenUsage(input=math.ceil(characters / CHARS_PER_TOKEN_ESTIMATE), output=settings.max_tokens),
         )
-        spent = self._ledger.spent(role, new_york_day(self._now()))
+        spent = self._ledger.spent(role, new_york_day(at))
         if spent + worst_case > settings.daily_cap_usd:
             cap = settings.daily_cap_usd
             log_alert(_log, "spend_cap_reached", role=role, spent_usd=str(spent), cap_usd=str(cap))
@@ -178,6 +191,14 @@ class ModelClient:
                 f"{role} has spent ${spent} of its ${cap} daily cap; the next call could cost "
                 f"${worst_case}. Stopping until tomorrow (New York time)."
             )
+        return worst_case
+
+    def _cost(self, model: str, usage: TokenUsage) -> Decimal:
+        """Cost at the model's price; a model with no configured price is costed at the highest one."""
+        price = self._config.pricing.get(model)
+        if price:
+            return cost_usd(price, usage)
+        return max((cost_usd(p, usage) for p in self._config.pricing.values()), default=Decimal(0))
 
     def _record(
         self,
@@ -187,10 +208,13 @@ class ModelClient:
         prompt: Prompt,
         usage: TokenUsage,
         started: float,
+        started_at: datetime,
         request_id: str | None,
         status: ModelCallStatus,
+        cost: Decimal | None = None,
     ) -> ModelCall:
-        price = self._config.pricing.get(model)
+        if cost is None:
+            cost = self._cost(model, usage)
         call = ModelCall(
             role=role,
             provider=provider,
@@ -201,11 +225,11 @@ class ModelClient:
             output_tokens=usage.output,
             cache_read_tokens=usage.cache_read,
             cache_write_tokens=usage.cache_write,
-            cost_usd=cost_usd(price, usage) if price else Decimal(0),
+            cost_usd=cost,
             latency_ms=int((time.monotonic() - started) * 1000),
             request_id=request_id,
             status=status,
-            called_at=self._now(),
+            called_at=started_at,
             config_version=self._config.version,
         )
         self._ledger.record(call)

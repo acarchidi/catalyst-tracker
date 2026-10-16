@@ -143,6 +143,31 @@ def test_a_refusal_is_recorded_and_raised_never_retried_on_another_model() -> No
     assert ledger.calls[0].cost_usd == Decimal("0.00025")
 
 
+def test_an_unexpected_failure_is_still_recorded_at_worst_case_cost() -> None:
+    client, ledger = _client(FakeAdapter(replies=[RuntimeError("bug in adapter")]))
+    with pytest.raises(RuntimeError):
+        client.run("extractor", PROMPT, "doc")
+    assert [call.status for call in ledger.calls] == ["error"]
+    assert ledger.calls[0].cost_usd >= Decimal("0.01")  # at least max_tokens of output
+
+
+def test_the_result_links_to_its_cost_record_dated_at_the_start() -> None:
+    times = iter([NOW, NOW, NOW.replace(hour=23)])
+    adapter = FakeAdapter(replies=[_completion()])
+    ledger = InMemoryLedger()
+    client = ModelClient(CONFIG, {"fake": adapter}, ledger, now=lambda: next(times))
+    result = client.run("extractor", PROMPT, "doc")
+    assert result.call_id == ledger.calls[0].id
+    assert ledger.calls[0].called_at == NOW
+
+
+def test_a_reply_from_an_unpriced_model_is_costed_at_the_highest_configured_price() -> None:
+    client, ledger = _client(FakeAdapter(replies=[_completion(model="claude-mystery")]))
+    with pytest.raises(ModelSwitchedError):
+        client.run("extractor", PROMPT, "doc")
+    assert ledger.calls[0].cost_usd == Decimal("0.05")  # Opus prices, the highest in CONFIG
+
+
 def test_a_reply_from_a_different_model_is_rejected() -> None:
     client, ledger = _client(FakeAdapter(replies=[_completion(model="claude-opus-5-5")]))
     with pytest.raises(ModelSwitchedError):

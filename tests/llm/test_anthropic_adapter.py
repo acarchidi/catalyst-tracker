@@ -11,7 +11,7 @@ import httpx2
 import pytest
 
 from catalyst.llm.anthropic_adapter import AnthropicAdapter, api_schema
-from catalyst.llm.client import ProviderAdapter
+from catalyst.llm.client import ModelError, ProviderAdapter
 from llm.provider_contract import PROMPT, ProviderContract
 
 USAGE = {
@@ -63,6 +63,10 @@ class TestAnthropicContract(ProviderContract):
     def success_body(self, text: str, model: str) -> dict[str, Any]:
         return _message([{"type": "text", "text": text}], "end_turn", model)
 
+    def thinking_then_text_body(self, text: str, model: str) -> dict[str, Any]:
+        thinking = {"type": "thinking", "thinking": "", "signature": "sig"}
+        return _message([thinking, {"type": "text", "text": text}], "end_turn", model)
+
     def refusal_body(self) -> dict[str, Any]:
         body = _message([], "refusal")
         body["stop_details"] = {"type": "refusal", "category": None, "explanation": "declined"}
@@ -85,20 +89,73 @@ class TestAnthropicContract(ProviderContract):
             model=self.model, prompt=PROMPT, document="d", max_tokens=10, effort="low"
         )
         sent = self._sent[0]
-        assert sent["output_config"]["format"] == {
-            "type": "json_schema",
-            "schema": api_schema(PROMPT.output_schema),
-        }
+        schema = sent["output_config"]["format"]["schema"]
+        assert sent["output_config"]["format"]["type"] == "json_schema"
+        assert schema["required"] == ["mentions_pdufa", "quote"]
+        assert schema["additionalProperties"] is False
+        assert schema["properties"]["mentions_pdufa"] == {"type": "boolean"}
+        assert schema["properties"]["quote"]["type"] == "string"
+        assert "minLength" not in schema["properties"]["quote"]
         assert sent["output_config"]["effort"] == "low"
         assert sent["system"][0]["text"] == PROMPT.system
         assert sent["system"][0]["cache_control"] == {"type": "ephemeral"}
 
 
-def test_api_schema_drops_constraints_the_api_does_not_accept() -> None:
+def test_api_schema_moves_unsupported_limits_out_of_the_schema() -> None:
     schema = api_schema(PROMPT.output_schema)
-    assert schema["properties"]["quote"] == {"type": "string"}
+    quote = schema["properties"]["quote"]
+    assert quote["type"] == "string"
+    assert "minLength" not in quote
+    assert "maxLength" not in quote
     assert schema["additionalProperties"] is False
     assert PROMPT.output_schema["properties"]["quote"]["minLength"] == 1  # original untouched
+
+
+def test_api_schema_keeps_properties_named_like_keywords() -> None:
+    schema = api_schema(
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["minimum", "pattern"],
+            "properties": {"minimum": {"type": "integer"}, "pattern": {"type": "string"}},
+        }
+    )
+    assert set(schema["properties"]) == {"minimum", "pattern"}
+
+
+def test_the_key_goes_only_to_anthropic_whatever_the_environment_says(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example")
+    monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "someone-elses-token")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "someone-elses-key")
+    seen: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        return httpx2.Response(200, json=_message([{"type": "text", "text": "{}"}], "end_turn"))
+
+    adapter = AnthropicAdapter(api_key="product-key", transport=httpx2.MockTransport(handler))
+    adapter.complete(model="claude-sonnet-5-5", prompt=PROMPT, document="d", max_tokens=10, effort=None)
+    assert seen[0].url.host == "api.anthropic.com"
+    assert seen[0].headers["x-api-key"] == "product-key"
+    assert "authorization" not in seen[0].headers
+
+
+def test_custom_headers_from_the_environment_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "X-Forward-To: gateway.example")
+    with pytest.raises(RuntimeError, match="ANTHROPIC_CUSTOM_HEADERS"):
+        AnthropicAdapter(api_key="product-key")
+
+
+@pytest.mark.parametrize("stop_reason", ["model_context_window_exceeded", "pause_turn", "stop_sequence"])
+def test_any_unexpected_stop_reason_is_an_error_not_an_answer(stop_reason: str) -> None:
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        return httpx2.Response(200, json=_message([{"type": "text", "text": '{"a": 1}'}], stop_reason))
+
+    adapter = AnthropicAdapter(api_key="k", transport=httpx2.MockTransport(handler))
+    with pytest.raises(ModelError, match=stop_reason):
+        adapter.complete(model="claude-sonnet-5-5", prompt=PROMPT, document="d", max_tokens=10, effort=None)
 
 
 def test_a_missing_api_key_is_a_setup_error(monkeypatch: pytest.MonkeyPatch) -> None:
