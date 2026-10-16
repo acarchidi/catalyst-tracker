@@ -9,7 +9,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 ## Phase 0 — Foundations (weeks 1–3)
 
 - [x] Competitor research and spec
-- [ ] Repository skeleton: `AGENTS.md` conventions applied, CI pipeline, pre-commit hooks, decision-record template, PR template
+- [ ] Repository skeleton: `AGENTS.md` conventions applied, CI pipeline, pre-commit hooks, decision-record template; then turn on branch protection for main requiring CI (via `gh api`; if refused, give the owner the click steps)
 - [ ] Data schemas for every entity (Pydantic) with generated data dictionary and reversible migrations
 - [ ] Model interface (`ModelClient`), first provider adapter (Anthropic), contract tests, per-role spend caps
 - [ ] Collectors: SEC EDGAR, ClinicalTrials.gov, wire RSS, openFDA, Federal Register (recorded fixtures, idempotent)
