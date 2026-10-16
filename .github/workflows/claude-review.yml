@@ -27,6 +27,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+    env:
+      REVIEW_KEY_PRESENT: ${{ secrets.CATALYST_REVIEW_API_KEY != '' }}
     steps:
       - name: Dependency updates wait for the owner
         if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
@@ -41,6 +43,7 @@ jobs:
 
       - name: Review
         id: review
+        if: ${{ env.REVIEW_KEY_PRESENT == 'true' }}
         uses: anthropics/claude-code-action@374f254f5efaf968abfe15d399fd90972e8138b9 # v1.0.251
         with:
           anthropic_api_key: ${{ secrets.CATALYST_REVIEW_API_KEY }}
@@ -92,7 +95,7 @@ jobs:
           status=$?
           cat "$RUNNER_TEMP/review.md" >> "$GITHUB_STEP_SUMMARY"
           delimiter="REPORT_$(openssl rand -hex 16)"
-          { echo "report<<$delimiter"; cat "$RUNNER_TEMP/review.md"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+          { echo "report<<$delimiter"; cat "$RUNNER_TEMP/review.md"; echo; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
           exit "$status"
     outputs:
       report: ${{ steps.verdict.outputs.report }}

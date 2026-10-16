@@ -37,14 +37,22 @@ def _line(finding: dict[str, Any]) -> str:
     return f"- `{where}`: {finding.get('problem', '(no description)')}"
 
 
-def judge(raw: str) -> tuple[bool, str]:
-    """Return whether the review passed, and the report to post."""
+def judge(raw: str, *, key_present: bool = True) -> tuple[bool, str]:
+    """Return whether the review passed, and the report to post (always newline-terminated)."""
+    if not key_present:
+        return False, (
+            f"{HEADER}: not set up\n\nThe reviewer key `CATALYST_REVIEW_API_KEY` is not in the repository's "
+            "secrets yet, so no review ran. See docs/setup.md Part 6, step C.\n"
+        )
     try:
         result: Any = json.loads(raw)
     except json.JSONDecodeError:
         result = None
     if not isinstance(result, dict):
-        return False, f"{HEADER}: did not finish\n\nThe reviewer returned no usable result. Re-run the check."
+        return (
+            False,
+            f"{HEADER}: did not finish\n\nThe reviewer returned no usable result. Re-run the check.\n",
+        )
     data: dict[str, Any] = result  # pyright: ignore[reportUnknownVariableType]
     blocking = _findings(data, "blocking")
     optional = _findings(data, "optional")
@@ -56,7 +64,7 @@ def judge(raw: str) -> tuple[bool, str]:
         or verdict not in ("pass", "fail")
         or not isinstance(summary, str)
     ):
-        return False, f"{HEADER}: did not finish\n\nThe reviewer's result was incomplete. Re-run the check."
+        return False, f"{HEADER}: did not finish\n\nThe reviewer's result was incomplete. Re-run the check.\n"
     passed = verdict == "pass" and not blocking
     title = "passed" if passed else "changes needed"
     parts = [f"{HEADER}: {title}", "", summary.strip()]
@@ -74,7 +82,8 @@ def main() -> int:
     if len(sys.argv) != 2:
         print("usage: review_verdict.py REPORT_PATH", file=sys.stderr)
         return 2
-    passed, report = judge(os.environ.get("REVIEW_RESULT", ""))
+    key_present = os.environ.get("REVIEW_KEY_PRESENT", "true") == "true"
+    passed, report = judge(os.environ.get("REVIEW_RESULT", ""), key_present=key_present)
     Path(sys.argv[1]).write_text(report, encoding="utf-8")
     print(report)
     return 0 if passed else 1

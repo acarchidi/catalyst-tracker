@@ -13,11 +13,13 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "review_verdict.py"
 
 
-def run(result: str | None, tmp_path: Path) -> tuple[int, str]:
+def run(result: str | None, tmp_path: Path, *, key_present: str | None = None) -> tuple[int, str]:
     report = tmp_path / "report.md"
-    env = {k: v for k, v in os.environ.items() if k != "REVIEW_RESULT"}
+    env = {k: v for k, v in os.environ.items() if k not in ("REVIEW_RESULT", "REVIEW_KEY_PRESENT")}
     if result is not None:
         env["REVIEW_RESULT"] = result
+    if key_present is not None:
+        env["REVIEW_KEY_PRESENT"] = key_present
     done = subprocess.run(  # noqa: S603 - fixed interpreter and script path
         [sys.executable, str(SCRIPT), str(report)], env=env, capture_output=True, check=False
     )
@@ -77,3 +79,20 @@ def test_missing_or_malformed_result_fails(raw: str | None, tmp_path: Path) -> N
     code, report = run(raw, tmp_path)
     assert code == 1
     assert "did not finish" in report
+
+
+def test_missing_key_fails_with_setup_pointer(tmp_path: Path) -> None:
+    code, report = run(result("pass", [], []), tmp_path, key_present="false")
+    assert code == 1
+    assert report.startswith("## Claude review: not set up")
+    assert "Part 6, step C" in report
+
+
+@pytest.mark.parametrize(
+    "raw", [None, "not json", result("pass", [], []), result("fail", [finding("x")], [])]
+)
+def test_report_always_ends_with_a_newline(raw: str | None, tmp_path: Path) -> None:
+    # The workflow appends a delimiter line after the report; without a final newline
+    # GitHub cannot find the delimiter and the step errors.
+    _, report = run(raw, tmp_path)
+    assert report.endswith("\n")
