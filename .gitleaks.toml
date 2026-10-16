@@ -1,0 +1,11 @@
+# Secret-scan settings. Extends gitleaks' default rules.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "ClinicalTrials.gov pagination cursors in recorded fixtures: public, issued to every visitor, not secrets."
+regexTarget = "line"
+regexes = [
+  '''pageToken=[A-Za-z0-9_-]+''',
+  '''"nextPageToken":"[A-Za-z0-9_-]+"''',
+]

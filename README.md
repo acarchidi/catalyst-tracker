@@ -31,7 +31,14 @@ scripts/demo.sh            # fetches Vertex Pharmaceuticals' latest 8-K press re
 scripts/demo.sh 1682852    # or any company's SEC number (CIK)
 ```
 
-It starts a throwaway local database, builds the tables, fetches one SEC filing, stores a copy, and prints the database row with its source link. Developer details: [pipeline/README.md](pipeline/README.md).
+It starts a throwaway local database, builds the tables, fetches one SEC filing, stores a copy, and prints the database row with its source link.
+
+To run every collector for the ten pilot companies and see their latest documents:
+
+```bash
+uv run catalyst collect --since 2026-07-01
+uv run catalyst report
+``` Developer details: [pipeline/README.md](pipeline/README.md).
 
 ## How to start building
 

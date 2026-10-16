@@ -159,3 +159,11 @@ class ModelCallStatus(StrEnum):
     INVALID_OUTPUT = "invalid_output"
     MODEL_SWITCHED = "model_switched"
     ERROR = "error"
+
+
+class DocumentMatch(StrEnum):
+    """How a source document was linked to a company."""
+
+    SEC_CIK = "sec_cik"
+    CTGOV_LEAD_SPONSOR = "ctgov_lead_sponsor"
+    OPENFDA_SPONSOR = "openfda_sponsor"

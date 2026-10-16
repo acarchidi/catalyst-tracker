@@ -1,0 +1,72 @@
+# Ten pilot companies for checkpoint CP3. SEC numbers from https://www.sec.gov/files/company_tickers.json;
+# sponsor names as registered on ClinicalTrials.gov and in Drugs@FDA, checked 2026-10-16.
+# The coverage-list item replaces this file with companies chosen by SEC industry code.
+
+[[company]]
+ticker = "VRTX"
+cik = 875320
+ctgov_sponsors = ["Vertex Pharmaceuticals Incorporated"]
+openfda_manufacturer = "Vertex"
+openfda_sponsors = ["VERTEX PHARMS INC", "VERTEX PHARMS"]
+
+[[company]]
+ticker = "MRNA"
+cik = 1682852
+ctgov_sponsors = ["ModernaTX, Inc."]
+# Moderna's vaccines are biologics outside Drugs@FDA's drug records.
+
+[[company]]
+ticker = "REGN"
+cik = 872589
+ctgov_sponsors = ["Regeneron Pharmaceuticals"]
+openfda_manufacturer = "Regeneron"
+openfda_sponsors = ["REGENERON PHARMACEUTICALS", "REGENERON PHARMACEUTICALS, INC"]
+
+[[company]]
+ticker = "ALNY"
+cik = 1178670
+ctgov_sponsors = ["Alnylam Pharmaceuticals"]
+openfda_manufacturer = "Alnylam"
+openfda_sponsors = ["ALNYLAM PHARMS INC"]
+
+[[company]]
+ticker = "BMRN"
+cik = 1048477
+ctgov_sponsors = ["BioMarin Pharmaceutical"]
+openfda_manufacturer = "BioMarin"
+openfda_sponsors = ["BIOMARIN PHARM", "BIOMARIN"]
+
+[[company]]
+ticker = "INCY"
+cik = 879169
+ctgov_sponsors = ["Incyte Corporation"]
+openfda_manufacturer = "Incyte"
+openfda_sponsors = ["INCYTE CORP"]
+
+[[company]]
+ticker = "SRPT"
+cik = 873303
+ctgov_sponsors = ["Sarepta Therapeutics, Inc."]
+openfda_manufacturer = "Sarepta"
+openfda_sponsors = ["SAREPTA THERAPS INC"]
+
+[[company]]
+ticker = "IONS"
+cik = 874015
+ctgov_sponsors = ["Ionis Pharmaceuticals, Inc."]
+openfda_manufacturer = "Ionis"
+openfda_sponsors = ["IONIS PHARMS INC"]
+
+[[company]]
+ticker = "NBIX"
+cik = 914475
+ctgov_sponsors = ["Neurocrine Biosciences"]
+openfda_manufacturer = "Neurocrine"
+openfda_sponsors = ["NEUROCRINE"]
+
+[[company]]
+ticker = "INSM"
+cik = 1104506
+ctgov_sponsors = ["Insmed Incorporated"]
+openfda_manufacturer = "Insmed"
+openfda_sponsors = ["INSMED INC"]

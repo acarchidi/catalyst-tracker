@@ -1,0 +1,7 @@
+{
+  "https://api.fda.gov/drug/drugsfda.json?search=openfda.manufacturer_name%3A%22Insmed%22&limit=100&skip=0": {
+    "file": "00_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}

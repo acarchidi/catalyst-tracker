@@ -10,6 +10,7 @@ One primary document we retrieved, with a hash of the private copy we stored.
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
+| `source_key` | text, up to 300 characters | yes | The source's own identity for this document version, such as 'sec:<accession>:<file>'. |
 | `url` | text | yes | Deep link to the exact document, for example an 8-K's Exhibit 99.1. |
 | `publisher` | text, up to 200 characters | yes | Who published the document, for example 'SEC EDGAR'. |
 | `source_tier` | one of: `regulator_or_sec`, `company_site`, `wire`, `registry`, `conference_or_journal` | yes | Rank in the provenance ranking; decides which claim wins when sources disagree. |
@@ -22,7 +23,7 @@ One primary document we retrieved, with a hash of the private copy we stored.
 
 Rules:
 
-- Unique: `url`, `sha256`
+- Unique: `source_key`
 
 ## `company`
 
@@ -38,6 +39,21 @@ A US-listed company we cover, identified by its SEC number.
 Rules:
 
 - Unique: `cik`
+
+## `company_document`
+
+Links a source document to a company it concerns, and says how the link was made.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `company_id` | link to `company` | yes | The company. |
+| `source_document_id` | link to `source_document` | yes | The document. |
+| `matched_by` | one of: `sec_cik`, `ctgov_lead_sponsor`, `openfda_sponsor` | yes | How the link was made, for example by SEC number. |
+
+Rules:
+
+- Unique: `company_id`, `source_document_id`
 
 ## `company_ticker`
 

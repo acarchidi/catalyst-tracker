@@ -4,20 +4,24 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from datetime import date
 from pathlib import Path
 
 import httpx
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
+from catalyst.collectors.report import latest_documents_report
+from catalyst.collectors.run import build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.logs import configure_logging
 from catalyst.snapshots import LocalSnapshotStore
 
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
+DEFAULT_COMPANIES = Path("config/pilot_companies.toml")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -28,22 +32,62 @@ def _parser() -> argparse.ArgumentParser:
     )
     press.add_argument("--cik", type=int, required=True, help="SEC company number, for example 875320.")
     press.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR, help="Where copies go.")
+    collect = commands.add_parser("collect", help="Run every collector for a company list.")
+    collect.add_argument("--companies", type=Path, default=DEFAULT_COMPANIES, help="Company list (TOML).")
+    collect.add_argument(
+        "--since", type=date.fromisoformat, required=True, help="Earliest SEC filing date, YYYY-MM-DD."
+    )
+    collect.add_argument("--snapshot-dir", type=Path, default=DEFAULT_SNAPSHOT_DIR, help="Where copies go.")
+    commands.add_parser(
+        "report", help="Print each company's latest document per source, with links (Markdown)."
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run one command and print its result as JSON on standard output."""
+    """Run one command; results go to standard output, logs to standard error."""
     args = _parser().parse_args(argv)
     configure_logging()
+    if args.command == "report":
+        engine = create_engine(settings.database_url())
+        try:
+            print(latest_documents_report(engine))
+        finally:
+            engine.dispose()
+        return 0
     try:
-        client = EdgarClient(settings.sec_contact_email())
+        email = settings.sec_contact_email()
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     engine = create_engine(settings.database_url())
     try:
+        if args.command == "collect":
+            return _collect(args, email, sessionmaker(engine))
+        return _press_release(args, email, sessionmaker(engine))
+    finally:
+        engine.dispose()
+
+
+def _collect(args: argparse.Namespace, email: str, session_factory: sessionmaker[Session]) -> int:
+    stats = collect_all(
+        load_companies(args.companies),
+        build_clients(email),
+        LocalSnapshotStore(args.snapshot_dir),
+        session_factory,
+        args.since,
+    )
+    summary = [
+        {"source": s.source, "created": s.created, "existing": s.existing, "error": s.error} for s in stats
+    ]
+    print(json.dumps(summary, indent=2))
+    return 1 if any(s.error for s in stats) else 0
+
+
+def _press_release(args: argparse.Namespace, email: str, session_factory: sessionmaker[Session]) -> int:
+    try:
         document, created = collect_latest_press_release(
-            client, LocalSnapshotStore(args.snapshot_dir), sessionmaker(engine), args.cik
+            EdgarClient(email), LocalSnapshotStore(args.snapshot_dir), session_factory, args.cik
         )
     except NoPressReleaseError as error:
         print(f"Nothing stored: {error}.", file=sys.stderr)
@@ -54,8 +98,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     except OperationalError:
         print("Nothing stored: cannot reach the database. Is it running? See README.", file=sys.stderr)
         return 1
-    finally:
-        engine.dispose()
     print(json.dumps({"created": created, **document.model_dump(mode="json")}, indent=2))
     return 0
 

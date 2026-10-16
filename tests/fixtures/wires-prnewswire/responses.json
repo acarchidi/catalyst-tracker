@@ -1,0 +1,12 @@
+{
+  "https://www.prnewswire.com/robots.txt": {
+    "file": "00_www.prnewswire.com_robots.txt",
+    "status": 200,
+    "content_type": "text/plain; charset=UTF-8"
+  },
+  "https://www.prnewswire.com/rss/health-latest-news/biotechnology-list.rss": {
+    "file": "01_www.prnewswire.com_rss_health-latest-news_biotechnology-list.rss",
+    "status": 200,
+    "content_type": "application/xml"
+  }
+}

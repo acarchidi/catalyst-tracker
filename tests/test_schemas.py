@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from catalyst.schemas import SourceDocument
 
 VALID: dict[str, Any] = {
+    "source_key": "sec:0000875320-24-000001:ex99-1.htm",
     "url": "https://www.sec.gov/Archives/edgar/data/875320/000087532024000001/ex99-1.htm",
     "publisher": "SEC EDGAR",
     "source_tier": "regulator_or_sec",
@@ -63,3 +64,9 @@ def test_longest_valid_values_fit_the_columns() -> None:
     SourceDocument.model_validate({**VALID, **longest})
     with pytest.raises(ValidationError):
         SourceDocument.model_validate({**VALID, "document_type": "x" * 101})
+
+
+@pytest.mark.parametrize("key", ["", "noprefix", "SEC:upper:x", "sec:"])
+def test_source_keys_name_their_source_first(key: str) -> None:
+    with pytest.raises(ValidationError):
+        SourceDocument.model_validate({**VALID, "source_key": key})
