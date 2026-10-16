@@ -39,7 +39,10 @@ To run every collector for the ten pilot companies and see their latest document
 ```bash
 uv run catalyst collect --since 2026-07-01
 uv run catalyst report
-``` Developer details: [pipeline/README.md](pipeline/README.md).
+uv run catalyst snapshots-verify   # proves every stored copy still matches its fingerprint
+```
+
+Copies go to `var/snapshots/` unless a command gets `--snapshot-store supabase` (ADR 0008). Developer details: [pipeline/README.md](pipeline/README.md).
 
 ## How to start building
 

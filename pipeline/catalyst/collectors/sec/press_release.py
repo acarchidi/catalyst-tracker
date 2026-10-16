@@ -14,7 +14,7 @@ from catalyst.collectors.sec.edgar import SUBMISSIONS_URL, EdgarClient, find_pre
 from catalyst.collectors.sec.filings import PUBLISHER, source_key
 from catalyst.logs import log_event
 from catalyst.schemas import SourceDocument, SourceTier
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import SnapshotStore
 
 MAX_FILINGS_TO_CHECK = 10
 
@@ -31,7 +31,7 @@ def _utc_now() -> datetime:
 
 def collect_latest_press_release(
     client: EdgarClient,
-    store: LocalSnapshotStore,
+    store: SnapshotStore,
     session_factory: sessionmaker[Session],
     cik: int,
     now: Callable[[], datetime] = _utc_now,

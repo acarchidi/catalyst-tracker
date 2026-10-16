@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.repository import link_company_document, save_source_document
 from catalyst.schemas import DocumentMatch, SourceDocument, SourceTier
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import SnapshotStore
 
 NEW_YORK = ZoneInfo("America/New_York")
 
@@ -59,7 +59,7 @@ def _utc_now() -> datetime:
 
 def store_fetched(
     fetched: FetchedDocument,
-    store: LocalSnapshotStore,
+    store: SnapshotStore,
     session_factory: sessionmaker[Session],
     company: tuple[UUID, DocumentMatch] | None = None,
     now: Callable[[], datetime] = _utc_now,

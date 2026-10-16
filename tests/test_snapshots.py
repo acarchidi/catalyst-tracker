@@ -3,7 +3,9 @@
 import hashlib
 from pathlib import Path
 
-from catalyst.snapshots import LocalSnapshotStore
+import pytest
+
+from catalyst.snapshots import LocalSnapshotStore, SnapshotIntegrityError, SnapshotNotFoundError, snapshot_key
 
 
 def test_put_returns_sha256_and_stores_exact_bytes(tmp_path: Path) -> None:
@@ -26,3 +28,28 @@ def test_put_is_idempotent(tmp_path: Path) -> None:
 def test_different_bytes_get_different_keys(tmp_path: Path) -> None:
     store = LocalSnapshotStore(tmp_path)
     assert store.put(b"a").key != store.put(b"b").key
+
+
+def test_key_names_the_hash(tmp_path: Path) -> None:
+    snapshot = LocalSnapshotStore(tmp_path).put(b"x")
+    assert snapshot.key == f"sha256/{snapshot.sha256[:2]}/{snapshot.sha256}"
+
+
+def test_get_refuses_a_copy_that_changed(tmp_path: Path) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    snapshot = store.put(b"what the page said")
+    (tmp_path / snapshot.key).write_bytes(b"what someone edited")
+    with pytest.raises(SnapshotIntegrityError):
+        store.get(snapshot.key)
+
+
+def test_get_of_a_missing_copy_says_so(tmp_path: Path) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    with pytest.raises(SnapshotNotFoundError):
+        store.get(snapshot_key(hashlib.sha256(b"never stored").hexdigest()))
+
+
+@pytest.mark.parametrize("key", ["../etc/passwd", "sha256/ab/xyz", "sha256/00/" + "a" * 64, "a" * 64])
+def test_malformed_keys_are_refused(tmp_path: Path, key: str) -> None:
+    with pytest.raises(ValueError, match="snapshot key"):
+        LocalSnapshotStore(tmp_path).get(key)
