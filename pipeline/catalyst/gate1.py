@@ -10,6 +10,7 @@ import json
 import random
 from dataclasses import dataclass
 from datetime import datetime
+from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
@@ -61,11 +62,17 @@ class SampledRecord:
 
 
 def sample_records(session_factory: sessionmaker[Session], count: int, seed: int) -> list[SampledRecord]:
-    """Return a repeatable random sample of stored documents, with the company each is linked to."""
+    """Return a repeatable random sample of stored documents, spread evenly across sources.
+
+    Documents are grouped by source (the part of the source key before the first colon), each
+    group is shuffled with `seed`, and records are taken from the groups in turn, so a source
+    with few documents (SEC, FDA) is sampled as well as one with many (ClinicalTrials.gov).
+    """
     documents, links, companies = TABLES[SourceDocument], TABLES[CompanyDocument], TABLES[Company]
     query = (
         select(
             documents.c.id,
+            documents.c.source_key,
             companies.c.name,
             documents.c.publisher,
             documents.c.document_type,
@@ -79,8 +86,17 @@ def sample_records(session_factory: sessionmaker[Session], count: int, seed: int
     )
     with session_factory() as session:
         rows = {row.id: row for row in session.execute(query)}  # one row per document
-    ids = sorted(rows)
-    chosen = sorted(random.Random(seed).sample(ids, min(count, len(ids))))  # noqa: S311 - not security
+    groups: dict[str, list[UUID]] = {}
+    for row_id in sorted(rows):
+        groups.setdefault(rows[row_id].source_key.split(":", 1)[0], []).append(row_id)
+    rng = random.Random(seed)  # noqa: S311 - a repeatable sample, not security
+    for source in sorted(groups):
+        rng.shuffle(groups[source])
+    chosen: list[UUID] = []
+    while len(chosen) < count and any(groups.values()):
+        for source in sorted(groups):
+            if groups[source] and len(chosen) < count:
+                chosen.append(groups[source].pop())
     return [
         SampledRecord(
             company=rows[i].name or "(not linked to a company)",

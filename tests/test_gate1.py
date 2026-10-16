@@ -87,3 +87,33 @@ def test_the_sample_is_random_but_repeatable_and_shows_each_record_with_its_link
 def test_a_small_database_gives_every_record(session_factory: sessionmaker[Session]) -> None:
     _add(session_factory, 1, linked=False)
     assert len(sample_records(session_factory, count=10, seed=2026)) == 1
+
+
+def _add_sec(session_factory: sessionmaker[Session], n: int) -> None:
+    sha = f"{n + 1000:064x}"
+    doc = SourceDocument(
+        source_key=f"sec:0000875320-26-{n:06d}:ex99.htm",
+        url=f"https://www.sec.gov/Archives/edgar/data/875320/{n:018d}/ex99.htm",
+        publisher="SEC EDGAR",
+        source_tier=SourceTier.REGULATOR_OR_SEC,
+        document_type="8-K EX-99.1",
+        published_at=datetime(2026, 8, 3, 20, 9, tzinfo=UTC),
+        retrieved_at=datetime(2026, 10, 16, 12, 0, tzinfo=UTC),
+        sha256=sha,
+        snapshot_key=f"sha256/{sha[:2]}/{sha}",
+        content_type="text/html",
+    )
+    with session_factory.begin() as session:
+        save_source_document(session, doc)
+
+
+def test_the_sample_draws_across_sources_so_a_rare_source_is_not_missed(
+    session_factory: sessionmaker[Session],
+) -> None:
+    for n in range(1, 41):
+        _add(session_factory, n, linked=False)
+    _add_sec(session_factory, 1)
+    _add_sec(session_factory, 2)
+    records = sample_records(session_factory, count=4, seed=2026)
+    assert sum(r.publisher == "SEC EDGAR" for r in records) == 2
+    assert sum(r.publisher == "ClinicalTrials.gov" for r in records) == 2
