@@ -1,13 +1,12 @@
 name: Claude review
 
 # A fresh Claude reviews every pull request that is ready for review. Its pass or fail is
-# the required "Claude review" check. Pull requests from this repository's claude/
-# branches into main then merge themselves once every required check passes, unless
-# they touch files listed in .github/CODEOWNERS, which wait for the owner (ADR 0006).
+# the "Claude review" check, which the merge robot (merge-robot.yml) requires (ADR 0006,
+# ADR 0007).
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions: {}
 
@@ -18,9 +17,8 @@ concurrency:
 jobs:
   review:
     name: Claude review
-    # Drafts cannot merge, so they are not reviewed; marking one ready starts a review.
-    # A skipped job counts as a passing check, which is safe only because drafts cannot
-    # merge and the disable-auto-merge job below turns auto-merge off on the way to draft.
+    # Drafts are not reviewed; marking one ready starts a review. The merge robot accepts
+    # only a "success" result, so a skipped review never counts toward a merge.
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -72,6 +70,8 @@ jobs:
             - a correctness bug, security hole, data-loss path, or non-idempotent job
             - a migration without a working downgrade, or data edited by hand
             - a model call outside ModelClient, or a spend cap bypassed
+            - a lowered coverage threshold, type strictness, lint rule, or test selection (for
+              example in pyproject.toml), or a check in .github/workflows made weaker
             - a pull request description that misstates what the change does or how it was tested
 
             Everything else (style, naming, small refactors, ideas) is optional. Do not invent
@@ -116,51 +116,11 @@ jobs:
           REPORT: ${{ needs.review.outputs.report }}
         run: |
           printf '%s\n' "$REPORT" > "$RUNNER_TEMP/review.md"
-          gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review.md" --edit-last --create-if-none \
-            || gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review.md"
-
-  auto-merge:
-    name: Turn on auto-merge
-    needs: review
-    if: >-
-      ${{ needs.review.result == 'success'
-      && startsWith(github.head_ref, 'claude/')
-      && github.base_ref == 'main'
-      && github.event.pull_request.head.repo.full_name == github.repository }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Merge once every required check passes, only if main is protected
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: |
-          rules=$(gh api "repos/$REPO/rules/branches/main")
-          missing=$(jq -r '
-            ["Lint, types, tests, migrations", "Dependency audit", "Secret scan", "Claude review"]
-            - [.[] | select(.type == "required_status_checks") | .parameters.required_status_checks[].context]
-            | join(", ")' <<<"$rules")
-          owners=$(jq '[.[] | select(.type == "pull_request") | .parameters.require_code_owner_review] | any' <<<"$rules")
-          if [ -n "$missing" ] || [ "$owners" != "true" ]; then
-            echo "::warning::main is not protected as ADR 0006 requires (checks not required: ${missing:-none}; code-owner review required: $owners). Auto-merge was not turned on."
-            exit 0
+          id=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("## Claude review"))) | .id' \
+            | tail -n 1)
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$id" -F body=@"$RUNNER_TEMP/review.md" > /dev/null
+          else
+            gh pr comment "$PR" --repo "$REPO" --body-file "$RUNNER_TEMP/review.md"
           fi
-          gh pr merge "$PR" --repo "$REPO" --auto --merge
-
-  disable-auto-merge:
-    name: Turn off auto-merge for drafts
-    if: ${{ github.event.action == 'converted_to_draft' }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      pull-requests: write
-    steps:
-      - name: Turn off auto-merge
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR: ${{ github.event.pull_request.number }}
-          REPO: ${{ github.repository }}
-        run: gh pr merge "$PR" --repo "$REPO" --disable-auto || echo "Auto-merge was not on."

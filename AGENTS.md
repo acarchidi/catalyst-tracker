@@ -17,15 +17,17 @@ The owner is not a programmer. They approve work by reading plain-English summar
 ## How work proceeds
 
 - Take roadmap items in order, one at a time: one branch, one pull request each.
-- Stop at every checkpoint in `docs/quality-gates.md` and wait for the owner's "approved".
-- Before an **Opus** checkpoint, ask the owner to run `/model opus`.
+- Do not stop at checkpoints (owner decision, 2026-10-16; ADR 0007). At every checkpoint in `docs/quality-gates.md`, run its review, fix what it finds, post the plain-English preview to the owner, and continue with the next item. An objection from the owner, whenever it comes, becomes the next item.
+- For an **Opus** checkpoint, run the fresh-eyes review with a reviewer subagent on the Opus model.
+- Stop and ask the owner only before something that cannot be undone or reaches outside the project: making data, pages, or the API public; sending anything to people outside the project; spending money beyond the daily caps in `config/models.toml`; creating accounts or keys. When every remaining item needs something only the owner can give (a key, an account, a judgment), stop and say exactly what is needed.
 - If an approach fails twice, stop and explain the problem instead of trying a third variation.
 - Every design choice the spec leaves open becomes an ADR in `docs/adr/NNNN-title.md` (context, decision, alternatives, consequences) and a line in the roadmap's decision log.
 - Tick roadmap items in the pull request that finishes them.
+- Branch from the latest main for each item; do not stack pull requests.
 - Open each pull request as a draft. Mark it ready for review only when its work is done and the local checks pass. Marking it ready starts the Claude review (ADR 0006).
-- A pull request from a `claude/` branch into main merges itself once CI and the Claude review pass, unless it touches a path in `.github/CODEOWNERS`; those wait for the owner. The pull request that completes a checkpoint stays a draft until the owner says "approved".
-- Never approve or merge a pull request yourself, never turn auto-merge on by hand, and never weaken the review workflow, `scripts/review_verdict.py`, CODEOWNERS, or the ruleset to get a merge through.
-- When a pull request waits for the owner, tell them in plain words what it does and whether it meets the three merge conditions in `docs/setup.md` Part 6. For Dependabot pull requests and pull requests that change the review itself, run a separate reviewer subagent first and report its verdict.
+- The merge robot (ADR 0007) merges a ready pull request from a `claude/` branch into main once CI and the Claude review both succeed on its latest commit. Wait for the merge before starting the next item.
+- Never approve or merge a pull request yourself, never push to main, and never weaken the review workflow, the merge robot, `scripts/review_verdict.py`, or `scripts/merge_gate.py` to get a merge through.
+- The robot leaves for the owner pull requests that change the merge rules, the review, the rule documents, check settings, or spending caps (the list is in `scripts/merge_gate.py`). Keep such changes in their own small pull requests. For those and for Dependabot pull requests, run a separate reviewer subagent, then tell the owner in plain words what the change does and what the reviewer found.
 
 ## Development practices
 
@@ -37,7 +39,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 | Prompt evaluations as tests | Any prompt or model change re-runs the gold-set evaluation; CI blocks a drop in any field's accuracy. |
 | Tests are not loosened to pass | A pull request that edits an existing test explains why in its description. Never weaken a verification check or the publish gate to make a test pass. |
 | Small pull requests | One roadmap item each, ideally under 400 changed lines. Use the PR template. |
-| Protected main | CI and the Claude review must pass; no direct pushes to main; paths in CODEOWNERS need the owner (ADR 0006). |
+| Protected main | CI and the Claude review must pass before the merge robot merges; no direct pushes to main (ADR 0006, ADR 0007). |
 | Strict types, auto-formatting | pyright strict, tsc strict; ruff and prettier through pre-commit hooks. |
 | Schema-first, reversible migrations | Change the Pydantic model, generate the Alembic migration, test the downgrade. Never edit production data by hand. |
 | Idempotent jobs | Re-running any collector or extractor creates no duplicates; every job is safe to retry. |

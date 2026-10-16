@@ -148,7 +148,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
 | Analyst | Drafts benchmarks and market-size estimates | Published data, published literature | Publish; all drafts go to review in v1 |
 | Marketing | Drafts newsletter issues and posts from published data | Published data | Post anything; you approve each item |
-| Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; low-risk changes merge automatically after CI and the reviewer agent pass, and you approve merges of risky ones |
+| Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; a merge workflow merges its pull requests after CI and the reviewer agent pass, and you merge changes to that workflow or the review |
 | Research assistant (user-facing) | Helps users find features and data | Published data through the public API | Web browsing; advice; anything a user could not see themselves |
 
 **Prompt-injection defenses:** extractors output only schema-valid JSON; every value must match a verbatim quote found in the stored source; secrets never enter any prompt; each agent has its own least-privilege credentials.
@@ -345,7 +345,7 @@ Every component is documented for both people and agents, and the data schemas a
 
 - **Tests:** unit tests; contract tests on the API and on each `ModelClient` adapter; recorded-document tests for every extractor; prompt evaluations with minimum scores.
 - **Continuous integration** on every pull request: lint (ruff, eslint), strict type checks (pyright, tsc), tests, evaluation gate, dependency audit, secret scan.
-- **Review:** the developer agent opens pull requests; a separate reviewer agent and CI check them. Low-risk pull requests merge automatically once both pass; you approve merges that touch verification, the publish gate, auth, billing, migrations, dependencies, model settings, or the rules themselves (listed in CODEOWNERS). No direct pushes to main.
+- **Review:** the developer agent opens pull requests; a separate reviewer agent and CI check them, and a merge workflow merges them once both pass. Checkpoints are previewed to you without stopping work. You merge changes to the merge workflow or the review yourself. No direct pushes to main.
 - **Environments:** development, staging, production. Database migrations run on a staging copy first.
 
 ### Operations and security
@@ -417,7 +417,7 @@ You are building the product specified in docs/spec.md, following docs/roadmap.m
 4. Record any choice the spec leaves open as an ADR in docs/adr.
 5. Each pull request description states, in plain English: what changed, test results, risks, and anything you need from me.
 6. Read secrets from environment variables only. If a secret or account is missing, stop and tell me exactly what to create and where to paste it.
-7. Stop at the Phase 0 gate: 50 companies flowing from source to the database, each record with a working deep source link. Report the results and wait for my approval before Phase 1.
+7. At the Phase 0 gate (50 companies flowing from source to the database, each record with a working deep source link), report the results and continue to Phase 1; the owner chose on 2026-10-16 not to stop at checkpoints (ADR 0007).
 ```
 
 ### Model assignments
@@ -457,7 +457,7 @@ These go into `AGENTS.md` word for word. Test-driven development is the core, wi
 | Prompt evaluations as tests | Any prompt or model change re-runs the gold-set evaluation; CI blocks a drop in field accuracy. |
 | Tests are not loosened to pass | A pull request that edits an existing test must say why; the reviewer rejects any change that weakens a check. |
 | Small pull requests | One roadmap item each, ideally under 400 changed lines, with a plain-English summary, test results, and risks written for you. |
-| Protected main branch | CI and the reviewer agent must pass; no direct pushes; changes to verification, the publish gate, auth, billing, or migrations need an Opus-class review and your approval (enforced with a CODEOWNERS file and a repository ruleset). |
+| Protected main branch | CI and the reviewer agent must pass before a merge; no direct pushes; changes to verification, the publish gate, auth, billing, or migrations get an Opus-class review. On GitHub's free plan the merge workflow enforces this for its own merges; a repository ruleset can enforce it for everyone on a paid plan. |
 | Strict types and auto-formatting | Strict pyright and tsc; ruff and prettier run on every commit through pre-commit hooks. |
 | Schema-first, reversible migrations | Change the Pydantic model, generate the migration, test the rollback; never edit production data by hand. |
 | Idempotent jobs | Re-running any collector or extractor creates no duplicates, so every job is safe to retry. |

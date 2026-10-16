@@ -85,7 +85,7 @@ def test_missing_key_fails_with_setup_pointer(tmp_path: Path) -> None:
     code, report = run(result("pass", [], []), tmp_path, key_present="false")
     assert code == 1
     assert report.startswith("## Claude review: not set up")
-    assert "Part 6, step C" in report
+    assert "docs/setup.md Part 6" in report
 
 
 @pytest.mark.parametrize(
