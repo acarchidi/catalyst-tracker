@@ -80,6 +80,33 @@ Claude Code tries this step itself with `gh secret set` (after asking you). If G
 3. Repeat for the other four names in Part 4.
 4. Delete your note with the keys.
 
+## Part 6 — Automatic review and merging (10 minutes, once)
+
+Do this after the open pull requests are merged. ADR 0006 explains the design.
+
+**A. A separate key for the reviewer**
+
+1. Go to **platform.claude.com/settings/workspaces**. Click **Add Workspace**. Name it `catalyst-review`. Click **Create**.
+2. Click the new workspace. Open the **Limits** tab, click **Change Limit**, and enter **30** ($30 a month).
+3. Open the **API Keys** tab and click **Create Key**. Name it `catalyst-review`, then click **Create Key**. Copy the key.
+4. Go to **github.com/acarchidi/catalyst-tracker/settings/secrets/actions**. Click **New repository secret**.
+5. Name: `CATALYST_REVIEW_API_KEY`. Paste the key into **Secret**. Click **Add secret**. Do not keep the key anywhere else.
+
+**B. Let pull requests merge themselves**
+
+1. Go to **github.com/acarchidi/catalyst-tracker/settings**. Stay on **General**.
+2. Scroll to **Pull Requests**. Tick **Allow auto-merge**. It saves by itself.
+
+**C. Protect main**
+
+1. Open **github.com/acarchidi/catalyst-tracker/blob/main/.github/rulesets/main.json**. Click the **Download raw file** button (a downward arrow, top right of the file).
+2. Go to **github.com/acarchidi/catalyst-tracker/settings/rules**.
+3. Click the arrow next to **New ruleset**, then **Import a ruleset**. Choose the downloaded `main.json`.
+4. Check that the name says **Protect main** and the status says **Active**. Scroll down and click **Create**.
+5. If GitHub says the ruleset "contains an invalid actor": delete the entry under **Bypass list**, click **Add bypass**, tick **Repository admin**, click **Add selected**, set it to **For pull requests only**, then click **Create**.
+
+**After this:** pull requests that touch only ordinary code merge on their own once all checks pass. Pull requests that touch the rules, the database, dependencies, or model settings wait for you. To merge one, open it, tick **Merge without waiting for requirements to be met (bypass rules)**, and click **Merge pull request** (sometimes labelled **Bypass rules and merge**).
+
 ## Later phases
 
 Claude Code will tell you when each of these is needed: Vercel project (Phase 2), Resend email (Phase 2), Sentry (Phase 2), business entity and Stripe (Gate 3), Tiingo ($50/month, Phase 3), domain name (Phase 2).

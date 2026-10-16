@@ -22,6 +22,9 @@ The owner is not a programmer. They approve work by reading plain-English summar
 - If an approach fails twice, stop and explain the problem instead of trying a third variation.
 - Every design choice the spec leaves open becomes an ADR in `docs/adr/NNNN-title.md` (context, decision, alternatives, consequences) and a line in the roadmap's decision log.
 - Tick roadmap items in the pull request that finishes them.
+- Open each pull request as a draft. Mark it ready for review only when its work is done and the local checks pass. Marking it ready starts the Claude review (ADR 0006).
+- A pull request from a `claude/` branch into main merges itself once CI and the Claude review pass, unless it touches a path in `.github/CODEOWNERS`; those wait for the owner. The pull request that completes a checkpoint stays a draft until the owner says "approved".
+- Never approve or merge a pull request yourself, never turn auto-merge on by hand, and never weaken the review workflow, `scripts/review_verdict.py`, CODEOWNERS, or the ruleset to get a merge through.
 
 ## Development practices
 
@@ -33,7 +36,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 | Prompt evaluations as tests | Any prompt or model change re-runs the gold-set evaluation; CI blocks a drop in any field's accuracy. |
 | Tests are not loosened to pass | A pull request that edits an existing test explains why in its description. Never weaken a verification check or the publish gate to make a test pass. |
 | Small pull requests | One roadmap item each, ideally under 400 changed lines. Use the PR template. |
-| Protected main | CI must pass; no direct pushes to main. |
+| Protected main | CI and the Claude review must pass; no direct pushes to main; paths in CODEOWNERS need the owner (ADR 0006). |
 | Strict types, auto-formatting | pyright strict, tsc strict; ruff and prettier through pre-commit hooks. |
 | Schema-first, reversible migrations | Change the Pydantic model, generate the Alembic migration, test the downgrade. Never edit production data by hand. |
 | Idempotent jobs | Re-running any collector or extractor creates no duplicates; every job is safe to retry. |

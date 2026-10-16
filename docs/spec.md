@@ -148,7 +148,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
 | Analyst | Drafts benchmarks and market-size estimates | Published data, published literature | Publish; all drafts go to review in v1 |
 | Marketing | Drafts newsletter issues and posts from published data | Published data | Post anything; you approve each item |
-| Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main or touch production; you approve merges |
+| Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; low-risk changes merge automatically after CI and the reviewer agent pass, and you approve merges of risky ones |
 | Research assistant (user-facing) | Helps users find features and data | Published data through the public API | Web browsing; advice; anything a user could not see themselves |
 
 **Prompt-injection defenses:** extractors output only schema-valid JSON; every value must match a verbatim quote found in the stored source; secrets never enter any prompt; each agent has its own least-privilege credentials.
@@ -345,7 +345,7 @@ Every component is documented for both people and agents, and the data schemas a
 
 - **Tests:** unit tests; contract tests on the API and on each `ModelClient` adapter; recorded-document tests for every extractor; prompt evaluations with minimum scores.
 - **Continuous integration** on every pull request: lint (ruff, eslint), strict type checks (pyright, tsc), tests, evaluation gate, dependency audit, secret scan.
-- **Review:** the developer agent opens pull requests; a separate reviewer agent and CI check them; you approve merges. No direct pushes to main.
+- **Review:** the developer agent opens pull requests; a separate reviewer agent and CI check them. Low-risk pull requests merge automatically once both pass; you approve merges that touch verification, the publish gate, auth, billing, migrations, dependencies, model settings, or the rules themselves (listed in CODEOWNERS). No direct pushes to main.
 - **Environments:** development, staging, production. Database migrations run on a staging copy first.
 
 ### Operations and security
@@ -457,7 +457,7 @@ These go into `AGENTS.md` word for word. Test-driven development is the core, wi
 | Prompt evaluations as tests | Any prompt or model change re-runs the gold-set evaluation; CI blocks a drop in field accuracy. |
 | Tests are not loosened to pass | A pull request that edits an existing test must say why; the reviewer rejects any change that weakens a check. |
 | Small pull requests | One roadmap item each, ideally under 400 changed lines, with a plain-English summary, test results, and risks written for you. |
-| Protected main branch | CI must pass; no direct pushes; changes to verification, the publish gate, auth, billing, or migrations need an Opus-class review (enforced with a CODEOWNERS file). |
+| Protected main branch | CI and the reviewer agent must pass; no direct pushes; changes to verification, the publish gate, auth, billing, or migrations need an Opus-class review and your approval (enforced with a CODEOWNERS file and a repository ruleset). |
 | Strict types and auto-formatting | Strict pyright and tsc; ruff and prettier run on every commit through pre-commit hooks. |
 | Schema-first, reversible migrations | Change the Pydantic model, generate the migration, test the rollback; never edit production data by hand. |
 | Idempotent jobs | Re-running any collector or extractor creates no duplicates, so every job is safe to retry. |
