@@ -1,0 +1,87 @@
+{
+  "https://www.sec.gov/files/company_tickers_exchange.json": {
+    "file": "00_www.sec.gov_files_company_tickers_exchange.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&SIC=8731&owner=include&start=0&count=100&output=atom": {
+    "file": "01_www.sec.gov_cgi-bin_browse-edgar",
+    "status": 200,
+    "content_type": "application/atom+xml"
+  },
+  "https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&SIC=8731&owner=include&start=100&count=100&output=atom": {
+    "file": "02_www.sec.gov_cgi-bin_browse-edgar",
+    "status": 200,
+    "content_type": "application/atom+xml"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=absci&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "03_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=Absci+Pty+Ltd.&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "04_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=bioaffinity+technologies&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "05_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=charles+river+laboratories+international&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "06_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=ib+acquisition&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "07_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=icon&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "08_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=incyte&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "09_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=iqvia+holdings&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "10_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=ispecimen&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "11_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=maxcyte&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "12_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=medpace+holdings&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "13_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=nrc+health&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "14_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=omniab&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "15_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=onemednet&filter.advanced=AREA%5BLeadSponsorClass%5DINDUSTRY+AND+AREA%5BStudyType%5DINTERVENTIONAL+AND+%28AREA%5BInterventionType%5DDRUG+OR+AREA%5BInterventionType%5DBIOLOGICAL%29&fields=protocolSection.sponsorCollaboratorsModule.leadSponsor&pageSize=1000": {
+    "file": "16_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

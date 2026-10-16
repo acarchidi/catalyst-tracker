@@ -17,6 +17,7 @@ from pathlib import Path
 import httpx
 
 from catalyst import settings
+from catalyst.collectors.coverage import Override, build_coverage
 from catalyst.collectors.run import Clients, build_clients
 from catalyst.collectors.sec.edgar import SUBMISSIONS_URL, recent_filings
 from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
@@ -73,6 +74,13 @@ RECORDINGS: dict[str, Callable[[Clients], Iterable[object]]] = {
     ),
     "wires-prnewswire": lambda c: wires.collect_feed(c.web, wires.FEEDS[0]),
     "sec-vertex-10q-index": _ten_q_index,
+    # Absci registers its one trial under a subsidiary's name, so an override adds it.
+    "coverage-8731": lambda c: build_coverage(
+        c.sec,
+        c.web,
+        {1672688: Override(cik=1672688, note="recording", ctgov_sponsors=frozenset({"Absci Pty Ltd."}))},
+        sic_codes=(8731,),
+    ),
 }
 
 

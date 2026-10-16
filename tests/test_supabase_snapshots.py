@@ -144,3 +144,14 @@ def test_requests_go_only_to_the_configured_project() -> None:
 def test_a_plain_http_project_address_is_refused() -> None:
     with pytest.raises(ValueError, match="https"):
         SupabaseSnapshotStore("http://example.supabase.co", KEY)
+
+
+def test_an_unreadable_bucket_answer_is_a_store_error() -> None:
+    def not_json(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST":
+            return httpx.Response(200, json={"name": BUCKET})
+        return httpx.Response(200, content=b"<html>proxy error</html>")
+
+    store = SupabaseSnapshotStore(URL, KEY, transport=httpx.MockTransport(not_json))
+    with pytest.raises(SnapshotStoreError, match="unreadable"):
+        store.ensure_bucket()

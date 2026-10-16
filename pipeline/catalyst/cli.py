@@ -4,8 +4,9 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import create_engine
@@ -13,6 +14,7 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
+from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
@@ -21,13 +23,18 @@ from catalyst.logs import configure_logging
 from catalyst.snapshots import (
     LocalSnapshotStore,
     SnapshotStore,
+    SnapshotStoreError,
     SupabaseSnapshotStore,
     VerifyReport,
     verify_snapshots,
 )
 
+NEW_YORK = ZoneInfo("America/New_York")
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
 DEFAULT_COMPANIES = Path("config/pilot_companies.toml")
+DEFAULT_COVERAGE = Path("config/coverage_companies.toml")
+DEFAULT_OVERRIDES = Path("config/coverage_overrides.toml")
+DEFAULT_REVIEW_LIST = Path("docs/coverage-review.md")
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -47,6 +54,12 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "report", help="Print each company's latest document per source, with links (Markdown)."
     )
+    coverage = commands.add_parser(
+        "coverage-build", help="Build the coverage list from SEC industry codes and trial evidence."
+    )
+    coverage.add_argument("--out", type=Path, default=DEFAULT_COVERAGE, help="Company list to write.")
+    coverage.add_argument("--overrides", type=Path, default=DEFAULT_OVERRIDES, help="Hand corrections.")
+    coverage.add_argument("--review", type=Path, default=DEFAULT_REVIEW_LIST, help="Review list to write.")
     verify = commands.add_parser(
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
@@ -80,6 +93,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run one command; results go to standard output, logs to standard error."""
     args = _parser().parse_args(argv)
     configure_logging()
+    if args.command == "coverage-build":
+        return _coverage(args)
     if args.command == "report":
         engine = create_engine(settings.database_url())
         try:
@@ -93,6 +108,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
+    except (SnapshotStoreError, httpx.HTTPError) as error:
+        print(f"Nothing stored: the snapshot store is not usable ({error}).", file=sys.stderr)
+        return 1
     engine = create_engine(settings.database_url())
     try:
         if args.command == "snapshots-verify":
@@ -102,6 +120,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _press_release(args, email, store, sessionmaker(engine))
     finally:
         engine.dispose()
+
+
+def _coverage(args: argparse.Namespace) -> int:
+    try:
+        clients = build_clients(settings.sec_contact_email())
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    try:
+        entries = build_coverage(clients.sec, clients.web, load_overrides(args.overrides))
+    except httpx.HTTPError as error:
+        print(f"Nothing written: a request failed ({error}).", file=sys.stderr)
+        return 1
+    today = datetime.now(NEW_YORK).date()
+    args.out.write_text(coverage_toml(entries, today), encoding="utf-8")
+    args.review.write_text(unconfirmed_markdown(entries, today), encoding="utf-8")
+    included = sum(entry.included for entry in entries)
+    print(json.dumps({"listed": len(entries), "included": included, "review": len(entries) - included}))
+    return 0
 
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:

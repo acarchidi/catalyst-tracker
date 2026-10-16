@@ -41,6 +41,11 @@ class PilotCompany(BaseModel):
     ctgov_sponsors: frozenset[str] = frozenset()
     openfda_manufacturer: str | None = None
     openfda_sponsors: frozenset[str] = frozenset()
+    # Written by `catalyst coverage-build` for people reading the list; collectors ignore them.
+    name: str | None = None
+    sic: int | None = None
+    exchange: str | None = None
+    ctgov_trials: int | None = Field(default=None, ge=0)
 
 
 def load_companies(path: Path) -> list[PilotCompany]:

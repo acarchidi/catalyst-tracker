@@ -1,5 +1,8 @@
 """The command line stops with a plain message when the SEC contact email is missing."""
 
+import json
+from collections import Counter
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -8,7 +11,9 @@ from sqlalchemy.exc import OperationalError
 
 from catalyst import cli
 from catalyst.cli import main
+from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
+from catalyst.snapshots import SnapshotStoreError
 
 
 def test_missing_sec_contact_email_exits_with_setup_step(
@@ -70,3 +75,45 @@ def test_snapshots_verify_prints_the_report_and_fails_on_a_bad_copy(
 class _FakeEngine:
     def dispose(self) -> None:
         pass
+
+
+def test_coverage_build_needs_the_sec_contact_email(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
+    assert main(["coverage-build"]) == 2
+    assert "docs/setup.md Part 4" in capsys.readouterr().err
+
+
+def test_coverage_build_writes_the_list_and_the_review_file(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    listing = Listing(cik=879169, name="INCYTE CORP", tickers=("INCY",), exchange="Nasdaq")
+    entries = [
+        CoverageEntry(listing, 8731, sponsors=Counter({"Incyte Corporation": 3})),
+        CoverageEntry(Listing(70487, "NRC HEALTH", ("NRC",), "Nasdaq"), 8731),
+    ]
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "build_coverage", lambda *_args: entries)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    out, review = tmp_path / "coverage.toml", tmp_path / "review.md"
+    code = main(
+        ["coverage-build", "--out", str(out), "--review", str(review), "--overrides", str(tmp_path / "none")]
+    )
+    assert code == 0
+    assert json.loads(capsys.readouterr().out) == {"listed": 2, "included": 1, "review": 1}
+    assert 'ticker = "INCY"' in out.read_text()
+    assert "NRC HEALTH" in review.read_text()
+
+
+def test_an_unusable_snapshot_store_is_a_plain_message(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def refuse(*_args: Any, **_kwargs: Any) -> Any:
+        raise SnapshotStoreError("the source-snapshots bucket is public")
+
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "_open_store", refuse)
+    assert main(["sec-press-release", "--cik", "875320"]) == 1
+    err = capsys.readouterr().err
+    assert "snapshot store is not usable" in err
+    assert "Traceback" not in err
