@@ -19,6 +19,8 @@ from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
+from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
+from catalyst.links import check_links, link_client, links_markdown
 from catalyst.logs import configure_logging
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -35,6 +37,8 @@ DEFAULT_COMPANIES = Path("config/pilot_companies.toml")
 DEFAULT_COVERAGE = Path("config/coverage_companies.toml")
 DEFAULT_OVERRIDES = Path("config/coverage_overrides.toml")
 DEFAULT_REVIEW_LIST = Path("docs/coverage-review.md")
+DEFAULT_GATE1 = Path("config/gate1_companies.toml")
+GATE1_SEED = 2026
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -60,6 +64,20 @@ def _parser() -> argparse.ArgumentParser:
     coverage.add_argument("--out", type=Path, default=DEFAULT_COVERAGE, help="Company list to write.")
     coverage.add_argument("--overrides", type=Path, default=DEFAULT_OVERRIDES, help="Hand corrections.")
     coverage.add_argument("--review", type=Path, default=DEFAULT_REVIEW_LIST, help="Review list to write.")
+    select = commands.add_parser(
+        "gate1-select", help="Choose the Gate 1 companies: the pilot ten plus a random draw."
+    )
+    select.add_argument("--count", type=int, default=50, help="How many companies in all.")
+    select.add_argument("--seed", type=int, default=GATE1_SEED, help="Seed for the repeatable draw.")
+    select.add_argument("--out", type=Path, default=DEFAULT_GATE1, help="Company list to write.")
+    sample = commands.add_parser("sample-records", help="Print a repeatable random sample of stored records.")
+    sample.add_argument("--count", type=int, default=10, help="How many records.")
+    sample.add_argument("--seed", type=int, default=GATE1_SEED, help="Seed for the repeatable sample.")
+    links = commands.add_parser("check-links", help="Check that stored source links still work.")
+    links.add_argument(
+        "--sample", type=int, default=None, help="Check a random sample instead of every link."
+    )
+    links.add_argument("--seed", type=int, default=GATE1_SEED, help="Seed for the repeatable sample.")
     verify = commands.add_parser(
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
@@ -95,6 +113,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     configure_logging()
     if args.command == "coverage-build":
         return _coverage(args)
+    if args.command == "gate1-select":
+        return _gate1_select(args)
+    if args.command in ("sample-records", "check-links"):
+        return _gate1_checks(args)
     if args.command == "report":
         engine = create_engine(settings.database_url())
         try:
@@ -139,6 +161,40 @@ def _coverage(args: argparse.Namespace) -> int:
     included = sum(entry.included for entry in entries)
     print(json.dumps({"listed": len(entries), "included": included, "review": len(entries) - included}))
     return 0
+
+
+def _gate1_select(args: argparse.Namespace) -> int:
+    pilot = load_companies(DEFAULT_COMPANIES)
+    try:
+        chosen = select_companies(pilot, load_companies(DEFAULT_COVERAGE), args.count, args.seed)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    header = (
+        f"Gate 1 companies: the {len(pilot)} pilot companies plus a random draw from "
+        f"config/coverage_companies.toml (seed {args.seed}), written by `catalyst gate1-select` (ADR 0010)."
+    )
+    args.out.write_text(companies_toml(chosen, header), encoding="utf-8")
+    print(json.dumps({"companies": len(chosen), "out": str(args.out)}))
+    return 0
+
+
+def _gate1_checks(args: argparse.Namespace) -> int:
+    engine = create_engine(settings.database_url())
+    try:
+        if args.command == "sample-records":
+            print(sample_markdown(sample_records(sessionmaker(engine), args.count, args.seed)), end="")
+            return 0
+        try:
+            client = link_client(settings.sec_contact_email())
+        except settings.MissingSettingError as error:
+            print(error, file=sys.stderr)
+            return 2
+        report = check_links(sessionmaker(engine), client, args.sample, args.seed)
+        print(links_markdown(report), end="")
+        return 0 if report.ok else 1
+    finally:
+        engine.dispose()
 
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
