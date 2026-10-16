@@ -25,6 +25,8 @@ from catalyst.collectors.coverage import normalize_name, same_company
         ("argenx SE", "argenx"),
         ("BRISTOL MYERS SQUIBB CO", "Bristol-Myers Squibb"),
         ("Neurocrine Biosciences Inc /CA/", "Neurocrine Biosciences"),
+        ("Viridian Therapeutics, Inc.\\DE", "Viridian Therapeutics, Inc."),
+        ("LIFECORE BIOMEDICAL, INC. \\DE\\", "Lifecore Biomedical"),
     ],
 )
 def test_same_company_written_differently_matches(sec_name: str, sponsor: str) -> None:
@@ -60,7 +62,7 @@ def test_normalizing_is_stable(name: str) -> None:
     assert normalize_name(once) == once
 
 
-@given(names, st.sampled_from(["Inc", "Inc.", ", Inc.", "Corporation", "Ltd", "plc", "/DE/", " / MA"]))
+@given(names, st.sampled_from(["Inc", "Inc.", ", Inc.", "Corporation", "Ltd", "plc", "/DE/", " / MA", "\\DE\\"]))
 def test_legal_form_suffixes_never_change_the_match(name: str, suffix: str) -> None:
     if normalize_name(name):
         assert same_company(name, f"{name} {suffix}")

@@ -50,7 +50,7 @@ _LEGAL_WORDS = (
     "|spa|bv|gmbh|kk|oyj|and"
 )
 _TRAILING_LEGAL = re.compile(rf"[\W_]*\b(?:{_LEGAL_WORDS})\b[\W_]*$")
-_STATE_SUFFIX = re.compile(r"\s*/\s*[^\W\d_]{2,3}\s*/?[\W_]*$")  # EDGAR's "/DE/" or " / MA"
+_STATE_SUFFIX = re.compile(r"\s*[/\\]\s*[^\W\d_]{2,3}\s*[/\\]?[\W_]*$")  # EDGAR's "/DE/", " / MA", "\\DE\\"
 _WORD = re.compile(r"[^\W_]+")
 
 
