@@ -1,5 +1,5 @@
 # Coverage list built 2026-10-16 by `catalyst coverage-build` (ADR 0009). Do not edit:
-# corrections go in config/coverage_overrides.toml. 448 of 677 listed companies included.
+# corrections go in config/coverage_overrides.toml. 465 of 677 listed companies included.
 
 [[company]]
 ticker = "BMY"
@@ -7,8 +7,8 @@ cik = 14272
 name = "BRISTOL MYERS SQUIBB CO"
 sic = 2834
 exchange = "NYSE"
-ctgov_sponsors = ["Bristol-Myers Squibb"]
-ctgov_trials = 832
+ctgov_sponsors = ["Bristol-Myers Squibb", "Juno Therapeutics, Inc., a Bristol-Myers Squibb Company", "Karuna Therapeutics, Inc., a Bristol Myers Squibb company"]
+ctgov_trials = 854
 
 [[company]]
 ticker = "TXMD"
@@ -34,8 +34,8 @@ cik = 59478
 name = "ELI LILLY & Co"
 sic = 2834
 exchange = "NYSE"
-ctgov_sponsors = ["Eli Lilly and Company"]
-ctgov_trials = 891
+ctgov_sponsors = ["Ajax Therapeutics, Inc., a wholly owned subsidiary of Eli Lilly and Company", "DICE Therapeutics, Inc., a wholly owned subsidiary of Eli Lilly and Company", "Eli Lilly and Company", "Morphic Therapeutic, Inc. (A Wholly Owned Subsidiary of Eli Lilly and Company)", "Vaccine Company, Inc, a wholly owned subsidiary of Eli Lilly and Company"]
+ctgov_trials = 898
 
 [[company]]
 ticker = "PFE"
@@ -43,8 +43,8 @@ cik = 78003
 name = "PFIZER INC"
 sic = 2834
 exchange = "NYSE"
-ctgov_sponsors = ["Pfizer"]
-ctgov_trials = 748
+ctgov_sponsors = ["Array Biopharma, now a wholly owned subsidiary of Pfizer", "Hospira, now a wholly owned subsidiary of Pfizer", "Pfizer", "Seagen, a wholly owned subsidiary of Pfizer", "Wyeth is now a wholly owned subsidiary of Pfizer"]
+ctgov_trials = 859
 
 [[company]]
 ticker = "GTBP"
@@ -54,6 +54,24 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["GT Biopharma, Inc."]
 ctgov_trials = 1
+
+[[company]]
+ticker = "JNJ"
+cik = 200406
+name = "JOHNSON & JOHNSON"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Janssen Pharmaceutica N.V., Belgium", "Janssen Pharmaceutical K.K.", "Janssen Research & Development, LLC", "Janssen-Cilag International NV"]
+ctgov_trials = 0
+
+[[company]]
+ticker = "MRK"
+cik = 310158
+name = "Merck & Co., Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Afferent Pharmaceuticals, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "ArQule, Inc., a subsidiary of Merck Sharp & Dohme LLC, a subsidiary of Merck & Co., Inc. (Rahway, NJ USA)", "Cidara Therapeutics Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Cubist Pharmaceuticals LLC, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Harpoon Therapeutics, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Immune Design, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Merck Sharp & Dohme LLC", "NovaCardia, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Oncoethix GmbH, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Oncoimmune, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Peloton Therapeutics, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Prometheus Biosciences, Inc., a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)", "Trius Therapeutics LLC, a subsidiary of Merck & Co., Inc. (Rahway, New Jersey USA)"]
+ctgov_trials = 61
 
 [[company]]
 ticker = "AMGN"
@@ -81,15 +99,6 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Lisata Therapeutics, Inc."]
 ctgov_trials = 16
-
-[[company]]
-ticker = "NVO"
-cik = 353278
-name = "NOVO NORDISK A S"
-sic = 2834
-exchange = "NYSE"
-ctgov_sponsors = ["Novo Nordisk A/S"]
-ctgov_trials = 955
 
 [[company]]
 ticker = "CVM"
@@ -202,8 +211,8 @@ cik = 875045
 name = "BIOGEN INC."
 sic = 2836
 exchange = "Nasdaq"
-ctgov_sponsors = ["Biogen"]
-ctgov_trials = 402
+ctgov_sponsors = ["Biogen", "HI-Bio, A Biogen Company", "Reata, a wholly owned subsidiary of Biogen"]
+ctgov_trials = 408
 
 [[company]]
 ticker = "VRTX"
@@ -397,8 +406,8 @@ cik = 944809
 name = "OPKO HEALTH, INC."
 sic = 2834
 exchange = "Nasdaq"
-ctgov_sponsors = ["OPKO Health, Inc."]
-ctgov_trials = 44
+ctgov_sponsors = ["ModeX Therapeutics, An OPKO Health Company", "OPKO Health, Inc."]
+ctgov_trials = 48
 
 [[company]]
 ticker = "AIM"
@@ -635,8 +644,8 @@ cik = 1121404
 name = "Sanofi"
 sic = 2834
 exchange = "Nasdaq"
-ctgov_sponsors = ["Sanofi"]
-ctgov_trials = 622
+ctgov_sponsors = ["Ablynx, a Sanofi company", "Bioverativ, a Sanofi company", "Genzyme, a Sanofi Company", "Kadmon, a Sanofi Company", "Principia Biopharma, a Sanofi Company", "Sanofi", "Sanofi Pasteur, a Sanofi Company"]
+ctgov_trials = 919
 
 [[company]]
 ticker = "MGNX"
@@ -673,6 +682,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Alterity Therapeutics"]
 ctgov_trials = 3
+
+[[company]]
+ticker = "GSK"
+cik = 1131399
+name = "GSK plc"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Bellus Health Inc. - a GSK company", "GlaxoSmithKline", "Human Genome Sciences Inc., a GSK Company", "IDRX, Inc., a wholly owned subsidiary of GSK, LLC", "Sierra Oncology LLC - a GSK company", "Sirtris, a GSK Company", "Stiefel, a GSK Company", "ViiV Healthcare"]
+ctgov_trials = 116
 
 [[company]]
 ticker = "GALT"
@@ -997,8 +1015,8 @@ cik = 1356576
 name = "SUPERNUS PHARMACEUTICALS, INC."
 sic = 2834
 exchange = "Nasdaq"
-ctgov_sponsors = ["Supernus Pharmaceuticals, Inc."]
-ctgov_trials = 58
+ctgov_sponsors = ["MDD US Operations, LLC a subsidiary of Supernus Pharmaceuticals", "Supernus Pharmaceuticals, Inc."]
+ctgov_trials = 61
 
 [[company]]
 ticker = "PALI"
@@ -1152,6 +1170,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Ocular Therapeutix, Inc."]
 ctgov_trials = 27
+
+[[company]]
+ticker = "TAK"
+cik = 1395064
+name = "TAKEDA PHARMACEUTICAL CO LTD"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Millennium Pharmaceuticals, Inc.", "Shire", "Takeda"]
+ctgov_trials = 0
 
 [[company]]
 ticker = "SNDX"
@@ -1314,6 +1341,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Talphera, Inc"]
 ctgov_trials = 17
+
+[[company]]
+ticker = "GMAB"
+cik = 1434265
+name = "GENMAB A/S"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Genmab"]
+ctgov_trials = 67
 
 [[company]]
 ticker = "FATE"
@@ -1856,6 +1892,15 @@ ctgov_sponsors = ["Perrigo Company"]
 ctgov_trials = 7
 
 [[company]]
+ticker = "VRDN"
+cik = 1590750
+name = "Viridian Therapeutics, Inc.\\DE"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Viridian Therapeutics, Inc."]
+ctgov_trials = 9
+
+[[company]]
 ticker = "AVIR"
 cik = 1593899
 name = "Atea Pharmaceuticals, Inc."
@@ -1933,8 +1978,8 @@ cik = 1601830
 name = "RECURSION PHARMACEUTICALS, INC."
 sic = 2836
 exchange = "Nasdaq"
-ctgov_sponsors = ["Recursion Pharmaceuticals Inc."]
-ctgov_trials = 7
+ctgov_sponsors = ["Exscientia AI Ltd., a wholly owned subsidiary of Recursion Pharmaceuticals, Inc.", "Recursion Pharmaceuticals Inc."]
+ctgov_trials = 10
 
 [[company]]
 ticker = "ATRA"
@@ -1980,6 +2025,24 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Ascendis Pharma A/S"]
 ctgov_trials = 9
+
+[[company]]
+ticker = "PRQR"
+cik = 1612940
+name = "ProQR Therapeutics N.V."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ProQR Therapeutics"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "DBVT"
+cik = 1613780
+name = "DBV Technologies S.A."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["DBV Technologies"]
+ctgov_trials = 12
 
 [[company]]
 ticker = "CRBU"
@@ -2034,6 +2097,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Corvus Pharmaceuticals, Inc."]
 ctgov_trials = 11
+
+[[company]]
+ticker = "CLLS"
+cik = 1627281
+name = "Cellectis S.A."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cellectis S.A."]
+ctgov_trials = 6
 
 [[company]]
 ticker = "RVMD"
@@ -2320,8 +2392,8 @@ cik = 1668243
 name = "UroGen Pharma Ltd."
 sic = 2834
 exchange = "Nasdaq"
-ctgov_sponsors = ["UroGen Pharma Ltd."]
-ctgov_trials = 11
+ctgov_sponsors = ["UroGen Pharma Ltd.", "UroGen Pharma, Inc., a subsidiary of UroGen Pharma Ltd."]
+ctgov_trials = 12
 
 [[company]]
 ticker = "QNRX"
@@ -2603,6 +2675,15 @@ ctgov_sponsors = ["Serina Therapeutics"]
 ctgov_trials = 2
 
 [[company]]
+ticker = "IFRX"
+cik = 1708688
+name = "InflaRx N.V."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["InflaRx GmbH"]
+ctgov_trials = 12
+
+[[company]]
 ticker = "BIOA"
 cik = 1709941
 name = "BioAge Labs, Inc."
@@ -2691,6 +2772,24 @@ sic = 2834
 exchange = "NYSE"
 ctgov_sponsors = ["Arcus Biosciences, Inc."]
 ctgov_trials = 32
+
+[[company]]
+ticker = "ZNTL"
+cik = 1725160
+name = "Zentalis Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["K-Group Alpha, Inc., a wholly owned subsidiary of Zentalis Pharmaceuticals, Inc.", "K-Group, Beta, Inc., a wholly owned subsidiary of Zentalis Pharmaceuticals, Inc"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "GOSS"
+cik = 1728117
+name = "Gossamer Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["GB001, Inc, a wholly owned subsidiary of Gossamer Bio, Inc.", "GB002, Inc., a wholly owned subsidiary of Gossamer Bio, Inc.", "GB004, Inc., a wholly owned subsidiary of Gossamer Bio, Inc.", "GB005, Inc., a wholly owned subsidiary of Gossamer Bio, Inc.", "GB006, Inc., a wholly owned subsidiary of Gossamer Bio, Inc."]
+ctgov_trials = 8
 
 [[company]]
 ticker = "INM"
@@ -2873,6 +2972,15 @@ ctgov_sponsors = ["Mirum Pharmaceuticals, Inc."]
 ctgov_trials = 35
 
 [[company]]
+ticker = "NBTX"
+cik = 1760854
+name = "Nanobiotix S.A."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Nanobiotix"]
+ctgov_trials = 2
+
+[[company]]
 ticker = "ERAS"
 cik = 1761918
 name = "Erasca, Inc."
@@ -2934,6 +3042,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Quantum Biopharma"]
 ctgov_trials = 3
+
+[[company]]
+ticker = "ADCT"
+cik = 1771910
+name = "ADC Therapeutics SA"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["ADC Therapeutics S.A."]
+ctgov_trials = 19
 
 [[company]]
 ticker = "AARD"
@@ -3094,8 +3211,8 @@ cik = 1792044
 name = "Viatris Inc"
 sic = 2834
 exchange = "Nasdaq"
-ctgov_sponsors = ["Viatris Inc."]
-ctgov_trials = 5
+ctgov_sponsors = ["Famy Life Sciences, a Viatris Company", "Viatris Inc."]
+ctgov_trials = 6
 
 [[company]]
 ticker = "ORIC"
@@ -3449,6 +3566,15 @@ ctgov_sponsors = ["AEON Biopharma, Inc."]
 ctgov_trials = 4
 
 [[company]]
+ticker = "GNTA"
+cik = 1838716
+name = "Genenta Science S.p.A."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Genenta Science"]
+ctgov_trials = 3
+
+[[company]]
 ticker = "BLSM"
 cik = 1839970
 name = "BlossomHill Therapeutics, Inc."
@@ -3710,6 +3836,15 @@ ctgov_sponsors = ["Neumora Therapeutics, Inc."]
 ctgov_trials = 7
 
 [[company]]
+ticker = "GPCR"
+cik = 1888886
+name = "Structure Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aconcagua Bio, Inc. a wholly owned subsidiary of Structure Therapeutics", "Gasherbrum Bio, Inc., a wholly owned subsidiary of Structure Therapeutics"]
+ctgov_trials = 11
+
+[[company]]
 ticker = "BLTE"
 cik = 1889109
 name = "BELITE BIO, INC"
@@ -3773,6 +3908,15 @@ ctgov_sponsors = ["Mineralys Therapeutics Inc."]
 ctgov_trials = 6
 
 [[company]]
+ticker = "NAMS"
+cik = 1936258
+name = "NewAmsterdam Pharma Co N.V."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["NewAmsterdam Pharma"]
+ctgov_trials = 20
+
+[[company]]
 ticker = "APLM"
 cik = 1944885
 name = "Apollomics Inc."
@@ -3798,6 +3942,15 @@ sic = 2834
 exchange = "Nasdaq"
 ctgov_sponsors = ["Radiopharm Theranostics, Ltd"]
 ctgov_trials = 7
+
+[[company]]
+ticker = "ABVX"
+cik = 1956827
+name = "Abivax S.A."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Abivax S.A."]
+ctgov_trials = 23
 
 [[company]]
 ticker = "TELO"

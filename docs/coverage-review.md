@@ -1,14 +1,13 @@
 # Coverage review list
 
-Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies are listed on a US exchange under SEC industry codes 2834, 2836, or 8731 but are not in the coverage list. Most have no industry drug or biological trial on ClinicalTrials.gov under their SEC name: they may not develop therapeutics, or they may register trials under another name. A correction in `config/coverage_overrides.toml` adds a company.
+Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 212 companies are listed on a US exchange under SEC industry codes 2834, 2836, or 8731 but are not in the coverage list. Most have no industry drug or biological trial on ClinicalTrials.gov under their SEC name: they may not develop therapeutics, or they may register trials under another name. A correction in `config/coverage_overrides.toml` adds a company.
 
 | Company | Ticker | Industry code | Reason | SEC filings |
 | --- | --- | --- | --- | --- |
 | ABBOTT LABORATORIES | ABT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1800) |
 | NRC HEALTH | NRC | 8731 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=70487) |
-| JOHNSON & JOHNSON | JNJ | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=200406) |
 | NATURES SUNSHINE PRODUCTS INC | NATR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=275053) |
-| Merck & Co., Inc. | MRK | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=310158) |
+| NOVO NORDISK A S | NVO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=353278) |
 | Anixa Biosciences Inc | ANIX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=715446) |
 | Ernexa Therapeutics Inc. | ERNA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=748592) |
 | CHAMPIONS ONCOLOGY, INC. | CSBR | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=771856) |
@@ -32,7 +31,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | CHINA PHARMA HOLDINGS, INC. | CPHI | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1106644) |
 | GYRE THERAPEUTICS, INC. | GYRE | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1124105) |
 | Cryoport, Inc. | CYRX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1124524) |
-| GSK plc | GSK | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1131399) |
 | CAPRICOR THERAPEUTICS, INC. | CAPR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1133869) |
 | PharmaCyte Biotech, Inc. | PMCB | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1157075) |
 | Pluri Inc. | PLUR | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1158780) |
@@ -47,7 +45,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | NOMAD POWER SOLUTIONS, INC. | NMAD | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1335105) |
 | NANOVIRICIDES, INC. | NNVC | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1379006) |
 | Scienture Holdings, Inc. | SCNX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1382574) |
-| TAKEDA PHARMACEUTICAL CO LTD | TAK | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1395064) |
 | Pacira BioSciences, Inc. | PCRX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1396814) |
 | Dare Bioscience, Inc. | DARE | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1401914) |
 | Sunshine Biopharma Inc. | SBFM | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1402328) |
@@ -57,7 +54,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Vyome Holdings, Inc | HIND | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1427570) |
 | Fortress Biotech, Inc. | FBIO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1429260) |
 | Tonix Pharmaceuticals Holding Corp. | TNXP | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1430306) |
-| GENMAB A/S | GMAB | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1434265) |
 | Grifols SA | GRFS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1438569) |
 | IQVIA HOLDINGS INC. | IQV | 8731 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1478242) |
 | Adaptive Biotechnologies Corp | ADPT | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1478320) |
@@ -79,20 +75,16 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Matinas BioPharma Holdings, Inc. | MTNB | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1582554) |
 | Jaguar Health, Inc. | JAGX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1585608) |
 | uniQure N.V. | QURE | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1590560) |
-| Viridian Therapeutics, Inc.\DE | VRDN | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1590750) |
 | REGENXBIO Inc. | RGNX | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1590877) |
 | Corbus Pharmaceuticals Holdings, Inc. | CRBP | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1595097) |
 | Enlivex Ltd. | ENLV | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1596812) |
 | SciSparc Ltd. | SPRC | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1611746) |
 | Scinai Immunotherapeutics Ltd. | SCNI | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1611747) |
-| ProQR Therapeutics N.V. | PRQR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1612940) |
-| DBV Technologies S.A. | DBVT | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1613780) |
 | PURPLE BIOTECH LTD. | PPBT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1614744) |
 | Decoy Therapeutics Inc. | DCOY | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1615219) |
 | ORGANIGRAM GLOBAL INC. | OGI | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1620737) |
 | ARTELO BIOSCIENCES, INC. | ARTL | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1621221) |
 | Indivior Pharmaceuticals, Inc. | INDV | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1625297) |
-| Cellectis S.A. | CLLS | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1627281) |
 | Wave Life Sciences, Inc. | WVE | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1631574) |
 | Roivant Sciences Ltd. | ROIV | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1635088) |
 | OnKure Therapeutics, Inc. | OKUR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1637715) |
@@ -107,7 +99,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | JUPITER NEUROSCIENCES, INC. | JUNS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1679628) |
 | Zai Lab Ltd | ZLAB | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1704292) |
 | ELUTIA INC. | ELUT | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1708527) |
-| InflaRx N.V. | IFRX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1708688) |
 | NuCana plc | NCNA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1709626) |
 | Eton Pharmaceuticals, Inc. | ETON | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1710340) |
 | Rocket One Inc. | RKTO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1711786) |
@@ -119,9 +110,7 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Adicet Bio, Inc. | ACET | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1720580) |
 | BIOHARVEST SCIENCES INC. | BHST | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1723464) |
 | China SXT Pharmaceuticals, Inc. | SXTC | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1723980) |
-| Zentalis Pharmaceuticals, Inc. | ZNTL | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1725160) |
 | Scholar Rock Holding Corp | SRRK | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1727196) |
-| Gossamer Bio, Inc. | GOSS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1728117) |
 | XORTX Therapeutics Inc. | XRTX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1729214) |
 | Autolus Therapeutics plc | AUTL | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1730463) |
 | MeiraGTx Holdings plc | MGTX | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1735438) |
@@ -132,11 +121,9 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Korsana Biosciences, Inc. | KRSA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1755237) |
 | Inventiva S.A. | IVA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1756594) |
 | Shuttle Pharmaceuticals Holdings, Inc. | SHPH | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1757499) |
-| Nanobiotix S.A. | NBTX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1760854) |
 | BICYCLE THERAPEUTICS PLC | BCYC | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1761612) |
 | Immunovant, Inc. | IMVT | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1764013) |
 | Arcturus Therapeutics Holdings Inc. | ARCT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1768224) |
-| ADC Therapeutics SA | ADCT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1771910) |
 | NovaBridge Biosciences | NBP | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1778016) |
 | BGM Group Ltd. | BGM | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1779578) |
 | Onconetix, Inc. | ONCO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1782107) |
@@ -171,7 +158,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Connect Biopharma Holdings Ltd | CNTB | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1835268) |
 | ImageneBio, Inc. | IMA | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1835579) |
 | Valneva SE | VALN | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1836564) |
-| Genenta Science S.p.A. | GNTA | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1838716) |
 | Xilio Therapeutics, Inc. | XLO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1840233) |
 | PMGC Holdings Inc. | ELAB | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1840563) |
 | OmniAb, Inc. | OABI | 8731 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1846253) |
@@ -193,7 +179,6 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | CytoMed Therapeutics Ltd | GDTC | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1873093) |
 | Quantum Cyber N.V. | QUCY | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1874252) |
 | Prenetics Global Ltd | PRE | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1876431) |
-| Structure Therapeutics Inc. | GPCR | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1888886) |
 | Apimeds Pharmaceuticals US, Inc. | APUS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1894525) |
 | CDT Equity Inc. | CDT | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1896212) |
 | Alvotech | ALVO | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1898416) |
@@ -201,14 +186,12 @@ Built 2026-10-16 by `catalyst coverage-build` (ADR 0009). These 229 companies ar
 | Pelthos Therapeutics Inc. | PTHS | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1919246) |
 | Gelteq Ltd | GELS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1920092) |
 | Biohaven Ltd. | BHVN | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1935979) |
-| NewAmsterdam Pharma Co N.V. | NAMS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1936258) |
 | Zymeworks Inc. | ZYME | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1937653) |
 | Cadrenal Therapeutics, Inc. | CVKD | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1937993) |
 | Adlai Nortye Group Ltd. | ANL | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1944552) |
 | Oculis Holding AG | OCS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1953530) |
 | Zenas BioPharma, Inc. | ZBIO | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1953926) |
 | Jyong Biotech Ltd. | MENS | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1954488) |
-| Abivax S.A. | ABVX | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1956827) |
 | FibroBiologics, Inc. | FBLG | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1958777) |
 | Kairos Pharma, LTD. | KAPA | 2834 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1962011) |
 | Liminatus Pharma, Inc. | LIMN | 2836 | No own drug or biological trial found | [EDGAR](https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=1971387) |

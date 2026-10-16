@@ -74,6 +74,8 @@ def test_legal_form_suffixes_never_change_the_match(name: str, suffix: str) -> N
     ("sec_name", "sponsor"),
     [
         ("ADC Therapeutics SA", "ADC Therapeutics S.A."),
+        ("NOVO NORDISK A S", "Novo Nordisk A/S"),
+        ("Pharming Group N V", "Pharming Group N.V."),
         ("GENMAB A/S", "Genmab"),
         ("uniQure N.V.", "UniQure Biopharma B.V."),
     ],

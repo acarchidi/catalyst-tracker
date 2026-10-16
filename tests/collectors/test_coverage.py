@@ -92,13 +92,14 @@ def test_developers_are_included_and_service_firms_go_to_review(clients: Clients
 def test_overrides_add_registry_names_or_exclude_by_hand(clients: Clients, server: RecordedServer) -> None:
     overrides = {
         ABSCI: Override(
-            cik=ABSCI, note="test: registry name differs", ctgov_sponsors=frozenset({"Absci LLC"})
+            cik=ABSCI, note="test: registry name differs", ctgov_sponsors=frozenset({"Absci Pty Ltd."})
         ),
         INCYTE: Override(cik=INCYTE, note="test: excluded by hand", include=False),
     }
     entries = {e.listing.cik: e for e in build(clients, overrides)}
     assert entries[ABSCI].included
-    assert entries[ABSCI].ctgov_sponsors == ["Absci LLC"]
+    assert entries[ABSCI].ctgov_sponsors == ["Absci Pty Ltd."]
+    assert entries[ABSCI].sponsors["Absci Pty Ltd."] == 1  # hand-added names are searched and counted
     assert not entries[INCYTE].included
     assert not any("query.spons=incyte" in url for url in server.requested)
 

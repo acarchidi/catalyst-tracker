@@ -48,6 +48,7 @@ _ATOM = "{http://www.w3.org/2005/Atom}"
 _LEGAL_WORDS = (
     "inc|incorporated|corp|corporation|co|company|ltd|limited|plc|llc|lp|sa|ag|nv|se|ab|as|asa"
     "|spa|bv|gmbh|kk|oyj|and"
+    r"|s\s+p\s+a|s\s+a\s+s|a\s+s|s\s+a|n\s+v|b\s+v|a\s+g|s\s+e"  # the same, spelled "A S" or "N V"
 )
 _TRAILING_LEGAL = re.compile(rf"[\W_]*\b(?:{_LEGAL_WORDS})\b[\W_]*$")
 _STATE_SUFFIX = re.compile(r"\s*[/\\]\s*[^\W\d_]{2,3}\s*[/\\]?[\W_]*$")  # EDGAR's "/DE/", " / MA", "\\DE\\"
@@ -171,6 +172,18 @@ def trial_sponsors(web: PoliteHttpClient, company_name: str) -> Counter[str]:
     return Counter(name for name in sponsors if sponsor_of(company_name, name))
 
 
+def named_trials(web: PoliteHttpClient, sponsor: str) -> int:
+    """Count industry drug or biological trials whose lead sponsor is exactly `sponsor`."""
+    params: dict[str, str | int] = {
+        "query.spons": sponsor,
+        "filter.advanced": TRIAL_EVIDENCE,
+        "fields": "protocolSection.sponsorCollaboratorsModule.leadSponsor",
+        "pageSize": TRIAL_PAGE_SIZE,
+    }
+    studies: list[dict[str, Any]] = web.get(ctgov.API_URL, params=params).json().get("studies", [])
+    return sum(ctgov.lead_sponsor(study) == sponsor for study in studies)
+
+
 class Override(BaseModel):
     """A hand-checked correction for one company (config/coverage_overrides.toml)."""
 
@@ -232,6 +245,9 @@ def build_coverage(
     for entry in entries.values():
         if not (entry.override and entry.override.include is False):
             entry.sponsors = trial_sponsors(web, entry.listing.name)
+            for name in sorted(entry.override.ctgov_sponsors if entry.override else ()):
+                if name not in entry.sponsors:
+                    entry.sponsors[name] = named_trials(web, name)
     return [entries[cik] for cik in sorted(entries)]
 
 
