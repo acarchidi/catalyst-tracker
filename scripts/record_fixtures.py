@@ -65,6 +65,12 @@ RECORDINGS: dict[str, Callable[[Clients], Iterable[object]]] = {
     ),
     "openfda-insmed": lambda c: openfda.collect_applications(c.web, "Insmed", frozenset({"INSMED INC"})),
     "fedreg-2026-08": lambda c: fedreg.collect_advisory_committee_notices(c.web, date(2026, 8, 1)),
+    "fedreg-2026-paged": lambda c: fedreg.collect_advisory_committee_notices(
+        c.web, date(2026, 1, 1), max_pages=2, per_page=10
+    ),
+    "openfda-vertex-paged": lambda c: openfda.collect_applications(
+        c.web, "Vertex", frozenset({"VERTEX PHARMS INC", "VERTEX PHARMS"}), page_size=5
+    ),
     "wires-prnewswire": lambda c: wires.collect_feed(c.web, wires.FEEDS[0]),
     "sec-vertex-10q-index": _ten_q_index,
 }

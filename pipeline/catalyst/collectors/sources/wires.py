@@ -6,6 +6,7 @@ is stored; full releases are fetched later, per document, by the extractor items
 
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
 from xml.etree.ElementTree import Element
 
@@ -41,6 +42,11 @@ def _text(item: Element, tag: str) -> str:
     return (found.text or "").strip() if found is not None else ""
 
 
+def _aware(moment: datetime) -> datetime:
+    """RFC 2822 "-0000" means UTC with no local zone given; Python returns it without a zone."""
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def parse_feed(feed: Feed, xml: bytes) -> list[FetchedDocument]:
     """Turn each item that has an https link and a date into a stored document keyed by its guid."""
     root = SafeXml.fromstring(xml)
@@ -57,7 +63,7 @@ def parse_feed(feed: Feed, xml: bytes) -> list[FetchedDocument]:
                 publisher=feed.publisher,
                 source_tier=SourceTier.WIRE,
                 document_type="Wire press release (feed item)",
-                published_at=parsedate_to_datetime(published),
+                published_at=_aware(parsedate_to_datetime(published)),
                 content=SafeXml.tostring(item),
                 content_type="application/rss+xml",
             )

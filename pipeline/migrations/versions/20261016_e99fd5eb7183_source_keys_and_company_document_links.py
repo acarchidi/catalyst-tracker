@@ -61,7 +61,21 @@ def upgrade() -> None:
             comment="The source's own identity for this document version, such as 'sec:<accession>:<file>'.",
         ),
     )
-    # Rows stored before source keys existed get a placeholder key; collectors re-key new fetches.
+    # Rows stored before source keys existed: SEC exhibits get their real key, rebuilt from the
+    # link (folder digits are the accession number), so a later collect does not store them again.
+    op.execute(
+        r"""
+        UPDATE source_document
+        SET source_key = regexp_replace(
+            url,
+            '^https://www\.sec\.gov/Archives/edgar/data/\d+/(\d{10})(\d{2})(\d{6})/([^/]+)$',
+            'sec:\1-\2-\3:\4'
+        )
+        WHERE source_key IS NULL
+          AND url ~ '^https://www\.sec\.gov/Archives/edgar/data/\d+/\d{18}/[^/]+$'
+        """
+    )
+    # Anything else gets a placeholder key.
     op.execute("UPDATE source_document SET source_key = 'legacy:' || id::text WHERE source_key IS NULL")
     op.alter_column("source_document", "source_key", nullable=False)
     op.drop_constraint(op.f("uq_source_document_url_sha256"), "source_document", type_="unique")

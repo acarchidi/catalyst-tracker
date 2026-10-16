@@ -55,17 +55,25 @@ def collect_filings(
             break
         if already_stored(f"sec:{filing.accession_number}:"):
             continue
+        # Fetch every kept document before yielding any, so a failure part-way stores nothing and
+        # the next run retries the whole filing (a stored filing is skipped by its accession prefix).
+        fetched: list[FetchedDocument] = []
         for document in documents_to_keep(filing, list_documents(client.get(filing.index_url).text)):
             response = client.get(document.url)
-            yield FetchedDocument(
-                source_key=source_key(filing, document),
-                url=document.url,
-                publisher=PUBLISHER,
-                source_tier=SourceTier.REGULATOR_OR_SEC,
-                document_type=filing.form
-                if document.type == filing.form
-                else f"{filing.form} {document.type}",
-                published_at=filing.accepted_at,
-                content=response.content,
-                content_type=response.headers.get("content-type", "application/octet-stream").split(";")[0],
+            fetched.append(
+                FetchedDocument(
+                    source_key=source_key(filing, document),
+                    url=document.url,
+                    publisher=PUBLISHER,
+                    source_tier=SourceTier.REGULATOR_OR_SEC,
+                    document_type=filing.form
+                    if document.type == filing.form
+                    else f"{filing.form} {document.type}",
+                    published_at=filing.accepted_at,
+                    content=response.content,
+                    content_type=response.headers.get("content-type", "application/octet-stream").split(";")[
+                        0
+                    ],
+                )
             )
+        yield from fetched

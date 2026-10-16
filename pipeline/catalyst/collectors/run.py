@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import CollectionStats, FetchedDocument, store_fetched
-from catalyst.collectors.http import HostPolicy, PoliteHttpClient, RobotsDisallowedError, shared_limiter
+from catalyst.collectors.http import HostPolicy, PoliteHttpClient, shared_limiter
 from catalyst.collectors.ratelimit import Limiter, NoWait
 from catalyst.collectors.sec.edgar import SEC_LIMITER, SUBMISSIONS_URL, EdgarClient, company_profile
 from catalyst.collectors.sec.filings import DEFAULT_FORMS, collect_filings
@@ -100,7 +100,7 @@ class Collector:
             for fetched in documents():
                 saved, created = store_fetched(fetched, self.store, self.session_factory, company, self.now)
                 stats.add(saved, created)
-        except (httpx.HTTPError, RobotsDisallowedError) as error:
+        except Exception as error:
             stats.error = f"{type(error).__name__}: {error}"
             log_alert(_log, "collector_failed", source=source, error=stats.error)
         log_event(_log, "collector_finished", source=source, created=stats.created, existing=stats.existing)

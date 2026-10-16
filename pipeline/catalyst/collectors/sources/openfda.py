@@ -4,10 +4,13 @@ Supplies approvals and application history (spec: Data sources). Each applicatio
 Drugs@FDA page, the FDA's own record of it.
 """
 
+import hashlib
 import json
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any
+
+import httpx
 
 from catalyst.collectors.documents import FetchedDocument, new_york_midnight
 from catalyst.collectors.http import PoliteHttpClient
@@ -38,34 +41,46 @@ def to_document(application: dict[str, Any]) -> FetchedDocument | None:
     if latest is None:
         return None
     number: str = application["application_number"]
-    submissions = len(application.get("submissions", []))
+    content = json.dumps(application, sort_keys=True, separators=(",", ":")).encode()
+    # The latest action date alone misses changes with no new submission, such as a product
+    # being discontinued, so a short hash of the record is part of the key.
+    digest = hashlib.sha256(content).hexdigest()[:12]
     return FetchedDocument(
-        source_key=f"openfda:{number}:{latest}:{submissions}",
+        source_key=f"openfda:{number}:{latest}:{digest}",
         url=OVERVIEW_URL.format(number="".join(ch for ch in number if ch.isdigit())),
         publisher=PUBLISHER,
         source_tier=SourceTier.REGULATOR_OR_SEC,
         document_type=f"Drugs@FDA application {number}",
         published_at=new_york_midnight(datetime.strptime(latest, "%Y%m%d").date()),  # noqa: DTZ007 - date only
-        content=json.dumps(application, sort_keys=True, separators=(",", ":")).encode(),
+        content=content,
         content_type="application/json",
     )
 
 
 def collect_applications(
-    client: PoliteHttpClient, manufacturer: str, sponsor_names: frozenset[str], max_pages: int = 10
+    client: PoliteHttpClient,
+    manufacturer: str,
+    sponsor_names: frozenset[str],
+    max_pages: int = 10,
+    page_size: int = PAGE_SIZE,
 ) -> Iterator[FetchedDocument]:
     """Yield applications found by manufacturer name whose sponsor is exactly one of `sponsor_names`."""
     skip = 0
     for _ in range(max_pages):
         params: dict[str, str | int] = {
             "search": f'openfda.manufacturer_name:"{manufacturer}"',
-            "limit": PAGE_SIZE,
+            "limit": page_size,
             "skip": skip,
         }
-        page = client.get(API_URL, params=params).json()
+        try:
+            page = client.get(API_URL, params=params).json()
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code == 404:  # openFDA answers 404 when nothing matches
+                return
+            raise
         for application in page.get("results", []):
             if application.get("sponsor_name") in sponsor_names and (document := to_document(application)):
                 yield document
-        skip += PAGE_SIZE
+        skip += page_size
         if skip >= page["meta"]["results"]["total"]:
             break

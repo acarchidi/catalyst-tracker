@@ -46,12 +46,13 @@ def collect_advisory_committee_notices(
         "order": "newest",
         "per_page": per_page,
     }
-    url: str | None = API_URL
-    for _ in range(max_pages):
-        if url is None:
-            break
-        page = client.get(url, params=params).json()
+    page = client.get(API_URL, params=params).json()
+    for page_number in range(max_pages):
         for document in page.get("results", []):
             if is_advisory_committee_meeting(document):
                 yield to_document(document)
-        url, params = page.get("next_page_url"), {}
+        next_url = page.get("next_page_url")
+        if not next_url or page_number + 1 == max_pages:
+            break
+        # The next-page URL already carries every filter; adding params would replace them.
+        page = client.get(next_url).json()

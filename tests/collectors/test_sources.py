@@ -36,16 +36,27 @@ def test_trials_follow_pages_and_keep_only_exact_lead_sponsor_matches() -> None:
     assert json.loads(first.content)["protocolSection"]["identificationModule"]["nctId"] == "NCT04677543"
 
 
-def test_fda_applications_are_keyed_by_their_latest_action() -> None:
-    clients = build_clients(EMAIL, RecordedServer("openfda-insmed").transport, rate_limits=False)
+def test_fda_applications_are_keyed_by_latest_action_and_content() -> None:
+    server = RecordedServer("openfda-insmed")
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
     documents = list(openfda.collect_applications(clients.web, "Insmed", frozenset({"INSMED INC"})))
-    assert [d.source_key for d in documents] == [
-        "openfda:NDA207356:20260625:7",
-        "openfda:NDA217673:20250812:1",
-    ]
+    keys = [d.source_key for d in documents]
+    assert [k.rsplit(":", 1)[0] for k in keys] == ["openfda:NDA207356:20260625", "openfda:NDA217673:20250812"]
+    assert all(len(k.rsplit(":", 1)[1]) == 12 for k in keys)
     assert documents[0].url.endswith("ApplNo=207356")
     assert documents[0].published_at == datetime(2026, 6, 25, 4, 0, tzinfo=UTC)
     assert documents[0].source_tier is SourceTier.REGULATOR_OR_SEC
+
+
+def test_an_fda_change_without_a_new_submission_gets_a_new_key() -> None:
+    server = RecordedServer("openfda-insmed")
+    application = json.loads(server.responses[next(iter(server.responses))][1])["results"][0]
+    before = openfda.to_document(application)
+    application["products"][0]["marketing_status"] = "Discontinued"
+    after = openfda.to_document(application)
+    assert before is not None
+    assert after is not None
+    assert before.source_key != after.source_key
 
 
 def test_fda_applications_from_another_sponsor_are_not_linked() -> None:
@@ -159,3 +170,62 @@ def test_hosts_outside_the_list_are_refused() -> None:
     clients = build_clients(EMAIL, RecordedServer().transport, rate_limits=False)
     with pytest.raises(ValueError, match="only fetches from"):
         clients.web.get("https://www.globenewswire.com/rss")
+
+
+def test_federal_register_later_pages_keep_every_filter() -> None:
+    server = RecordedServer("fedreg-2026-paged")
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
+    documents = list(
+        fedreg.collect_advisory_committee_notices(clients.web, date(2026, 1, 1), max_pages=2, per_page=10)
+    )
+    first_page = server.responses[server.requested[0]][1]
+    assert server.requested[1] == json.loads(first_page)["next_page_url"]
+    assert "food-and-drug-administration" in server.requested[1]
+    assert [d.source_key for d in documents] == [
+        "fedreg:2026-19700",
+        "fedreg:2026-18920",
+        "fedreg:2026-18349",
+        "fedreg:2026-16245",
+        "fedreg:2026-15149",
+        "fedreg:2026-15017",
+    ]
+
+
+def test_fda_pages_are_followed_until_the_total_is_reached() -> None:
+    server = RecordedServer("openfda-vertex-paged")
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
+    documents = list(
+        openfda.collect_applications(
+            clients.web, "Vertex", frozenset({"VERTEX PHARMS INC", "VERTEX PHARMS"}), page_size=5
+        )
+    )
+    assert len(server.requested) == 2
+    assert len(documents) == 8
+    assert len({d.source_key for d in documents}) == 8
+
+
+def test_fda_no_match_is_zero_results_not_a_failure() -> None:
+    url = "https://api.fda.gov/drug/drugsfda.json?search=openfda.manufacturer_name%3A%22Nobody%22&limit=100&skip=0"
+    server = RecordedServer(overrides={url: (404, b'{"error":{"code":"NOT_FOUND"}}')})
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
+    assert list(openfda.collect_applications(clients.web, "Nobody", frozenset({"NOBODY INC"}))) == []
+    assert server.requested == [url]
+
+
+def test_a_robots_txt_that_refuses_us_blocks_the_feed() -> None:
+    server = RecordedServer(
+        "wires-prnewswire", overrides={"https://www.prnewswire.com/robots.txt": (403, b"Access Denied")}
+    )
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
+    with pytest.raises(RobotsDisallowedError):
+        list(wires.collect_feed(clients.web, wires.FEEDS[0]))
+
+
+def test_a_feed_date_with_no_zone_is_read_as_utc() -> None:
+    xml = (
+        b'<rss version="2.0"><channel><item><title>t</title><guid>g1</guid>'
+        b"<link>https://www.prnewswire.com/news-releases/a-1.html</link>"
+        b"<pubDate>Fri, 16 Oct 2026 16:04:00 -0000</pubDate></item></channel></rss>"
+    )
+    (document,) = wires.parse_feed(wires.FEEDS[0], xml)
+    assert document.published_at == datetime(2026, 10, 16, 16, 4, tzinfo=UTC)

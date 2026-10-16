@@ -91,9 +91,9 @@ class PoliteHttpClient:
             parser = RobotFileParser()
             if response.status_code == 200:
                 parser.parse(response.text.splitlines())
-            elif 400 <= response.status_code < 500:
+            elif 400 <= response.status_code < 500 and response.status_code not in (401, 403, 429):
                 parser.parse([])  # no robots.txt means no restrictions
             else:
-                parser.parse(["User-agent: *", "Disallow: /"])  # cannot read the rules, so fetch nothing
+                parser.parse(["User-agent: *", "Disallow: /"])  # refused or unreadable: fetch nothing
             self._robots[host] = parser
         return self._robots[host].can_fetch(BOT_NAME, url)

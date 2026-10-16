@@ -1,0 +1,12 @@
+{
+  "https://api.fda.gov/drug/drugsfda.json?search=openfda.manufacturer_name%3A%22Vertex%22&limit=5&skip=0": {
+    "file": "00_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  },
+  "https://api.fda.gov/drug/drugsfda.json?search=openfda.manufacturer_name%3A%22Vertex%22&limit=5&skip=5": {
+    "file": "01_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json; charset=utf-8"
+  }
+}
