@@ -1,0 +1,4052 @@
+# Coverage list built 2026-10-16 by `catalyst coverage-build` (ADR 0009). Do not edit:
+# corrections go in config/coverage_overrides.toml. 448 of 677 listed companies included.
+
+[[company]]
+ticker = "BMY"
+cik = 14272
+name = "BRISTOL MYERS SQUIBB CO"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Bristol-Myers Squibb"]
+ctgov_trials = 832
+
+[[company]]
+ticker = "TXMD"
+cik = 25743
+name = "TherapeuticsMD, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["TherapeuticsMD"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "TENX"
+cik = 34956
+name = "TENAX THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tenax Therapeutics, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "LLY"
+cik = 59478
+name = "ELI LILLY & Co"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Eli Lilly and Company"]
+ctgov_trials = 891
+
+[[company]]
+ticker = "PFE"
+cik = 78003
+name = "PFIZER INC"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Pfizer"]
+ctgov_trials = 748
+
+[[company]]
+ticker = "GTBP"
+cik = 109657
+name = "GT Biopharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["GT Biopharma, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "AMGN"
+cik = 318154
+name = "AMGEN INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Amgen"]
+ctgov_trials = 928
+
+[[company]]
+ticker = "ABEO"
+cik = 318306
+name = "ABEONA THERAPEUTICS INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Abeona Therapeutics, Inc"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "LSTA"
+cik = 320017
+name = "LISATA THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lisata Therapeutics, Inc."]
+ctgov_trials = 16
+
+[[company]]
+ticker = "NVO"
+cik = 353278
+name = "NOVO NORDISK A S"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Novo Nordisk A/S"]
+ctgov_trials = 955
+
+[[company]]
+ticker = "CVM"
+cik = 725363
+name = "CEL SCI CORP"
+sic = 2836
+exchange = "NYSE"
+ctgov_sponsors = ["CEL-SCI Corporation"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CATX"
+cik = 728387
+name = "Perspective Therapeutics, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Perspective Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "RGEN"
+cik = 730272
+name = "REPLIGEN CORP"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Repligen Corporation"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "IMNN"
+cik = 749647
+name = "Imunon, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Imunon"]
+ctgov_trials = 14
+
+[[company]]
+ticker = "SNGX"
+cik = 812796
+name = "SOLIGENIX, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Soligenix"]
+ctgov_trials = 11
+
+[[company]]
+ticker = "HRTX"
+cik = 818033
+name = "HERON THERAPEUTICS, INC. /DE/"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Heron Therapeutics"]
+ctgov_trials = 25
+
+[[company]]
+ticker = "TEVA"
+cik = 818686
+name = "TEVA PHARMACEUTICAL INDUSTRIES LTD"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Teva Pharmaceutical Industries, Ltd."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "VERU"
+cik = 863894
+name = "VERU INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Veru Inc."]
+ctgov_trials = 12
+
+[[company]]
+ticker = "REGN"
+cik = 872589
+name = "REGENERON PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Regeneron Pharmaceuticals"]
+ctgov_trials = 359
+openfda_manufacturer = "Regeneron"
+openfda_sponsors = ["REGENERON PHARMACEUTICALS", "REGENERON PHARMACEUTICALS, INC"]
+
+[[company]]
+ticker = "SRPT"
+cik = 873303
+name = "Sarepta Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sarepta Therapeutics, Inc."]
+ctgov_trials = 38
+openfda_manufacturer = "Sarepta"
+openfda_sponsors = ["SAREPTA THERAPS INC"]
+
+[[company]]
+ticker = "IONS"
+cik = 874015
+name = "IONIS PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ionis Pharmaceuticals, Inc."]
+ctgov_trials = 109
+openfda_manufacturer = "Ionis"
+openfda_sponsors = ["IONIS PHARMS INC"]
+
+[[company]]
+ticker = "BIIB"
+cik = 875045
+name = "BIOGEN INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Biogen"]
+ctgov_trials = 402
+
+[[company]]
+ticker = "VRTX"
+cik = 875320
+name = "VERTEX PHARMACEUTICALS INC / MA"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vertex Pharmaceuticals Incorporated"]
+ctgov_trials = 237
+openfda_manufacturer = "Vertex"
+openfda_sponsors = ["VERTEX PHARMS", "VERTEX PHARMS INC"]
+
+[[company]]
+ticker = "LCTX"
+cik = 876343
+name = "Lineage Cell Therapeutics, Inc."
+sic = 2836
+exchange = "NYSE"
+ctgov_sponsors = ["Lineage Cell Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "INCY"
+cik = 879169
+name = "INCYTE CORP"
+sic = 8731
+exchange = "Nasdaq"
+ctgov_sponsors = ["Incyte Corporation"]
+ctgov_trials = 271
+openfda_manufacturer = "Incyte"
+openfda_sponsors = ["INCYTE CORP"]
+
+[[company]]
+ticker = "ARWR"
+cik = 879407
+name = "ARROWHEAD PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Arrowhead Pharmaceuticals"]
+ctgov_trials = 49
+
+[[company]]
+ticker = "GILD"
+cik = 882095
+name = "GILEAD SCIENCES, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Gilead Sciences"]
+ctgov_trials = 648
+
+[[company]]
+ticker = "BCRX"
+cik = 882796
+name = "BIOCRYST PHARMACEUTICALS INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioCryst Pharmaceuticals"]
+ctgov_trials = 53
+
+[[company]]
+ticker = "LGND"
+cik = 886163
+name = "LIGAND PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ligand Pharmaceuticals"]
+ctgov_trials = 21
+
+[[company]]
+ticker = "GERN"
+cik = 886744
+name = "GERON CORP"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Geron Corporation"]
+ctgov_trials = 15
+
+[[company]]
+ticker = "VCEL"
+cik = 887359
+name = "Vericel Corp"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vericel Corporation"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "TOVX"
+cik = 894158
+name = "Theriva Biologics, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Theriva Biologics, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "MNKD"
+cik = 899460
+name = "MANNKIND CORP"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Mannkind Corporation"]
+ctgov_trials = 52
+
+[[company]]
+ticker = "AZN"
+cik = 901832
+name = "ASTRAZENECA PLC"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["AstraZeneca"]
+ctgov_trials = 958
+
+[[company]]
+ticker = "NKTR"
+cik = 906709
+name = "NEKTAR THERAPEUTICS"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Nektar Therapeutics"]
+ctgov_trials = 39
+
+[[company]]
+ticker = "ORKA"
+cik = 907654
+name = "Oruka Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Oruka Therapeutics, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "PTN"
+cik = 911216
+name = "PALATIN TECHNOLOGIES INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Palatin Technologies, Inc"]
+ctgov_trials = 11
+
+[[company]]
+ticker = "NBIX"
+cik = 914475
+name = "NEUROCRINE BIOSCIENCES INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Neurocrine Biosciences"]
+ctgov_trials = 83
+openfda_manufacturer = "Neurocrine"
+openfda_sponsors = ["NEUROCRINE"]
+
+[[company]]
+ticker = "ARMP"
+cik = 921114
+name = "Armata Pharmaceuticals, Inc."
+sic = 2836
+exchange = "NYSE"
+ctgov_sponsors = ["Armata Pharmaceuticals, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "KYNB"
+cik = 921299
+name = "KYNTRA BIO, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kyntra Bio"]
+ctgov_trials = 41
+
+[[company]]
+ticker = "BCDA"
+cik = 925741
+name = "BioCardia, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioCardia, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "EXEL"
+cik = 939767
+name = "EXELIXIS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Exelixis"]
+ctgov_trials = 56
+
+[[company]]
+ticker = "OPK"
+cik = 944809
+name = "OPKO HEALTH, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["OPKO Health, Inc."]
+ctgov_trials = 44
+
+[[company]]
+ticker = "AIM"
+cik = 946644
+name = "AIM ImmunoTech Inc."
+sic = 2836
+exchange = "NYSE"
+ctgov_sponsors = ["AIM ImmunoTech Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "NVAX"
+cik = 1000694
+name = "NOVAVAX INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Novavax"]
+ctgov_trials = 47
+
+[[company]]
+ticker = "TGTX"
+cik = 1001316
+name = "TG THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["TG Therapeutics, Inc."]
+ctgov_trials = 36
+
+[[company]]
+ticker = "SIGA"
+cik = 1010086
+name = "SIGA TECHNOLOGIES INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["SIGA Technologies"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "XTLB"
+cik = 1023549
+name = "XTL BIOPHARMACEUTICALS LTD"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["XTL Biopharmaceuticals"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "RIGL"
+cik = 1034842
+name = "RIGEL PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rigel Pharmaceuticals"]
+ctgov_trials = 26
+
+[[company]]
+ticker = "ELOX"
+cik = 1035354
+name = "Eloxx Pharmaceuticals, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Eloxx Pharmaceuticals, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "BMRN"
+cik = 1048477
+name = "BIOMARIN PHARMACEUTICAL INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioMarin Pharmaceutical"]
+ctgov_trials = 80
+openfda_manufacturer = "BioMarin"
+openfda_sponsors = ["BIOMARIN", "BIOMARIN PHARM"]
+
+[[company]]
+ticker = "INO"
+cik = 1055726
+name = "INOVIO PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Inovio Pharmaceuticals"]
+ctgov_trials = 27
+
+[[company]]
+ticker = "CYTK"
+cik = 1061983
+name = "CYTOKINETICS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cytokinetics"]
+ctgov_trials = 41
+
+[[company]]
+ticker = "LXRX"
+cik = 1062822
+name = "LEXICON PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lexicon Pharmaceuticals"]
+ctgov_trials = 61
+
+[[company]]
+ticker = "PTCT"
+cik = 1070081
+name = "PTC THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["PTC Therapeutics"]
+ctgov_trials = 61
+
+[[company]]
+ticker = "ACAD"
+cik = 1070494
+name = "ACADIA PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ACADIA Pharmaceuticals Inc."]
+ctgov_trials = 39
+
+[[company]]
+ticker = "KZIA"
+cik = 1075880
+name = "KAZIA THERAPEUTICS LTD"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kazia Therapeutics Limited"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "UTHR"
+cik = 1082554
+name = "UNITED THERAPEUTICS Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["United Therapeutics"]
+ctgov_trials = 74
+
+[[company]]
+ticker = "SVA"
+cik = 1084201
+name = "SINOVAC BIOTECH LTD"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sinovac Biotech Co., Ltd"]
+ctgov_trials = 81
+
+[[company]]
+ticker = "CPIX"
+cik = 1087294
+name = "CUMBERLAND PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cumberland Pharmaceuticals"]
+ctgov_trials = 47
+
+[[company]]
+ticker = "CORT"
+cik = 1088856
+name = "CORCEPT THERAPEUTICS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Corcept Therapeutics"]
+ctgov_trials = 67
+
+[[company]]
+ticker = "MRKR"
+cik = 1094038
+name = "Marker Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Marker Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "AGEN"
+cik = 1098972
+name = "AGENUS INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Agenus Inc."]
+ctgov_trials = 29
+
+[[company]]
+ticker = "INSM"
+cik = 1104506
+name = "INSMED Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Insmed Incorporated"]
+ctgov_trials = 48
+openfda_manufacturer = "Insmed"
+openfda_sponsors = ["INSMED INC"]
+
+[[company]]
+ticker = "TCRT"
+cik = 1107421
+name = "Alaunos Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alaunos Therapeutics"]
+ctgov_trials = 35
+
+[[company]]
+ticker = "CRIS"
+cik = 1108205
+name = "CURIS INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Curis, Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "NVS"
+cik = 1114448
+name = "NOVARTIS AG"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Novartis"]
+ctgov_trials = 228
+
+[[company]]
+ticker = "CGEN"
+cik = 1119774
+name = "COMPUGEN LTD"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Compugen Ltd"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "SNY"
+cik = 1121404
+name = "Sanofi"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sanofi"]
+ctgov_trials = 622
+
+[[company]]
+ticker = "MGNX"
+cik = 1125345
+name = "MACROGENICS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MacroGenics"]
+ctgov_trials = 39
+
+[[company]]
+ticker = "ONCY"
+cik = 1129928
+name = "ONCOLYTICS BIOTECH INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Oncolytics Biotech"]
+ctgov_trials = 15
+
+[[company]]
+ticker = "TRAW"
+cik = 1130598
+name = "Traws Pharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Traws Pharma, Inc."]
+ctgov_trials = 35
+
+[[company]]
+ticker = "ATHE"
+cik = 1131343
+name = "ALTERITY THERAPEUTICS LTD"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alterity Therapeutics"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "GALT"
+cik = 1133416
+name = "GALECTIN THERAPEUTICS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Galectin Therapeutics Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "RDY"
+cik = 1135951
+name = "DR REDDYS LABORATORIES LTD"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Dr. Reddys Laboratories, SA"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "MDGL"
+cik = 1157601
+name = "MADRIGAL PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Madrigal Pharmaceuticals, Inc."]
+ctgov_trials = 20
+
+[[company]]
+ticker = "HALO"
+cik = 1159036
+name = "HALOZYME THERAPEUTICS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Halozyme Therapeutics"]
+ctgov_trials = 32
+
+[[company]]
+ticker = "SVRA"
+cik = 1160308
+name = "Savara Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Savara Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "OGEN"
+cik = 1174940
+name = "ORAGENICS INC"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Oragenics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "ENTA"
+cik = 1177648
+name = "ENANTA PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Enanta Pharmaceuticals, Inc"]
+ctgov_trials = 45
+
+[[company]]
+ticker = "SCYX"
+cik = 1178253
+name = "SCYNEXIS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Scynexis, Inc."]
+ctgov_trials = 18
+
+[[company]]
+ticker = "ALNY"
+cik = 1178670
+name = "ALNYLAM PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alnylam Pharmaceuticals"]
+ctgov_trials = 69
+openfda_manufacturer = "Alnylam"
+openfda_sponsors = ["ALNYLAM PHARMS INC"]
+
+[[company]]
+ticker = "CELZ"
+cik = 1187953
+name = "CREATIVE MEDICAL TECHNOLOGY HOLDINGS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Creative Medical Technology Holdings Inc"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CRDF"
+cik = 1213037
+name = "Cardiff Oncology, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cardiff Oncology"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "MNOV"
+cik = 1226616
+name = "MEDICINOVA INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MediciNova"]
+ctgov_trials = 17
+
+[[company]]
+ticker = "IRD"
+cik = 1228627
+name = "Opus Genetics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Opus Genetics, Inc"]
+ctgov_trials = 16
+
+[[company]]
+ticker = "GNLX"
+cik = 1231457
+name = "GENELUX Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Genelux Corporation", "Genelux GmbH"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "JAZZ"
+cik = 1232524
+name = "Jazz Pharmaceuticals plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Jazz Pharmaceuticals"]
+ctgov_trials = 180
+
+[[company]]
+ticker = "CBIO"
+cik = 1253689
+name = "CRESCENT BIOPHARMA, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Crescent Biopharma, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "COLL"
+cik = 1267565
+name = "COLLEGIUM PHARMACEUTICAL, INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Collegium Pharmaceutical, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "CLRB"
+cik = 1279704
+name = "Cellectar Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cellectar Biosciences, Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "IMUX"
+cik = 1280776
+name = "IMMUNIC, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Immunic AG"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "RCKT"
+cik = 1281895
+name = "ROCKET PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rocket Pharmaceuticals Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "OMER"
+cik = 1285819
+name = "OMEROS CORP"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Omeros Corporation"]
+ctgov_trials = 24
+
+[[company]]
+ticker = "MXCT"
+cik = 1287098
+name = "MAXCYTE, INC."
+sic = 8731
+exchange = "Nasdaq"
+ctgov_sponsors = ["MaxCyte, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "AMPH"
+cik = 1297184
+name = "Amphastar Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Amphastar Pharmaceuticals, Inc."]
+ctgov_trials = 20
+
+[[company]]
+ticker = "AVXL"
+cik = 1314052
+name = "ANAVEX LIFE SCIENCES CORP."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Anavex Life Sciences Corp."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "IBRX"
+cik = 1326110
+name = "ImmunityBio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["ImmunityBio, Inc."]
+ctgov_trials = 80
+
+[[company]]
+ticker = "ALT"
+cik = 1326190
+name = "Altimmune, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Altimmune, Inc."]
+ctgov_trials = 19
+
+[[company]]
+ticker = "IGC"
+cik = 1326205
+name = "IGC Pharma, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["IGC Pharma, LLC"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "XNCR"
+cik = 1326732
+name = "Xencor Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Xencor, Inc."]
+ctgov_trials = 29
+
+[[company]]
+ticker = "ATYR"
+cik = 1339970
+name = "aTYR PHARMA INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["aTyr Pharma, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "ALDX"
+cik = 1341235
+name = "Aldeyra Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aldeyra Therapeutics, Inc."]
+ctgov_trials = 35
+
+[[company]]
+ticker = "MESO"
+cik = 1345099
+name = "MESOBLAST LTD"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Mesoblast, Inc.", "Mesoblast, Ltd."]
+ctgov_trials = 31
+
+[[company]]
+ticker = "TVRD"
+cik = 1346830
+name = "Tvardi Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tvardi Therapeutics, Incorporated"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "VNDA"
+cik = 1347178
+name = "Vanda Pharmaceuticals Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vanda Pharmaceuticals"]
+ctgov_trials = 76
+
+[[company]]
+ticker = "LEXX"
+cik = 1348362
+name = "Lexaria Bioscience Corp."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lexaria Bioscience Corp."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "PGEN"
+cik = 1356090
+name = "PRECIGEN, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Precigen, Inc"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "SUPN"
+cik = 1356576
+name = "SUPERNUS PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Supernus Pharmaceuticals, Inc."]
+ctgov_trials = 58
+
+[[company]]
+ticker = "PALI"
+cik = 1357459
+name = "PALISADE BIO, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Palisade Bio"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "DTIL"
+cik = 1357874
+name = "PRECISION BIOSCIENCES INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Precision BioSciences, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "TARA"
+cik = 1359931
+name = "Protara Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Protara Therapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "HROW"
+cik = 1360214
+name = "HARROW, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Harrow Inc"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "EBS"
+cik = 1367644
+name = "Emergent BioSolutions Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Emergent BioSolutions"]
+ctgov_trials = 35
+
+[[company]]
+ticker = "ADMA"
+cik = 1368514
+name = "ADMA BIOLOGICS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["ADMA Biologics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "ANAB"
+cik = 1370053
+name = "ANAPTYSBIO, INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["AnaptysBio, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "OCGN"
+cik = 1372299
+name = "Ocugen, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ocugen"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "KPRX"
+cik = 1372514
+name = "KIORA PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kiora Pharmaceuticals, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "PMN"
+cik = 1374339
+name = "ProMIS Neurosciences Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ProMis Neurosciences, Inc"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "LRMR"
+cik = 1374690
+name = "Larimar Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Larimar Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "PTGX"
+cik = 1377121
+name = "Protagonist Therapeutics, Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Protagonist Therapeutics, Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "STRO"
+cik = 1382101
+name = "SUTRO BIOPHARMA, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sutro Biopharma, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "AYTU"
+cik = 1385818
+name = "AYTU BIOPHARMA, INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aytu BioPharma, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "ATNM"
+cik = 1388320
+name = "Actinium Pharmaceuticals, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Actinium Pharmaceuticals"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "SLS"
+cik = 1390478
+name = "SELLAS Life Sciences Group, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sellas Life Sciences Group"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "OCUL"
+cik = 1393434
+name = "OCULAR THERAPEUTIX, INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ocular Therapeutix, Inc."]
+ctgov_trials = 27
+
+[[company]]
+ticker = "SNDX"
+cik = 1395937
+name = "Syndax Pharmaceuticals Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Syndax Pharmaceuticals"]
+ctgov_trials = 29
+
+[[company]]
+ticker = "AQST"
+cik = 1398733
+name = "Aquestive Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aquestive Therapeutics"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "SGMT"
+cik = 1400118
+name = "Sagimet Biosciences Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sagimet Biosciences Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "DMAC"
+cik = 1401040
+name = "DiaMedica Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["DiaMedica Therapeutics Inc"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "PBYI"
+cik = 1401667
+name = "PUMA BIOTECHNOLOGY, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Puma Biotechnology, Inc."]
+ctgov_trials = 36
+
+[[company]]
+ticker = "ELDN"
+cik = 1404281
+name = "Eledon Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Eledon Pharmaceuticals"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "NGNE"
+cik = 1404644
+name = "Neurogene Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Neurogene Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "VTGN"
+cik = 1411685
+name = "Vistagen Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["VistaGen Therapeutics, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "COCP"
+cik = 1412486
+name = "Cocrystal Pharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cocrystal Pharma, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "RNTX"
+cik = 1420565
+name = "Rein Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rein Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "IBIO"
+cik = 1420720
+name = "iBio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["iBio, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "MSLE"
+cik = 1421642
+name = "Satellos Bioscience Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Satellos Bioscience, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "LKFT"
+cik = 1421876
+name = "Lakefront Biotherapeutics NV"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lakefront Biotherapeutics NV"]
+ctgov_trials = 111
+
+[[company]]
+ticker = "WHWK"
+cik = 1422142
+name = "Whitehawk Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Whitehawk Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "KURA"
+cik = 1422143
+name = "Kura Oncology, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kura Oncology, Inc."]
+ctgov_trials = 15
+
+[[company]]
+ticker = "IOVA"
+cik = 1425205
+name = "IOVANCE BIOTHERAPEUTICS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Iovance Biotherapeutics, Inc."]
+ctgov_trials = 15
+
+[[company]]
+ticker = "ASMB"
+cik = 1426800
+name = "ASSEMBLY BIOSCIENCES, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Assembly Biosciences"]
+ctgov_trials = 23
+
+[[company]]
+ticker = "TLPH"
+cik = 1427925
+name = "TALPHERA, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Talphera, Inc"]
+ctgov_trials = 17
+
+[[company]]
+ticker = "FATE"
+cik = 1434316
+name = "FATE THERAPEUTICS INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Fate Therapeutics"]
+ctgov_trials = 23
+
+[[company]]
+ticker = "ZVRA"
+cik = 1434647
+name = "ZEVRA THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Zevra Therapeutics"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "ARDX"
+cik = 1437402
+name = "ARDELYX, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ardelyx"]
+ctgov_trials = 29
+
+[[company]]
+ticker = "TVTX"
+cik = 1438533
+name = "Travere Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Travere Therapeutics, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "AGIO"
+cik = 1439222
+name = "AGIOS PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Agios Pharmaceuticals, Inc."]
+ctgov_trials = 47
+
+[[company]]
+ticker = "GRCE"
+cik = 1444192
+name = "Grace Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Grace Therapeutics Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "IRWD"
+cik = 1446847
+name = "IRONWOOD PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ironwood Pharmaceuticals, Inc."]
+ctgov_trials = 25
+
+[[company]]
+ticker = "ABUS"
+cik = 1447028
+name = "Arbutus Biopharma Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Arbutus Biopharma Corporation"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "RNAC"
+cik = 1453687
+name = "Cartesian Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cartesian Therapeutics"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "CGTX"
+cik = 1455365
+name = "COGNITION THERAPEUTICS INC"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cognition Therapeutics"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "KOD"
+cik = 1468748
+name = "Kodiak Sciences Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kodiak Sciences Inc"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "IMNM"
+cik = 1472012
+name = "Immunome Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Immunome, Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "PDSB"
+cik = 1472091
+name = "PDS Biotechnology Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["PDS Biotechnology Corp."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "ANVS"
+cik = 1477845
+name = "Annovis Bio, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Annovis Bio Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "SLN"
+cik = 1479615
+name = "Silence Therapeutics plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Silence Therapeutics GmbH", "Silence Therapeutics plc"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "ATOS"
+cik = 1488039
+name = "ATOSSA THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Atossa Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "HURA"
+cik = 1498382
+name = "TuHURA Biosciences, Inc./NV"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["TuHURA Biosciences, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "BLRX"
+cik = 1498403
+name = "BioLineRx Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioLineRx, Ltd."]
+ctgov_trials = 17
+
+[[company]]
+ticker = "XFOR"
+cik = 1501697
+name = "X4 Pharmaceuticals, Inc"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["X4 Pharmaceuticals"]
+ctgov_trials = 11
+
+[[company]]
+ticker = "AURA"
+cik = 1501796
+name = "Aura Biosciences, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aura Biosciences"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "CTMX"
+cik = 1501989
+name = "CytomX Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["CytomX Therapeutics"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "KPTI"
+cik = 1503802
+name = "Karyopharm Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Karyopharm Therapeutics Inc"]
+ctgov_trials = 36
+
+[[company]]
+ticker = "CTXR"
+cik = 1506251
+name = "Citius Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Citius Pharmaceuticals, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CHRS"
+cik = 1512762
+name = "Coherus Oncology, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Coherus Oncology, Inc."]
+ctgov_trials = 17
+
+[[company]]
+ticker = "ADIL"
+cik = 1513525
+name = "ADIAL PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Adial Pharmaceuticals"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "RARE"
+cik = 1515673
+name = "Ultragenyx Pharmaceutical Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ultragenyx Pharmaceutical Inc"]
+ctgov_trials = 40
+
+[[company]]
+ticker = "SKYE"
+cik = 1516551
+name = "Skye Bioscience, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Skye Bioscience, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "AKBA"
+cik = 1517022
+name = "Akebia Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Akebia Therapeutics"]
+ctgov_trials = 37
+
+[[company]]
+ticker = "ALKS"
+cik = 1520262
+name = "Alkermes plc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alkermes, Inc."]
+ctgov_trials = 78
+
+[[company]]
+ticker = "VSTM"
+cik = 1526119
+name = "Verastem, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Verastem, Inc."]
+ctgov_trials = 27
+
+[[company]]
+ticker = "ANNX"
+cik = 1528115
+name = "Annexon, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Annexon, Inc."]
+ctgov_trials = 16
+
+[[company]]
+ticker = "PHIO"
+cik = 1533040
+name = "Phio Pharmaceuticals Corp."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Phio Pharmaceuticals Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "PCSA"
+cik = 1533743
+name = "Processa Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Processa Pharmaceuticals"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "AVTX"
+cik = 1534120
+name = "Avalo Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Avalo Therapeutics, Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "CALC"
+cik = 1534133
+name = "CalciMedica, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["CalciMedica, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "XBIO"
+cik = 1534525
+name = "Xenetic Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Xenetic Biosciences, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "LPCN"
+cik = 1535955
+name = "Lipocine Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lipocine Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "CANF"
+cik = 1536196
+name = "Can-Fite BioPharma Ltd."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Can-Fite BioPharma"]
+ctgov_trials = 22
+
+[[company]]
+ticker = "EDSA"
+cik = 1540159
+name = "Edesa Biotech, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Edesa Biotech Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "AVLN"
+cik = 1540171
+name = "Avalyn Pharma Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Avalyn Pharma Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "AKTX"
+cik = 1541157
+name = "Akari Therapeutics Plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["AKARI Therapeutics"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "TPST"
+cik = 1544227
+name = "Tempest Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tempest Therapeutics"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "NRIX"
+cik = 1549595
+name = "Nurix Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Nurix Therapeutics, Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "ABBV"
+cik = 1551152
+name = "AbbVie Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["AbbVie"]
+ctgov_trials = 714
+
+[[company]]
+ticker = "RLMD"
+cik = 1553643
+name = "RELMADA THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Relmada Therapeutics, Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "RDHL"
+cik = 1553846
+name = "RedHill Biopharma Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["RedHill Biopharma Limited"]
+ctgov_trials = 18
+
+[[company]]
+ticker = "ACRS"
+cik = 1557746
+name = "Aclaris Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aclaris Therapeutics, Inc."]
+ctgov_trials = 33
+
+[[company]]
+ticker = "TRVI"
+cik = 1563880
+name = "Trevi Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Trevi Therapeutics"]
+ctgov_trials = 17
+
+[[company]]
+ticker = "YARW"
+cik = 1566044
+name = "Yarrow Bioscience, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Yarrow Bioscience, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "INTS"
+cik = 1567264
+name = "INTENSITY THERAPEUTICS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Intensity Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "KMDA"
+cik = 1567529
+name = "KAMADA LTD"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kamada, Ltd."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "EOLS"
+cik = 1570562
+name = "Evolus, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Evolus, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "PULM"
+cik = 1574235
+name = "Pulmatrix, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Pulmatrix Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "ABOS"
+cik = 1576885
+name = "Acumen Pharmaceuticals, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Acumen Pharmaceuticals"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "AXSM"
+cik = 1579428
+name = "Axsome Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Axsome Therapeutics, Inc."]
+ctgov_trials = 36
+
+[[company]]
+ticker = "BIVI"
+cik = 1580149
+name = "BIOVIE INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioVie Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "EPRX"
+cik = 1581178
+name = "EUPRAXIA PHARMACEUTICALS INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Eupraxia Pharmaceuticals Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "XENE"
+cik = 1582313
+name = "Xenon Pharmaceuticals Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Xenon Pharmaceuticals Inc."]
+ctgov_trials = 23
+
+[[company]]
+ticker = "PVLA"
+cik = 1583648
+name = "PALVELLA THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Palvella Therapeutics, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "PRGO"
+cik = 1585364
+name = "PERRIGO Co plc"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Perrigo Company"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "AVIR"
+cik = 1593899
+name = "Atea Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Atea Pharmaceuticals, Inc."]
+ctgov_trials = 33
+
+[[company]]
+ticker = "GNPX"
+cik = 1595248
+name = "Genprex, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Genprex, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "EOCN"
+cik = 1595353
+name = "Galmed Pharmaceuticals Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Galmed Pharmaceuticals Ltd"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "IPHA"
+cik = 1598599
+name = "Innate Pharma SA"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Innate Pharma"]
+ctgov_trials = 17
+
+[[company]]
+ticker = "NERV"
+cik = 1598646
+name = "Minerva Neurosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Minerva Neurosciences"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "SMMT"
+cik = 1599298
+name = "Summit Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Summit Therapeutics"]
+ctgov_trials = 13
+
+[[company]]
+ticker = "AUPH"
+cik = 1600620
+name = "Aurinia Pharmaceuticals Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aurinia Pharmaceuticals Inc."]
+ctgov_trials = 18
+
+[[company]]
+ticker = "ELTX"
+cik = 1601485
+name = "Elicio Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Elicio Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "RXRX"
+cik = 1601830
+name = "RECURSION PHARMACEUTICALS, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Recursion Pharmaceuticals Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "ATRA"
+cik = 1604464
+name = "Atara Biotherapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Atara Biotherapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "VKTX"
+cik = 1607678
+name = "Viking Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Viking Therapeutics, Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "MCRB"
+cik = 1609809
+name = "Seres Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Seres Therapeutics, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "BCTX"
+cik = 1610820
+name = "BriaCell Therapeutics Corp."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BriaCell Therapeutics Corporation"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "ASND"
+cik = 1612042
+name = "Ascendis Pharma A/S"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ascendis Pharma A/S"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "CRBU"
+cik = 1619856
+name = "Caribou Biosciences, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Caribou Biosciences, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "LONA"
+cik = 1620463
+name = "LeonaBio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["LeonaBio"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "COGT"
+cik = 1622229
+name = "Cogent Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cogent Biosciences, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "STOK"
+cik = 1623526
+name = "Stoke Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Stoke Therapeutics, Inc"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "XBIT"
+cik = 1626878
+name = "XBiotech Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["XBiotech, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "CRVS"
+cik = 1626971
+name = "Corvus Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Corvus Pharmaceuticals, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "RVMD"
+cik = 1628171
+name = "Revolution Medicines, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Revolution Medicines, Inc."]
+ctgov_trials = 19
+
+[[company]]
+ticker = "SYRE"
+cik = 1636282
+name = "Spyre Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Spyre Therapeutics, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "OVID"
+cik = 1636651
+name = "Ovid Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ovid Therapeutics Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "ENTX"
+cik = 1638097
+name = "Entera Bio Ltd."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Entera Bio Ltd."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "VYGR"
+cik = 1640266
+name = "Voyager Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Voyager Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "BOLT"
+cik = 1641281
+name = "Bolt Biotherapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Bolt Biotherapeutics, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "VTVT"
+cik = 1641489
+name = "vTv Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["vTv Therapeutics"]
+ctgov_trials = 14
+
+[[company]]
+ticker = "BDRX"
+cik = 1643918
+name = "Biodexa Pharmaceuticals Plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Biodexa Pharmaceuticals"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "CUE"
+cik = 1645460
+name = "Cue Biopharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cue Biopharma"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "MNPR"
+cik = 1645469
+name = "Monopar Therapeutics"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Monopar Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "PCVX"
+cik = 1649094
+name = "Vaxcyte, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vaxcyte, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "RYTM"
+cik = 1649904
+name = "RHYTHM PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rhythm Pharmaceuticals, Inc."]
+ctgov_trials = 25
+
+[[company]]
+ticker = "OTLK"
+cik = 1649989
+name = "Outlook Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Outlook Therapeutics, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "FDMT"
+cik = 1650648
+name = "4D Molecular Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["4D Molecular Therapeutics"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "EDIT"
+cik = 1650664
+name = "Editas Medicine, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Editas Medicine, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ONC"
+cik = 1651308
+name = "BeOne Medicines Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BeOne Medicines"]
+ctgov_trials = 60
+
+[[company]]
+ticker = "ACIU"
+cik = 1651625
+name = "AC Immune SA"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["AC Immune SA"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "ACTU"
+cik = 1652935
+name = "ACTUATE THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Actuate Therapeutics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ALEC"
+cik = 1653087
+name = "Alector, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alector Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "ARVN"
+cik = 1655759
+name = "ARVINAS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Arvinas Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ACOG"
+cik = 1655923
+name = "Alpha Cognition Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alpha Cognition, Inc"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "PBLS"
+cik = 1657677
+name = "Parabilis Medicines, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Parabilis Medicines, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "AMLX"
+cik = 1658551
+name = "Amylyx Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Amylyx Pharmaceuticals Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "MBRX"
+cik = 1659617
+name = "Moleculin Biotech, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Moleculin Biotech, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "IMRN"
+cik = 1660046
+name = "Immuron Ltd"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Immuron Ltd."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "VRCA"
+cik = 1660334
+name = "Verrica Pharmaceuticals Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Verrica Pharmaceuticals Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "NXTC"
+cik = 1661059
+name = "NextCure, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["NextCure, Inc."]
+ctgov_trials = 8
+
+[[company]]
+ticker = "QTTB"
+cik = 1661998
+name = "Q32 Bio Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Q32 Bio Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "CCCC"
+cik = 1662579
+name = "C4 Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["C4 Therapeutics, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "IRLA"
+cik = 1662774
+name = "IRulya Therapeutics Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["IRulya Therapeutics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "KROS"
+cik = 1664710
+name = "Keros Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Keros Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "URGN"
+cik = 1668243
+name = "UroGen Pharma Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["UroGen Pharma Ltd."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "QNRX"
+cik = 1671502
+name = "Quoin Pharmaceuticals Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Quoin Pharmaceuticals"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "APVO"
+cik = 1671584
+name = "Aptevo Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aptevo Therapeutics"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "SPRY"
+cik = 1671858
+name = "ARS Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ARS Pharmaceuticals, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ELVN"
+cik = 1672619
+name = "Enliven Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Enliven Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "CRSP"
+cik = 1674416
+name = "CRISPR Therapeutics AG"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["CRISPR Therapeutics", "CRISPR Therapeutics AG"]
+ctgov_trials = 13
+
+[[company]]
+ticker = "IDYA"
+cik = 1676725
+name = "IDEAYA Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["IDEAYA Biosciences"]
+ctgov_trials = 11
+
+[[company]]
+ticker = "ALZN"
+cik = 1677077
+name = "Alzamend Neuro, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alzamend Neuro, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "PRLD"
+cik = 1678660
+name = "Prelude Therapeutics Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Prelude Therapeutics Incorporated"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "MBIO"
+cik = 1680048
+name = "MUSTANG BIO, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Mustang Bio"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "STTK"
+cik = 1680367
+name = "Shattuck Labs, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Shattuck Labs, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "FULC"
+cik = 1680581
+name = "Fulcrum Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Fulcrum Therapeutics"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "TECX"
+cik = 1681087
+name = "Tectonic Therapeutic, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tectonic Therapeutic"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "MRNA"
+cik = 1682852
+name = "Moderna, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["ModernaTX, Inc."]
+ctgov_trials = 0
+
+[[company]]
+ticker = "SPRB"
+cik = 1683553
+name = "SPRUCE BIOSCIENCES, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Spruce Biosciences"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "SLGL"
+cik = 1684693
+name = "Sol-Gel Technologies Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sol-Gel Technologies, Ltd."]
+ctgov_trials = 15
+
+[[company]]
+ticker = "TRDA"
+cik = 1689375
+name = "Entrada Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Entrada Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "PRAX"
+cik = 1689548
+name = "Praxis Precision Medicines, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Praxis Precision Medicines"]
+ctgov_trials = 16
+
+[[company]]
+ticker = "DNTH"
+cik = 1690585
+name = "Dianthus Therapeutics, Inc. /DE/"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Dianthus Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "LBRX"
+cik = 1691082
+name = "LB PHARMACEUTICALS INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["LB Pharmaceuticals Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "ARGX"
+cik = 1697862
+name = "ARGENX SE"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["argenx"]
+ctgov_trials = 74
+
+[[company]]
+ticker = "XCUR"
+cik = 1698530
+name = "EXICURE, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Exicure, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "PMVP"
+cik = 1699382
+name = "PMV Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["PMV Pharmaceuticals, Inc"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "SPRO"
+cik = 1701108
+name = "Spero Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Spero Therapeutics"]
+ctgov_trials = 22
+
+[[company]]
+ticker = "AZTR"
+cik = 1701478
+name = "Azitra, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Azitra Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "BDTX"
+cik = 1701541
+name = "Black Diamond Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Black Diamond Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "CRDL"
+cik = 1702123
+name = "Cardiol Therapeutics Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cardiol Therapeutics Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "ABCL"
+cik = 1703057
+name = "AbCellera Biologics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["AbCellera Biologics Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "KRRO"
+cik = 1703647
+name = "Korro Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Korro Bio, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "VIR"
+cik = 1706431
+name = "Vir Biotechnology, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vir Biotechnology, Inc."]
+ctgov_trials = 21
+
+[[company]]
+ticker = "SLDB"
+cik = 1707502
+name = "Solid Biosciences Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Solid Biosciences Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "SER"
+cik = 1708599
+name = "Serina Therapeutics, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Serina Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "BIOA"
+cik = 1709941
+name = "BioAge Labs, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioAge Labs, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "EWTX"
+cik = 1710072
+name = "Edgewise Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Edgewise Therapeutics, Inc."]
+ctgov_trials = 17
+
+[[company]]
+ticker = "KRYS"
+cik = 1711279
+name = "Krystal Biotech, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Krystal Biotech, Inc."]
+ctgov_trials = 15
+
+[[company]]
+ticker = "INMB"
+cik = 1711754
+name = "Inmune Bio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Inmune Bio, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "DNLI"
+cik = 1714899
+name = "Denali Therapeutics Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Denali Therapeutics Inc."]
+ctgov_trials = 18
+
+[[company]]
+ticker = "ENSC"
+cik = 1716947
+name = "Ensysce Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Ensysce Biosciences"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "LGVN"
+cik = 1721484
+name = "Longeveron Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Longeveron Inc."]
+ctgov_trials = 10
+
+[[company]]
+ticker = "TLSA"
+cik = 1723069
+name = "Tiziana Life Sciences Ltd"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tiziana Life Sciences LTD"]
+ctgov_trials = 13
+
+[[company]]
+ticker = "AMRX"
+cik = 1723128
+name = "Amneal Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Amneal Pharmaceuticals, LLC"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "RCUS"
+cik = 1724521
+name = "Arcus Biosciences, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Arcus Biosciences, Inc."]
+ctgov_trials = 32
+
+[[company]]
+ticker = "INM"
+cik = 1728328
+name = "InMed Pharmaceuticals Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["InMed Pharmaceuticals Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "CNSP"
+cik = 1729427
+name = "CNS Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["CNS Pharmaceuticals, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "KNSA"
+cik = 1730430
+name = "Kiniksa Pharmaceuticals International, plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kiniksa Pharmaceuticals International, plc"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "ACXP"
+cik = 1736243
+name = "Acurx Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Acurx Pharmaceuticals Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CAMP"
+cik = 1736730
+name = "Camp4 Therapeutics Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["CAMP4 Therapeutics Corporation"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ALLO"
+cik = 1737287
+name = "Allogene Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Allogene Therapeutics"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "CMPX"
+cik = 1738021
+name = "Compass Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Compass Therapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "RLYB"
+cik = 1739410
+name = "Rallybio Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rallybio"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "INAB"
+cik = 1740279
+name = "IN8BIO, INC."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["In8bio Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "MOLN"
+cik = 1745114
+name = "MOLECULAR PARTNERS AG"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Molecular Partners AG"]
+ctgov_trials = 9
+
+[[company]]
+ticker = "APMD"
+cik = 1745648
+name = "Apnimed, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Apnimed"]
+ctgov_trials = 13
+
+[[company]]
+ticker = "BEAM"
+cik = 1745999
+name = "Beam Therapeutics Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Beam Therapeutics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "EQ"
+cik = 1746466
+name = "Equillium, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Equillium"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "PLRX"
+cik = 1746473
+name = "PLIANT THERAPEUTICS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Pliant Therapeutics, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "IKT"
+cik = 1750149
+name = "Inhibikase Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Inhibikase Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "OLMA"
+cik = 1750284
+name = "Olema Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Olema Pharmaceuticals, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "NGEN"
+cik = 1751912
+name = "NERVGEN PHARMA CORP."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["NervGen Pharma"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "CELU"
+cik = 1752828
+name = "Celularity Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Celularity Incorporated"]
+ctgov_trials = 17
+
+[[company]]
+ticker = "CABA"
+cik = 1759138
+name = "Cabaletta Bio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cabaletta Bio"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "MIRM"
+cik = 1759425
+name = "Mirum Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Mirum Pharmaceuticals, Inc."]
+ctgov_trials = 35
+
+[[company]]
+ticker = "ERAS"
+cik = 1761918
+name = "Erasca, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Erasca, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "LTRN"
+cik = 1763950
+name = "Lantern Pharma Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lantern Pharma Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "UNCY"
+cik = 1766140
+name = "Unicycive Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Unicycive Therapeutics, Inc"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "CLYM"
+cik = 1768446
+name = "Climb Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Climb Bio, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "MPLT"
+cik = 1770069
+name = "MapLight Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MapLight Therapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "SANA"
+cik = 1770121
+name = "Sana Biotechnology, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sana Biotechnology"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "QNTM"
+cik = 1771885
+name = "Quantum Biopharma Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Quantum Biopharma"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "AARD"
+cik = 1774857
+name = "Aardvark Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aardvark Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "MBX"
+cik = 1776111
+name = "MBX Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MBX Biosciences"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "BNTX"
+cik = 1776985
+name = "BioNTech SE"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["BioNTech SE"]
+ctgov_trials = 73
+
+[[company]]
+ticker = "ACRV"
+cik = 1781174
+name = "Acrivon Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Acrivon Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "APRE"
+cik = 1781983
+name = "Aprea Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aprea Therapeutics"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "PYXS"
+cik = 1782223
+name = "Pyxis Oncology, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Pyxis Oncology, Inc"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "BOLD"
+cik = 1782303
+name = "Boundless Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Boundless Bio, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "PHAT"
+cik = 1783183
+name = "Phathom Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Phathom Pharmaceuticals, Inc."]
+ctgov_trials = 14
+
+[[company]]
+ticker = "TCRX"
+cik = 1783328
+name = "TScan Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["TScan Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "HOWL"
+cik = 1785530
+name = "Werewolf Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Werewolf Therapeutics, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "PASG"
+cik = 1787297
+name = "Passage BIO, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Passage Bio, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ARQT"
+cik = 1787306
+name = "Arcutis Biotherapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Arcutis Biotherapeutics, Inc."]
+ctgov_trials = 25
+
+[[company]]
+ticker = "NKTX"
+cik = 1787400
+name = "Nkarta, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Nkarta, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "JSPR"
+cik = 1788028
+name = "Jasper Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Jasper Therapeutics, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "TIL"
+cik = 1789769
+name = "Instil Bio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Instil Bio"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "CGEM"
+cik = 1789972
+name = "Cullinan Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Cullinan Therapeutics Inc."]
+ctgov_trials = 12
+
+[[company]]
+ticker = "IMRX"
+cik = 1790340
+name = "Immuneering Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Immuneering Corporation"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "VTRS"
+cik = 1792044
+name = "Viatris Inc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Viatris Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ORIC"
+cik = 1796280
+name = "Oric Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ORIC Pharmaceuticals"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "JBIO"
+cik = 1798749
+name = "Jade Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Jade Biosciences, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "ALGS"
+cik = 1799448
+name = "Aligos Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aligos Therapeutics"]
+ctgov_trials = 15
+
+[[company]]
+ticker = "GLSI"
+cik = 1799788
+name = "Greenwich LifeSciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Greenwich LifeSciences, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "DMRA"
+cik = 1800315
+name = "Damora Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Damora Therapeutics"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ADRX"
+cik = 1802369
+name = "ADARx Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ADARx Pharmaceuticals, Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "LYEL"
+cik = 1806952
+name = "Lyell Immunopharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lyell Immunopharma, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "DSGN"
+cik = 1807120
+name = "Design Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Design Therapeutics, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "BNTC"
+cik = 1808898
+name = "Benitec Biopharma Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Benitec Biopharma, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "REVB"
+cik = 1810560
+name = "REVELATION BIOSCIENCES, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Revelation Biosciences, Inc"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "NUVB"
+cik = 1811063
+name = "Nuvation Bio Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Nuvation Bio Inc."]
+ctgov_trials = 18
+
+[[company]]
+ticker = "RLAY"
+cik = 1812364
+name = "Relay Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Relay Therapeutics, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "KYMR"
+cik = 1815442
+name = "Kymera Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kymera Therapeutics, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "CMPS"
+cik = 1816590
+name = "COMPASS Pathways plc"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["COMPASS Pathways"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "IRON"
+cik = 1816736
+name = "Disc Medicine, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Disc Medicine, Inc"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "VOR"
+cik = 1817229
+name = "Vor Biopharma Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vor Biopharma"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "ARTV"
+cik = 1817241
+name = "Artiva Biotherapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Artiva Biotherapeutics, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "JANX"
+cik = 1817713
+name = "Janux Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Janux Therapeutics"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "HUMA"
+cik = 1818382
+name = "Humacyte, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Humacyte, Inc."]
+ctgov_trials = 11
+
+[[company]]
+ticker = "DYN"
+cik = 1818794
+name = "Dyne Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Dyne Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "ADAG"
+cik = 1818838
+name = "Adagene Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Adagene Inc"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "DWTX"
+cik = 1818844
+name = "Dogwood Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Dogwood Therapeutics Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "TNGX"
+cik = 1819133
+name = "Tango Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tango Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "GANX"
+cik = 1819411
+name = "Gain Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Gain Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "TARS"
+cik = 1819790
+name = "Tarsus Pharmaceuticals, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tarsus Pharmaceuticals, Inc."]
+ctgov_trials = 12
+
+[[company]]
+ticker = "MLTX"
+cik = 1821586
+name = "MoonLake Immunotherapeutics"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MoonLake Immunotherapeutics AG"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "OGN"
+cik = 1821825
+name = "Organon & Co."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Organon and Co"]
+ctgov_trials = 450
+
+[[company]]
+ticker = "FHTX"
+cik = 1822462
+name = "Foghorn Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Foghorn Therapeutics Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "GLUE"
+cik = 1826457
+name = "Monte Rosa Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Monte Rosa Therapeutics, Inc"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "MANE"
+cik = 1827635
+name = "Veradermics, Inc"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Veradermics, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "HCWB"
+cik = 1828673
+name = "HCW Biologics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["HCW Biologics"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "RNAZ"
+cik = 1829635
+name = "Transcode Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["TransCode Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "FTH"
+cik = 1829802
+name = "Faeth Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Faeth Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "VERA"
+cik = 1831828
+name = "Vera Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vera Therapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "IVVD"
+cik = 1832038
+name = "Invivyd, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Invivyd, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "SABS"
+cik = 1833214
+name = "SAB Biotherapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["SAb Biotherapeutics, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "COYA"
+cik = 1835022
+name = "Coya Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Coya Therapeutics"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "PEPG"
+cik = 1835597
+name = "PepGen Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["PepGen Inc"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "AEON"
+cik = 1837607
+name = "AEON Biopharma, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["AEON Biopharma, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "BLSM"
+cik = 1839970
+name = "BlossomHill Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["BlossomHill Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "INKT"
+cik = 1840229
+name = "MiNK Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["MiNK Therapeutics"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "BMEA"
+cik = 1840439
+name = "Biomea Fusion, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Biomea Fusion Inc."]
+ctgov_trials = 9
+
+[[company]]
+ticker = "KTTA"
+cik = 1841330
+name = "Pasithea Therapeutics Corp."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Pasithea Therapeutics Corp."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CADL"
+cik = 1841387
+name = "Candel Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Candel Therapeutics, Inc."]
+ctgov_trials = 13
+
+[[company]]
+ticker = "MAZE"
+cik = 1842295
+name = "Maze Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Maze Therapeutics"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "CNTX"
+cik = 1842952
+name = "Context Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Context Therapeutics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ESLA"
+cik = 1844417
+name = "Estrella Immunopharma, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Estrella Immunopharma, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ALMS"
+cik = 1847367
+name = "ALUMIS INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Alumis Inc"]
+ctgov_trials = 13
+
+[[company]]
+ticker = "OKYO"
+cik = 1849296
+name = "OKYO Pharma Ltd"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Okyo Pharma Ltd"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "IPSC"
+cik = 1850119
+name = "Century Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Century Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "PROK"
+cik = 1850270
+name = "PROKIDNEY CORP."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Prokidney"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "DRMA"
+cik = 1853816
+name = "Dermata Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Dermata Therapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "CTNM"
+cik = 1855175
+name = "Contineum Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Contineum Therapeutics"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "ZURA"
+cik = 1855644
+name = "Zura Bio Ltd"
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Zura Bio Inc"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "INDP"
+cik = 1857044
+name = "Indaptus Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Indaptus Therapeutics, Inc"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ALLR"
+cik = 1860657
+name = "Allarity Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Allarity Therapeutics"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "EIKN"
+cik = 1861123
+name = "Eikon Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Eikon Therapeutics"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "TYRA"
+cik = 1863127
+name = "Tyra Biosciences, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Tyra Biosciences, Inc"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "DERM"
+cik = 1867066
+name = "Journey Medical Corp"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Journey Medical Corporation"]
+ctgov_trials = 10
+
+[[company]]
+ticker = "AVBP"
+cik = 1868279
+name = "ArriVent BioPharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["ArriVent BioPharma, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "IMMX"
+cik = 1873835
+name = "Immix Biopharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Immix Biopharma, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "IXHL"
+cik = 1873875
+name = "Incannex Healthcare Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Incannex Healthcare Ltd"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "NRSN"
+cik = 1875091
+name = "NeuroSense Therapeutics Ltd."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["NeuroSense Therapeutics Ltd."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "NVCT"
+cik = 1875558
+name = "Nuvectis Pharma, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Nuvectis Pharma, Inc."]
+ctgov_trials = 4
+
+[[company]]
+ticker = "MAIA"
+cik = 1878313
+name = "MAIA Biotechnology, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Maia Biotechnology"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "ANTX"
+cik = 1880438
+name = "AN2 Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["AN2 Therapeutics, Inc"]
+ctgov_trials = 5
+
+[[company]]
+ticker = "ODTX"
+cik = 1882782
+name = "Odyssey Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Odyssey Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "NMRA"
+cik = 1885522
+name = "Neumora Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Neumora Therapeutics, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "BLTE"
+cik = 1889109
+name = "BELITE BIO, INC"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Belite Bio, Inc"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "CMND"
+cik = 1892500
+name = "Clearmind Medicine Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Clearmind Medicine Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "PRME"
+cik = 1894562
+name = "Prime Medicine, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Prime Medicine, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "VOGX"
+cik = 1903784
+name = "Vogenx, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Vogenx, Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "MIRA"
+cik = 1904286
+name = "MIRA PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["MIRA Pharmaceuticals"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "LXEO"
+cik = 1907108
+name = "Lexeo Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Lexeo Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "MLYS"
+cik = 1933414
+name = "Mineralys Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Mineralys Therapeutics Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "APLM"
+cik = 1944885
+name = "Apollomics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Apollomics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "SXTP"
+cik = 1946563
+name = "60 DEGREES PHARMACEUTICALS, INC."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["60 Degrees Pharmaceuticals LLC"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "RADX"
+cik = 1949257
+name = "Radiopharm Theranostics Ltd"
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Radiopharm Theranostics, Ltd"]
+ctgov_trials = 7
+
+[[company]]
+ticker = "TELO"
+cik = 1971532
+name = "Telomir Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Telomir Pharmaceuticals, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "SEPN"
+cik = 1984086
+name = "Septerna, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Septerna, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "CGON"
+cik = 1991792
+name = "CG Oncology, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["CG Oncology, Inc."]
+ctgov_trials = 7
+
+[[company]]
+ticker = "KYTX"
+cik = 1994702
+name = "Kyverna Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kyverna Therapeutics"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "IAM"
+cik = 1997038
+name = "Iambic Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Iambic Therapeutics, Inc"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "ANRO"
+cik = 1999480
+name = "Alto Neuroscience, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Alto Neuroscience"]
+ctgov_trials = 12
+
+[[company]]
+ticker = "RTSN"
+cik = 2002988
+name = "Retension Pharmaceuticals, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Retension Pharmaceuticals. Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "INBX"
+cik = 2007919
+name = "Inhibrx Biosciences, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Inhibrx Biosciences, Inc"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "RAPP"
+cik = 2012593
+name = "Rapport Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Rapport Therapeutics Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "UPB"
+cik = 2022626
+name = "Upstream Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Upstream Bio Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "TTRX"
+cik = 2023016
+name = "Turn Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Turn Therapeutics"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "BCAX"
+cik = 2023658
+name = "Bicara Therapeutics Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Bicara Therapeutics"]
+ctgov_trials = 3
+
+[[company]]
+ticker = "OPTH"
+cik = 2027329
+name = "Optimi Health Corp."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Optimi Health Corporation"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "NSRX"
+cik = 2029039
+name = "Nasus Pharma Ltd"
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Nasus Pharma"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "AKTS"
+cik = 2035832
+name = "Aktis Oncology, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Aktis Oncology, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "SION"
+cik = 2036042
+name = "Sionna Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Sionna Therapeutics Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "SPTX"
+cik = 2042347
+name = "Seaport Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Seaport Therapeutics"]
+ctgov_trials = 2
+
+[[company]]
+ticker = "EVMN"
+cik = 2044725
+name = "Evommune, Inc."
+sic = 2834
+exchange = "NYSE"
+ctgov_sponsors = ["Evommune, Inc."]
+ctgov_trials = 6
+
+[[company]]
+ticker = "LTGO"
+cik = 2056611
+name = "Latigo Biotherapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Latigo Biotherapeutics"]
+ctgov_trials = 8
+
+[[company]]
+ticker = "ATTO"
+cik = 2058707
+name = "Attovia Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Attovia Therapeutics Inc"]
+ctgov_trials = 4
+
+[[company]]
+ticker = "PLYX"
+cik = 2075320
+name = "Polaryx Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Polaryx Therapeutics, Inc."]
+ctgov_trials = 2
+
+[[company]]
+ticker = "ETRA"
+cik = 2088082
+name = "Electra Therapeutics, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["Electra Therapeutics Inc."]
+ctgov_trials = 3
+
+[[company]]
+ticker = "RNA"
+cik = 2093101
+name = "Atrium Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Atrium Therapeutics"]
+ctgov_trials = 1
+
+[[company]]
+ticker = "GENB"
+cik = 2100782
+name = "Generate Biomedicines, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Generate Biomedicines"]
+ctgov_trials = 6
+
+[[company]]
+ticker = "KARD"
+cik = 2123613
+name = "Kardigan, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Kardigan, Inc."]
+ctgov_trials = 5
+
+[[company]]
+ticker = "OBX"
+cik = 2130606
+name = "Obsidian Therapeutics, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Obsidian Therapeutics, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "BRVE"
+cik = 2131524
+name = "Braveheart Bio, Inc."
+sic = 2834
+exchange = "Nasdaq"
+ctgov_sponsors = ["Braveheart Bio, Inc."]
+ctgov_trials = 1
+
+[[company]]
+ticker = "TRXB"
+cik = 2139097
+name = "TRex Bio, Inc."
+sic = 2836
+exchange = "Nasdaq"
+ctgov_sponsors = ["TRex Bio, Inc."]
+ctgov_trials = 1
