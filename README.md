@@ -1,2 +1,30 @@
 # catalyst-tracker
-Tracks biopharma catalysts
+
+Tracks biotech and biopharma catalysts (PDUFA dates, trial readouts, advisory committees) for US-listed companies, with a primary-source link on every record, plus readout benchmarking, market sizing, and price-impact statistics.
+
+- What we are building: [docs/spec.md](docs/spec.md)
+- Build order and decision log: [docs/roadmap.md](docs/roadmap.md)
+- Where work stops for review: [docs/quality-gates.md](docs/quality-gates.md)
+- Rules for coding agents: [AGENTS.md](AGENTS.md)
+
+## Owner checklist: setup steps only the owner can do
+
+Claude Code checks these at the start of every session with `python3 scripts/check_setup.py` and reminds the owner of anything missing. Step-by-step instructions: [docs/setup.md](docs/setup.md).
+
+- [x] Part 1 — Create the GitHub repository (done 2026-10-16)
+- [ ] Part 2 — Anthropic API key in its own workspace, $50/month limit (5 min)
+- [ ] Part 3 — Supabase account and project (5 min)
+- [ ] Part 4 — Claude Code cloud environment `catalyst-tracker` with the keys and allowed domains (5 min)
+- [ ] Part 5 — Same keys as GitHub Actions secrets (Claude Code tries this itself first)
+- [ ] Choose a project email for SEC requests (goes in Part 4)
+
+Not needed yet; Claude Code says when: Vercel, Resend, Sentry, domain (Phase 2); business entity and Stripe (Gate 3); Tiingo price data (Phase 3).
+
+None of these block the start: the first roadmap items need no keys.
+
+## How to start building
+
+1. Start a Claude Code session on this repository (use the `catalyst-tracker` environment once Part 4 is done).
+2. Say: **start implementing**.
+
+Claude Code runs the setup check, reminds you of anything missing, works through the roadmap, and stops at each checkpoint for your approval. Reply **approved** to continue, or say what to change.
