@@ -69,3 +69,25 @@ note = "Registry names checked by hand on 2026-10-16 for checkpoint CP3 (config/
 ctgov_sponsors = ["Insmed Incorporated"]
 openfda_manufacturer = "Insmed"
 openfda_sponsors = ["INSMED INC"]
+
+# Large companies whose trials are registered under subsidiary names. Each name was checked on
+# ClinicalTrials.gov on 2026-10-16 (industry, interventional, drug or biological trials).
+[[company]]
+cik = 310158  # MRK
+note = "Merck & Co. registers trials as Merck Sharp & Dohme LLC (832 trials), checked on ClinicalTrials.gov 2026-10-16"
+ctgov_sponsors = ["Merck Sharp & Dohme LLC"]
+
+[[company]]
+cik = 200406  # JNJ
+note = "Johnson & Johnson's medicines are developed by its Janssen companies (540 trials as Janssen Research & Development, LLC), checked 2026-10-16"
+ctgov_sponsors = ["Janssen Research & Development, LLC", "Janssen Pharmaceutical K.K.", "Janssen-Cilag International NV", "Janssen Pharmaceutica N.V., Belgium"]
+
+[[company]]
+cik = 1131399  # GSK
+note = "GSK registers trials as GlaxoSmithKline (913 trials) and through ViiV Healthcare, its majority-owned HIV company, checked 2026-10-16"
+ctgov_sponsors = ["GlaxoSmithKline", "ViiV Healthcare"]
+
+[[company]]
+cik = 1395064  # TAK
+note = "Takeda registers trials as Takeda (567), Shire (216, acquired 2019), and Millennium Pharmaceuticals, Inc. (87, a Takeda subsidiary), checked 2026-10-16"
+ctgov_sponsors = ["Takeda", "Shire", "Millennium Pharmaceuticals, Inc."]

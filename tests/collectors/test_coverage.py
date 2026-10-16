@@ -134,5 +134,5 @@ def test_overrides_file_needs_a_note_and_a_missing_file_means_none(tmp_path: Pat
 
 def test_the_checked_in_overrides_load() -> None:
     overrides = load_overrides(Path(__file__).resolve().parents[2] / "config" / "coverage_overrides.toml")
-    assert len(overrides) == 10
+    assert len(overrides) == 14
     assert overrides[1682852].ctgov_sponsors == frozenset({"ModernaTX, Inc."})

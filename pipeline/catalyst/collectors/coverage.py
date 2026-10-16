@@ -52,11 +52,18 @@ _LEGAL_WORDS = (
 _TRAILING_LEGAL = re.compile(rf"[\W_]*\b(?:{_LEGAL_WORDS})\b[\W_]*$")
 _STATE_SUFFIX = re.compile(r"\s*[/\\]\s*[^\W\d_]{2,3}\s*[/\\]?[\W_]*$")  # EDGAR's "/DE/", " / MA", "\\DE\\"
 _WORD = re.compile(r"[^\W_]+")
+_DOTTED = re.compile(r"\b(?:[^\W\d_]\.){2,}")  # "S.A.", "N.V.", "S.p.A."
+_SLASHED = re.compile(r"\b([^\W\d_])/([^\W\d_])\b")  # "A/S"
+_SUBSIDIARY_OF = re.compile(r"\bsubsidiary\s+of\s+", re.IGNORECASE)
+_A_COMPANY = re.compile(r"(?:^|[,(\-\u2013]\s*)an?\s+(?P<parent>[^,()]+?)\s+company\s*\)?\s*$", re.IGNORECASE)
+_PARENTHETICAL = re.compile(r"\s*\([^)]*\)\s*$")
 
 
 def normalize_name(name: str) -> str:
     """Return the name in a form two spellings of one company share: lower case, words only."""
     text = name.casefold().replace("&", " and ")
+    text = _DOTTED.sub(lambda match: match.group(0).replace(".", ""), text)
+    text = _SLASHED.sub(r"\1\2", text)
     while True:
         shorter = _STATE_SUFFIX.sub("", text)
         shorter = _TRAILING_LEGAL.sub("", shorter)
@@ -70,6 +77,21 @@ def same_company(sec_name: str, registry_name: str) -> bool:
     """Return True when both names normalize to the same, non-empty name."""
     normalized = normalize_name(sec_name)
     return bool(normalized) and normalized == normalize_name(registry_name)
+
+
+def stated_parent(sponsor: str) -> str | None:
+    """Return the parent a sponsor name states ("…, a GSK Company", "…, a subsidiary of X"), if any."""
+    parts = _SUBSIDIARY_OF.split(sponsor)
+    if len(parts) > 1:
+        return _PARENTHETICAL.sub("", parts[-1])
+    match = _A_COMPANY.search(sponsor)
+    return match.group("parent") if match else None
+
+
+def sponsor_of(sec_name: str, sponsor: str) -> bool:
+    """Return True when the sponsor is the company, or says in its name that the company is its parent."""
+    parent = stated_parent(sponsor)
+    return same_company(sec_name, sponsor) or (parent is not None and same_company(sec_name, parent))
 
 
 @dataclass(frozen=True)
@@ -146,7 +168,7 @@ def trial_sponsors(web: PoliteHttpClient, company_name: str) -> Counter[str]:
     }
     studies: list[dict[str, Any]] = web.get(ctgov.API_URL, params=params).json().get("studies", [])
     sponsors = (ctgov.lead_sponsor(study) for study in studies)
-    return Counter(name for name in sponsors if same_company(company_name, name))
+    return Counter(name for name in sponsors if sponsor_of(company_name, name))
 
 
 class Override(BaseModel):
