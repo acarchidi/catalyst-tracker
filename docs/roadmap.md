@@ -1,6 +1,6 @@
 # Roadmap
 
-The build runs in six phases (0 to 5). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
+The build runs in seven phases (0 to 6). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
 
 Checkpoints inside each phase (where work stops for review) are listed in [quality-gates.md](quality-gates.md).
 
@@ -90,6 +90,11 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
   - no market value, price statistics, or scenario price ranges until a price license covers that exchange and currency;
   - checkpoint CP9 per market: a separate random sample of that market's records meets the Gate 2 error rate before it publishes.
 
+## Phase 6 — Business agents (after v1; owner request 2026-10-17; ADR 0024)
+
+- [ ] Competitor research agent, weekly: plain-code collectors keep dated copies of each competitor's public pricing, features, changelog, and release pages (list in `config/competitors.toml`); public launch and news feeds suggest new entrants for the owner to add; the agent reads only what changed since last week and writes a report in which every claim quotes the changed text and links the page, plus a ranked list of feature ideas (what, who it helps, who already does it, rough size); ideas become roadmap items only when the owner approves; delivered as a weekly GitHub issue; its own `researcher` role and cap
+- [ ] CFO agent, monthly, read-only, drafts only: revenue from Stripe (restricted read-only key), AI spend from `model_call`, other costs and cash on hand from a file the owner updates monthly (`config/costs.toml`), no bank connection; plain code computes revenue, costs, profit or loss, cost per subscriber, Stripe fees, churn, runway, and budget versus actual; the model only explains them; it may draft proposals (cap changes, cancelling an unused service, price or annual-plan changes) as issues for the owner, and can never pay, refund, change prices or caps, or move money; not tax advice; its own `cfo` role and cap
+
 ## Later (unscheduled)
 
 - [ ] Public API tier (about $50/month)
@@ -108,6 +113,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0024: two business agents after v1 (Phase 6): a weekly competitor-research agent that reads only changed public pages and proposes ranked feature ideas for the owner to approve, and a monthly read-only CFO agent whose numbers come from plain code (Stripe, model spend, owner-entered costs; no bank feed) and who only drafts proposals (owner decisions) |
 | 2026-10-17 | Spending lowered (owner decisions): the product's daily model caps total $6 (from $13.50); the Claude review no longer runs on pull requests the owner merges by hand, since a separate reviewer checks those in the coding session; roadmap gains the product name and domain, hosting (Vercel Pro once public, because the free plan is non-commercial), and the payment steps of the $15 subscription |
 | 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US (already on the coverage list) through the EDGAR forms each actually files (6-K, 20-F, 40-F, F-1, F-3, F-10, or the domestic forms) in Phase 1 before the gold set grows, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
 | 2026-10-17 | ADR 0020: a marketing and outreach agent drafts the newsletter, notes to named people, directory listings, and page text from published data; the owner approves every item and a plain-code sender acts only on approved text; no social posts for now (owner decisions) |
