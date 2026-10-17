@@ -390,8 +390,6 @@ The product stays an impersonal publication, which keeps it outside investment-a
 | --- | --- |
 | Advice | No buy/sell ratings or portfolio-specific answers; the assistant refuses these with a fixed message. Price-move ranges appear only in catalyst scenarios, never as a single target (owner decision 2026-10-17). |
 | Disclaimers | On every page, alert, API response, the API terms, and every MCP tool description. |
-| Your positions | Written policy before launch: either no trading in covered stocks around publication, or disclosure of holdings. |
-| Motley Fool contract | Check outside-work, competition, and disclosure terms before launch. |
 | Source content | Store facts, links, and short verification quotes; never republish full press releases or abstracts; respect conference embargoes. |
 | Price data | Use only within the vendor license; serve event-window statistics, not raw price series (see Open questions). |
 | Privacy | Privacy policy; collect minimal personal data; honor deletion requests. |
@@ -514,8 +512,6 @@ Foreign companies (ADR 0021): a US depositary share's market value needs its rat
 
 - [ ] Product name and domain
 - [ ] Second model provider for verification (the adapter design leaves this open)
-- [ ] Motley Fool contract review
-- [ ] Trading and disclosure policy for covered stocks
 - [ ] How far back to backfill outcomes (2016 or 2010)
 - [ ] Hours per week you can give the review queue; this sets how fast coverage can grow
 - [ ] Business setup: entity, terms of service, privacy policy, Stripe, sales tax (deferred; needed before taking payment)

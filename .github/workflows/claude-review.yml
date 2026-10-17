@@ -3,8 +3,9 @@ name: Claude review
 # A fresh Claude reviews every pull request that is ready for review. Its pass or fail is
 # the "Claude review" check, which the merge robot (merge-robot.yml) requires (ADR 0006,
 # ADR 0007). A pull request the owner merges by hand (it changes an owner path, by main's
-# scripts/merge_gate.py) is not reviewed here: a separate reviewer already checks it in the
-# coding session, and each review costs API credits (owner decision 2026-10-17).
+# scripts/merge_gate.py) is not reviewed here: a separate reviewer checks it in the coding
+# session, and each review costs API credits (owner decision 2026-10-17; ADR 0022). The check
+# then fails, so an unreviewed commit never carries a passing review the robot could count.
 
 on:
   pull_request:
@@ -117,9 +118,10 @@ jobs:
         run: |
           set +e
           if [ "$OWNER_MERGES" = "true" ]; then
-            # The robot never merges these, so this pass cannot lead to a merge.
-            printf '## Claude review: not run, the owner merges this\n\nIt changes %s. A separate reviewer checked it in the coding session.\n' "$OWNER_FILES" > "$RUNNER_TEMP/review.md"
-            status=0
+            # A failure, never a pass: the robot's own file list can differ from this one (the
+            # base moved, or more files than its list holds), and it must never count this.
+            printf '## Claude review: not run, the owner merges this\n\nIt changes %s. A separate reviewer in the coding session checks pull requests like this one. The check shows as failed on purpose, so the merge robot can never merge an unreviewed commit; the owner merges it by hand.\n' "$OWNER_FILES" > "$RUNNER_TEMP/review.md"
+            status=1
           else
             python3 -I scripts/review_verdict.py "$RUNNER_TEMP/review.md"
             status=$?
