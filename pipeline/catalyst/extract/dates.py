@@ -179,13 +179,71 @@ def _deadline(phrase: str, published: date) -> _Period | None:
     return published, end, precision
 
 
+# A range's precision is the coarsest of its parts (ADR 0018, part 3).
+_COARSENESS = [
+    DatePrecision.DAY,
+    DatePrecision.MONTH,
+    DatePrecision.QUARTER,
+    DatePrecision.HALF,
+    DatePrecision.YEAR,
+]
+_DAY_RANGE = re.compile(
+    _MONTH
+    + r" (?P<day>\d{1,2}) ?[-\u2010-\u2015] ?(?:(?P<month2>"
+    + "|".join(sorted(_MONTHS, key=len, reverse=True))
+    + r")\.? )?(?P<day2>\d{1,2}),? (?P<year>\d{4})$"
+)
+_SHARED_NOUN = re.compile(
+    r"^(?P<a>first|second|third|fourth) (?:or|to|and|through) (?P<b>first|second|third|fourth) "
+    r"(?P<rest>(?:quarter|half)(?: of)?(?: .+)?)$"
+)
+_JOINER = re.compile(r"\s*[\u2013\u2014/]\s*|\s+(?:or|to|through|and)\s+|\s+-\s+")
+_TRAILING_YEAR = re.compile(r"(\d{4}|'\d{2})$")
+
+
+def _span(first: _Period, second: _Period) -> _Period | None:
+    """Join two periods into one window, if the second does not start before the first."""
+    if second[0] < first[0] or second[1] < first[1]:
+        return None
+    precision = max(first[2], second[2], key=_COARSENESS.index)
+    if precision is DatePrecision.DAY and first[0] != second[1]:
+        precision = DatePrecision.MONTH  # a range of days is not one day
+    return first[0], second[1], precision
+
+
+def _range(phrase: str, published: date) -> _Period | None:
+    """Return the window for "November 16-19, 2026", "late 2027 or early 2028", "Q3 to Q4 2027"."""
+    days = _DAY_RANGE.fullmatch(phrase)
+    if days is not None:
+        year = int(days["year"])
+        first = date(year, _MONTHS[days["month"]], int(days["day"]))
+        second = date(year, _MONTHS[days["month2"] or days["month"]], int(days["day2"]))
+        return _span((first, first, DatePrecision.DAY), (second, second, DatePrecision.DAY))
+    shared = _SHARED_NOUN.fullmatch(phrase)
+    if shared is not None:
+        parts = [f"{shared['a']} {shared['rest']}", f"{shared['b']} {shared['rest']}"]
+    else:
+        between = phrase.startswith("between ")
+        parts = _JOINER.split(phrase.removeprefix("between "))
+        if len(parts) != 2 or (" and " in phrase) != between:
+            return None
+    second = _period(parts[1], published)
+    first = _period(parts[0], published)
+    year = _TRAILING_YEAR.search(parts[1])
+    if first is None and year is not None:  # "Q3 to Q4 2027": the year is written once, at the end
+        first = _period(f"{parts[0]} {year.group(1)}", published)
+    if first is None or second is None:
+        return None
+    return _span(first, second)
+
+
 def parse_window(text: str, published: date) -> DateWindow | None:
     """Return the window `text` names, reading it as of `published`, or None if it names none."""
     phrase = re.sub(r"\s+", " ", text.lower().replace("\u2019", "'")).strip().rstrip(".")
     try:
         found = _deadline(phrase, published) if phrase.startswith(("by ", "later ")) else None
         if found is None and not phrase.startswith("by "):
-            found = _period(phrase, published)
+            found = _period(phrase, published) or _range(phrase, published)
     except ValueError:  # a day or year that does not exist, such as February 30
         return None
     if found is None:

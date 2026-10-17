@@ -201,3 +201,79 @@ def test_a_by_window_starts_on_the_document_date(published: date, quarter: int, 
     else:
         assert window is not None
         assert (window.start, window.end) == (published, end)
+
+
+# Date ranges (ADR 0018, part 3): the window runs from the first part's start to the last part's
+# end; its precision is the coarsest of the parts, and a range of days counts as month precision.
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("November 16\u201319, 2026", _window(date(2026, 11, 16), date(2026, 11, 19), DatePrecision.MONTH)),
+        ("November 16-19, 2026", _window(date(2026, 11, 16), date(2026, 11, 19), DatePrecision.MONTH)),
+        (
+            "November 30 \u2013 December 2, 2026",
+            _window(date(2026, 11, 30), date(2026, 12, 2), DatePrecision.MONTH),
+        ),
+        ("late 2027 or early 2028", _window(date(2027, 7, 1), date(2028, 6, 30), DatePrecision.HALF)),
+        (
+            "year-end 2026/first quarter 2027",
+            _window(date(2026, 10, 1), date(2027, 3, 31), DatePrecision.QUARTER),
+        ),
+        ("Q4 2026 to Q1 2027", _window(date(2026, 10, 1), date(2027, 3, 31), DatePrecision.QUARTER)),
+        ("between Q3 and Q4 2027", _window(date(2027, 7, 1), date(2027, 12, 31), DatePrecision.QUARTER)),
+        (
+            "first or second quarter of 2027",
+            _window(date(2027, 1, 1), date(2027, 6, 30), DatePrecision.QUARTER),
+        ),
+        (
+            "third or fourth quarter 2026",
+            _window(date(2026, 7, 1), date(2026, 12, 31), DatePrecision.QUARTER),
+        ),
+        ("2H26 or 1H27", _window(date(2026, 7, 1), date(2027, 6, 30), DatePrecision.HALF)),
+        ("2027 or 2028", _window(date(2027, 1, 1), date(2028, 12, 31), DatePrecision.YEAR)),
+        ("December 2026 or January 2027", _window(date(2026, 12, 1), date(2027, 1, 31), DatePrecision.MONTH)),
+        ("Q4 2026 through mid-2027", _window(date(2026, 10, 1), date(2027, 9, 30), DatePrecision.HALF)),
+    ],
+)
+def test_ranges_span_from_the_first_part_to_the_last(
+    text: str, expected: tuple[date, date, DatePrecision]
+) -> None:
+    assert _parsed(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Q1 2028 or Q4 2027",  # backwards
+        "November 19\u201316, 2026",  # backwards
+        "November 31\u2013December 2, 2026",  # no such day
+        "Q4 or soon",  # one part names no window
+        "late 2027 or",  # a part is missing
+        "mid-2027",  # the hyphen in mid-2027 is not a range
+    ],
+)
+def test_ranges_that_are_backwards_or_incomplete_give_no_range(text: str) -> None:
+    window = parse_window(text, PUBLISHED)
+    if text == "mid-2027":
+        assert window is not None
+        assert (window.start, window.end) == (date(2027, 4, 1), date(2027, 9, 30))
+    else:
+        assert window is None
+
+
+@given(
+    first=st.tuples(years, st.integers(min_value=1, max_value=4)),
+    second=st.tuples(years, st.integers(min_value=1, max_value=4)),
+    joiner=st.sampled_from([" or ", " to ", " through ", "/", "\u2013", " \u2013 "]),
+)
+def test_a_quarter_range_covers_both_quarters_in_order(
+    first: tuple[int, int], second: tuple[int, int], joiner: str
+) -> None:
+    window = parse_window(f"Q{first[1]} {first[0]}{joiner}Q{second[1]} {second[0]}", date(2000, 1, 1))
+    if first > second:
+        assert window is None
+        return
+    assert window is not None
+    assert window.start == date(first[0], 3 * first[1] - 2, 1)
+    assert window.end == QUARTER_ENDS[second[1]].replace(year=second[0])
+    assert window.precision is DatePrecision.QUARTER
