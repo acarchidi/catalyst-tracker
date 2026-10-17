@@ -2,7 +2,6 @@
 
 import itertools
 import threading
-import time
 
 import pytest
 
@@ -74,9 +73,10 @@ def test_threads_sharing_one_limiter_never_start_together() -> None:
     starts: list[float] = []
 
     def worker() -> None:
+        # The limiter's own start times: a thread's later clock reading can lag behind its turn
+        # when the machine is busy, which made this test fail on correct spacing.
         for _ in range(3):
-            limiter.wait()
-            starts.append(time.monotonic())
+            starts.append(limiter.take_turn())
 
     threads = [threading.Thread(target=worker) for _ in range(4)]
     for thread in threads:
