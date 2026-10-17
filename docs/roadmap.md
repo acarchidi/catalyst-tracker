@@ -1,6 +1,6 @@
 # Roadmap
 
-The build runs in five phases. Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
+The build runs in six phases (0 to 5). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
 
 Checkpoints inside each phase (where work stops for review) are listed in [quality-gates.md](quality-gates.md).
 
@@ -28,6 +28,13 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Change history and outcome agent
 - [ ] Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary (owner decision 2026-10-17)
 - [ ] Orchestrator controls: plain-code rules in `config/orchestrator.toml` may pause a role, hold a run's records from publishing, re-run a job once a day, or go back to the last prompt version that passed its tests; every action recorded and reported to the owner with how to undo it; held claims publish only when the owner clears them; rollback only to a version that passes today's floor and output format, with a per-version pass record in `evals/`; `config/orchestrator.toml` joins `OWNER_PATHS`; checkpoint CP8 (owner request 2026-10-17; ADR 0019)
+- [ ] Foreign companies listed in the US (owner request 2026-10-17; ADR 0021). They are already on the coverage list, but their filings are not read yet:
+  - forms: 6-K press releases (every EX-99 exhibit, or the main document when there is none), 20-F and 40-F annual reports, half-year and quarterly results on 6-K, F-1, F-3, and F-10 offerings, and their amendments; for companies that file 8-K, 10-Q, and 10-K by choice, those forms;
+  - triage screens out 6-Ks that are not catalyst news (such as buyback notices) before extraction;
+  - each record keeps the release's own date and time as well as the SEC acceptance time;
+  - 6-K fixtures and gold-set entries, with both prompts scored again;
+  - depositary-share tickers, home-market names, and the depositary-share ratio for market value;
+  - dates read in each company's own fiscal year, with its naming rule stored per company
 - [ ] Gold set of 200 verified catalysts. Includes giving the Spyre SKYLINE Part B gold entry its full drug list once the drug field is a list (owner ruling, 2026-10-17, rule 3)
 
 **Gate 2 (the one that matters most):** error rate under 1% at 95% confidence on a random sample of published records, checked independently (owner target 2026-10-17: 99% to start, 99.9% later); 100% of published records carry a deep source link.
@@ -69,11 +76,23 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
   - "Most important" ranked by NIH iCite's Relative Citation Ratio, which compares an article's citations with others in its field and year, so older articles do not win just by age; the top five shown, each linked to the journal's page.
   - Free sources with no new account: PubMed E-utilities and iCite.
 
+## Phase 5 — Companies listed only outside the US
+
+- [ ] Companies listed only outside the US, one market at a time in order of how many listed drug developers each has (owner request 2026-10-17; ADR 0021):
+  - per market, before any code: robots.txt and terms checked, a rate limit set, and any account or key found (gathered for the owner in one sitting); a market whose terms forbid automated collection is left out or reached through a licensed feed the owner approves;
+  - quotes kept in the original language, character for character, with a labeled translation beside them; gold-set entries in each language before that market publishes;
+  - trial registries (EU CTIS and EudraCT, ISRCTN, jRCT, ChiCTR, ANZCTR, CRIS; WHO ICTRP as an index) and regulators (EMA, MHRA, PMDA, NMPA, Health Canada, TGA, Swissmedic, MFDS, Israel's Ministry of Health), each checked the same way;
+  - ISIN and LEI codes and names in other scripts for the entity resolver;
+  - companies already matched to an SEC number (through ISIN or LEI) are not added again;
+  - a machine translation is labeled as one and is never a claim; date phrases in each language (including Japan's era years) get property-based tests;
+  - no market value, price statistics, or scenario price ranges until a price license covers that exchange and currency;
+  - checkpoint CP9 per market: a separate random sample of that market's records meets the Gate 2 error rate before it publishes.
+
 ## Later (unscheduled)
 
 - [ ] Public API tier (about $50/month)
 - [ ] Second model provider for verification
-- [ ] EMA, PMDA, NMPA sources; conference abstracts at scale; Slack and Teams apps
+- [ ] Conference abstracts at scale; Slack and Teams apps (regulator sources outside the US moved to Phase 5)
 - [ ] Estimated results-reporting window for each trial (owner request, 2026-10-17). A trial's primary completion date is when the last measurement is due, not when results come out. Show a second window for when results are likely to be reported, chosen in this order:
   1. The company's own guidance ("topline data in 1H27"), whenever it exists.
   2. Otherwise, the company's own history: for its past trials, the gap between primary completion (ClinicalTrials.gov) and the press release or filing that reported the results.
@@ -87,6 +106,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US (already on the coverage list) through the EDGAR forms each actually files (6-K, 20-F, 40-F, F-1, F-3, F-10, or the domestic forms) in Phase 1 before the gold set grows, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
 | 2026-10-17 | ADR 0020: a marketing and outreach agent drafts the newsletter, notes to named people, directory listings, and page text from published data; the owner approves every item and a plain-code sender acts only on approved text; no social posts for now (owner decisions) |
 | 2026-10-17 | ADR 0019: oversight in two parts, both able to stop, hold, and re-run but not change data or prompts: a pipeline orchestrator whose actions plain-code rules choose, and a build overseer that checks every pull request against the roadmap and `AGENTS.md` and is a required check for the merge robot (owner decisions) |
 | 2026-10-17 | ADR 0018: verification stores each check's latest outcome per claim (pass, fail with reason, not applicable); built in five parts: rule checks, second extraction, cross-source and change checks, the planted-error test, and the publish gate |

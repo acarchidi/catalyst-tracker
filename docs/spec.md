@@ -4,7 +4,7 @@
 
 ## Overview
 
-The platform tracks catalysts for US-listed biotech and biopharma companies and links every record to its primary source. It adds analysis no retail tool offers: readout benchmarking, market sizing, and price-impact statistics. Launch targets retail investors and small institutions with one paid tier at $15 a month.
+The platform tracks catalysts for US-listed biotech and biopharma companies, foreign ones included, and later for companies listed only abroad (ADR 0021), and links every record to its primary source. It adds analysis no retail tool offers: readout benchmarking, market sizing, and price-impact statistics. Launch targets retail investors and small institutions with one paid tier at $15 a month.
 
 The product rests on five openings found in the [competitor matrix](https://claude.ai/artifact/SX48JvRPdXX7iQFBwTt3WG):
 
@@ -55,11 +55,11 @@ $15 a month is below every competitor's paid tier, which runs $20 to $99. The lo
 
 ## Data sources and coverage
 
-All launch sources are free public feeds, and plain code (not AI agents) collects them twice each weekday. Coverage starts with US-listed therapeutics developers filed under SEC industry codes 2834 (pharmaceutical preparations), 2836 (biological products), and 8731 (commercial biological research); building that list needs no price data. It grows toward the 1,500 to 1,800 companies competitors track.
+All launch sources are free public feeds, and plain code (not AI agents) collects them twice each weekday. Coverage starts with US-listed therapeutics developers filed under SEC industry codes 2834 (pharmaceutical preparations), 2836 (biological products), and 8731 (commercial biological research); building that list needs no price data. It grows toward the 1,500 to 1,800 companies competitors track. Foreign companies follow in two stages (owner request 2026-10-17; ADR 0021). First come those listed in the US: they are already on the coverage list, and most file Forms 6-K and 20-F (or 40-F) on EDGAR instead of 8-K and 10-K, so the collector reads the forms each company actually files. Then come companies listed only outside the US, market by market, each source checked first for its terms, any key, and its language.
 
 | Source | What it supplies | Access |
 | --- | --- | --- |
-| [SEC EDGAR](https://www.sec.gov/os/accessing-edgar-data) | 8-K press-release exhibits, 10-Q/10-K cash and burn, S-3 and 424B offerings | Free API; 10 requests/second limit; declared User-Agent |
+| [SEC EDGAR](https://www.sec.gov/os/accessing-edgar-data) | 8-K press-release exhibits, 10-Q/10-K cash and burn, S-3 and 424B offerings; for foreign issuers, 6-K press releases and results, 20-F and 40-F annual reports, and F-1, F-3, and F-10 offerings (ADR 0021) | Free API; 10 requests/second limit; declared User-Agent |
 | [ClinicalTrials.gov API v2](https://clinicaltrials.gov/data-api/api) | Trial design, endpoints, enrollment, primary completion dates, posted results | Free API |
 | Company investor-relations sites | Press releases, event dates, presentations | RSS or page fetch, only for companies whose releases miss the wires and 8-Ks; store facts and links, not full text |
 | Wire services (GlobeNewswire, Business Wire, PR Newswire) | Same releases, often minutes earlier | Public RSS feeds |
@@ -499,6 +499,8 @@ These go into `AGENTS.md` word for word. Test-driven development is the core, wi
 ### Price data: no free source is licensed for this use
 
 Every free or sub-$30 price source checked limits use to personal or internal work. That covers Tiingo, Alpha Vantage, Massive (formerly Polygon.io), FMP, EODHD, Sharadar, Stooq, and Yahoo. Most also forbid showing the data, or anything derived from it, to paying users. Yahoo bans commercial use and automated collection outright. The SEC publishes no per-stock daily prices.
+
+Foreign companies (ADR 0021): a US depositary share's market value needs its ratio to home shares. Companies listed only abroad show no market value, price statistics, or scenario price ranges until a license covers their exchange and currency.
 
 | Option | Monthly cost | What the terms allow | Fit |
 | --- | --- | --- | --- |
