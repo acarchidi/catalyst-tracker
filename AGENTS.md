@@ -77,7 +77,7 @@ Never put a secret in code, prompts, logs, test fixtures, or pull request text. 
 
 - No published value without a claim, and no claim without a source document and a verbatim quote (spec: Provenance).
 - Agents that read web text have no tools and no database access; only the plain-code publish gate writes live data (spec: Agent architecture).
-- No personalized investment advice anywhere: no buy/sell ratings, price targets, or portfolio-specific answers.
+- No personalized investment advice anywhere: no buy/sell ratings and no portfolio-specific answers. The one exception to "no price targets" is the catalyst-scenarios feature (spec: Catalyst scenarios; owner decision 2026-10-17): conditional price-move ranges, never a single target, each with every input shown and the "estimate, not financial advice" notice.
 - The API and MCP never return continuous price or return series (data license limit).
 - Respect robots.txt and site terms; rate-limit every source; SEC EDGAR at no more than 10 requests per second.
 

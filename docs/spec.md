@@ -44,6 +44,7 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Interest feeds | No | Yes, with RSS |
 | Readout benchmarks | One featured benchmark per week | All |
 | Market-size estimates | No | Yes |
+| Catalyst scenarios | One featured catalyst per week; accuracy record always | All |
 | Price-impact statistics | Base rates by catalyst type | Per event, per company, filterable |
 | Cash runway and dilution flags | No | Yes |
 | Research assistant | 3 questions a day | 50 a day (fair-use cap) |
@@ -146,7 +147,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Verifier | Re-extracts with a different prompt (later a different provider) and runs cross-checks | Staged claims, source copies | Publish |
 | Auditor | Re-checks published records: sources still say the same, links alive, dates passed without an outcome | Live data (read), source fetches via collectors | Publish; findings re-enter verification |
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
-| Analyst | Drafts benchmarks and market-size estimates | Published data, published literature | Publish; all drafts go to review in v1 |
+| Analyst | Drafts benchmarks, market-size estimates, and catalyst-scenario inputs | Published data, published literature | Publish; all drafts go to review in v1 |
 | Marketing | Drafts newsletter issues and posts from published data | Published data | Post anything; you approve each item |
 | Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; a merge workflow merges its pull requests after CI and the reviewer agent pass, and you merge changes to that workflow or the review |
 | Research assistant (user-facing) | Helps users find features and data | Published data through the public API | Web browsing; advice; anything a user could not see themselves |
@@ -185,7 +186,7 @@ A claim publishes automatically only when checks with independent evidence agree
 
 ## Analysis layer
 
-The analysis layer has four products, all descriptive: none makes a buy, sell, or price-target call. In v1, agents draft every analysis and you approve it before it publishes. Your immuno-oncology background is the quality gate, so benchmarking starts in oncology.
+The analysis layer has five products. Four are descriptive. The fifth, catalyst scenarios, estimates conditional price-move ranges (owner decision 2026-10-17); none makes a buy or sell call, and none is tailored to a reader. In v1, agents draft every analysis and you approve it before it publishes. Your immuno-oncology background is the quality gate, so benchmarking starts in oncology.
 
 ### Readout benchmarking
 
@@ -203,7 +204,7 @@ Patients × addressable share × annual price × penetration, shown as low, base
 - Patient counts from public sources (for example SEER for US cancer incidence, CDC, published epidemiology).
 - Addressable share by line of therapy and biomarker.
 - Price from comparable approved drugs.
-- Every input is sourced and the formula is shown, so users can disagree with a specific input. Labeled "estimate", never a valuation.
+- Every input is sourced and the formula is shown, so users can disagree with a specific input. Labeled "estimate". The estimate itself is never a valuation; only Catalyst scenarios turns it into one.
 
 ### Price-impact statistics
 
@@ -212,8 +213,30 @@ An event study around each catalyst, measured against a biotech index (XBI) so m
 - Abnormal return on day 0, day +1, and day +5; 30-day pre-event run-up; volume versus its 20-day average.
 - **Day 0 alignment:** a release after the 16:00 close counts toward the next trading day. Research on FDA approvals found the share-price effect concentrated in after-close announcements, and misdating the event day distorts results ([UCC study](https://cora.ucc.ie/handle/10468/12099)).
 - Base rates grouped by catalyst type, phase, outcome, and market-cap bucket.
-- **No predictions in v1.** Any later predictive feature must publish its accuracy against a naive baseline. CatalystAlert's own track record shows its model scoring below an always-neutral baseline.
+- **No predictions in v1** except catalyst scenarios (below). Any predictive feature must publish its accuracy against a naive baseline. CatalystAlert's own track record shows its model scoring below an always-neutral baseline.
 - **Data license limit:** the API and MCP serve event-window statistics only, never continuous price or return series. A full return series can rebuild the price history, which data vendors' terms forbid.
+
+### Catalyst scenarios
+
+For an upcoming catalyst, a set of "what if" outcomes, each with a ballpark effect on the company's value and share price (owner decision 2026-10-17). The point is legibility: anyone can see every guess that went in and disagree with a specific one.
+
+- **Scenarios.** Built from the outcome measure the trial actually uses, net of placebo where the trial has one. For example: symptom reduction of 10%, 20%, or 30% on the primary endpoint; side effects better than, equal to, or worse than the leading marketed drug; and failure. Every catalyst carries downside scenarios as well as upside ones (owner decision 2026-10-17): a result below what is needed, a missed primary endpoint, a safety problem, and a delay, each with its own range, which is usually negative (for example "-30% to -80%"). Readout benchmarking supplies the competitors; any comparison its comparability label marks "not comparable" is shown as such, never silently used.
+- **What would count as positive or negative** (later, owner request 2026-10-17). For each measure the trial uses, reference ranges drawn from benchmarks, approved drugs' labels, and published trials in the same disease and line of therapy. For example: the response rate below which a result is likely read as negative, the range that matches the standard of care, and the level above which it is likely read as clearly positive. Each boundary links to the results it comes from, and each scenario says where it falls on these ranges.
+- **Model per scenario,** each input sourced and its reasoning written out; ADR 0017 sets the defaults and their sources:
+  1. Patients reachable: the market-size estimate for the indication, line of therapy, and biomarker group; US and ex-US counted separately.
+  2. Share captured: from efficacy and side effects relative to the standard of care, marketed drugs, and competitors in development, and from the order of arrival to market.
+  3. Net price: from comparable marketed drugs; where none is comparable, a stated analog with the reason.
+  4. Launch year and uptake: years to launch from the phase after the catalyst, then a standard uptake curve to peak.
+  5. Years of sales: to expected loss of exclusivity (FDA Orange Book or Purple Book, company 10-K patent disclosures).
+  6. Chance of approval from the phase the drug will be in after the catalyst: published base rates by phase and disease area (for example the BIO/Informa clinical development success-rate report).
+  7. Economics: operating margin on sales (or a stated sales multiple), remaining development cost, and partner terms (royalty versus owned sales) from the company's filings.
+  8. Company: cash and debt from the latest 10-Q; diluted share count from SEC filings; the company's other programs valued the same way. A company that must raise cash before launch (cash-runway flags) has the expected new shares counted in each scenario.
+  9. Result: estimated peak sales; risk-adjusted value (probability-weighted and discounted at a stated rate) of the program; and the company's value in that scenario as (program value + other programs + cash - debt), shown as a share of its market value.
+- **Price-move range.** For each scenario: (company value in that scenario ÷ current market value) - 1. The "before" is the market's own price, not our model's. The low and high ends come from running the low and high market-size cases. Shown as a range (for example "+5% to +100%"), never a single target, and checked against how share prices moved after similar past catalysts (Price-impact statistics), with any gap between the two shown.
+- **Readers.** Every page, alert, API response, and MCP tool description that carries scenarios shows "Estimate. Not financial advice." Nothing is tailored to a reader's holdings. Scenarios publish on a regular schedule (with each catalyst record and its weekly refresh), not as one-off pieces timed to a market event.
+- **Accuracy record.** After each catalyst resolves, the actual result is mapped to its scenario (a 15% result falls between the 10% and 20% cases), and the actual move is measured as abnormal return against XBI on day 0 and day +1, as in Price-impact statistics. Ranges are scored with an interval score, which penalizes width, so a very wide range cannot look right just by being wide; the score is published against a naive baseline (the typical range for that catalyst type and phase, at the same coverage). A backtest on past catalysts publishes at launch, and the record is free, on the site and through the API and MCP.
+- **Review.** In v1, an AI analyst drafts the inputs with sources and you approve them before they publish.
+- **Data.** Share counts come free from SEC filings. Market value needs share prices, so this feature waits for the price-data license (Open questions: Tiingo's written confirmation, or Redistribution).
 
 ### Cash runway and dilution
 
@@ -267,7 +290,7 @@ One server-rendered page per catalyst, drug, company, and indication, with struc
 - Helps users find features and data: "which PDUFA dates in oncology slipped this quarter?"
 - Answers only from published data through the public API, citing our records and their sources.
 - Shows the filter it used, with a button to open it as a saved search, so users learn the interface.
-- Refuses personal advice ("should I buy", "is my portfolio exposed") with a fixed message.
+- Refuses personal advice ("should I buy", "is my portfolio exposed") with a fixed message. It may quote published catalyst scenarios, never apply them to a user's holdings.
 
 ### Other
 
@@ -301,6 +324,7 @@ One API sits under everything: the web app, the MCP server, and the research ass
 | `get_outcomes` | Resolved catalysts and results | Free (90 days), paid (all) |
 | `get_benchmark` | Readout benchmark table | Paid |
 | `get_market_size` | Market-size scenarios with inputs | Paid |
+| `get_catalyst_scenarios` | Outcome scenarios with every input, peak sales, value as a share of market value, and price-move ranges; never a single target or a price series | Paid (the accuracy record is free) |
 | `get_price_impact_stats` | Event-window statistics and base rates | Free (base rates), paid (per event) |
 | `get_runway` | Cash, burn, runway, dilution flags | Paid |
 | `manage_watchlist` | Add or remove watched items | Paid |
@@ -359,12 +383,12 @@ Every component is documented for both people and agents, and the data schemas a
 
 ## Compliance and legal
 
-The product stays an impersonal publication, which keeps it outside investment-adviser registration under the publisher's exclusion ([*Lowe v. SEC*](https://chanrobles.com/usa/us_supremecourt/472/181/)). That rules out advice tailored to any user. This section lists constraints, not legal advice; a securities lawyer should review it before the paid launch.
+The product stays an impersonal publication, which keeps it outside investment-adviser registration under the publisher's exclusion ([*Lowe v. SEC*](https://chanrobles.com/usa/us_supremecourt/472/181/)). That rules out advice tailored to any user. This section lists constraints, not legal advice. Owner decision 2026-10-17: no securities lawyer review; every page, alert, API response, and MCP tool description states that nothing is financial advice. A disclaimer supports, but does not by itself decide, the publisher's exclusion; the exclusion rests on content staying impersonal, regularly published, and not timed to specific market events.
 
 | Area | Rule |
 | --- | --- |
-| Advice | No buy/sell ratings, price targets, or portfolio-specific answers. The assistant refuses these with a fixed message. |
-| Disclaimers | On every page, alert, API response terms, and MCP tool description. |
+| Advice | No buy/sell ratings or portfolio-specific answers; the assistant refuses these with a fixed message. Price-move ranges appear only in catalyst scenarios, never as a single target (owner decision 2026-10-17). |
+| Disclaimers | On every page, alert, API response, the API terms, and every MCP tool description. |
 | Your positions | Written policy before launch: either no trading in covered stocks around publication, or disclosure of holdings. |
 | Motley Fool contract | Check outside-work, competition, and disclosure terms before launch. |
 | Source content | Store facts, links, and short verification quotes; never republish full press releases or abstracts; respect conference embargoes. |
@@ -431,7 +455,7 @@ These are starting defaults; the evaluation harness decides each role's model on
 | Verifier re-extraction | Sonnet-class with a different prompt; later a second provider | Independence |
 | Entity resolver (ambiguous cases only) | Sonnet-class | Few calls |
 | Outcome and auditor agents | Sonnet-class | Same task shape as extraction |
-| Analyst drafts (benchmarks, market size) | Opus-class | Hardest reasoning, low volume, every draft reviewed |
+| Analyst drafts (benchmarks, market size, scenario inputs) | Opus-class | Hardest reasoning, low volume, every draft reviewed |
 | Research assistant | Sonnet-class | Speed and cost per question |
 | Orchestrator | Sonnet-class | Routing, not judgment |
 
