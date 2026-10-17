@@ -26,6 +26,13 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
 - [ ] Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary (owner decision 2026-10-17)
+- [ ] Foreign companies listed in the US (owner request 2026-10-17; ADR 0021). They are already on the coverage list, but their filings are not read yet:
+  - forms: 6-K press releases (every EX-99 exhibit, or the main document when there is none), 20-F and 40-F annual reports, half-year and quarterly results on 6-K, F-1, F-3, and F-10 offerings, and their amendments; for companies that file 8-K, 10-Q, and 10-K by choice, those forms;
+  - triage screens out 6-Ks that are not catalyst news (such as buyback notices) before extraction;
+  - each record keeps the release's own date and time as well as the SEC acceptance time;
+  - 6-K fixtures and gold-set entries, with both prompts scored again;
+  - depositary-share tickers, home-market names, and the depositary-share ratio for market value;
+  - dates read in each company's own fiscal year, with its naming rule stored per company
 - [ ] Gold set of 200 verified catalysts. Includes giving the Spyre SKYLINE Part B gold entry its full drug list once the drug field is a list (owner ruling, 2026-10-17, rule 3)
 
 **Gate 2 (the one that matters most):** error rate under 1% at 95% confidence on a random sample of published records, checked independently (owner target 2026-10-17: 99% to start, 99.9% later); 100% of published records carry a deep source link.
@@ -36,7 +43,6 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Basic search and filters. A search for one drug finds the trials of combinations that contain it and shows that drug first; a long drug list expands on request and never takes over the page (owner ruling, 2026-10-17)
 - [ ] Show or hide any field: every table and record view lets the viewer hide fields they do not want; the choice is remembered on their device, and for signed-in users once accounts exist (owner request, 2026-10-17)
 - [ ] Catalyst timeline: each catalyst drawn as a bar across its date window on a time axis, so a quarter-wide window looks wider than a fixed date; rows by company or drug, side by side for comparison; past windows faded; each bar links to its record and source (owner request, 2026-10-17)
-- [ ] Foreign companies listed in the US (owner request 2026-10-17; ADR 0021): collect Form 6-K press-release exhibits and Forms 20-F and 40-F from EDGAR; add foreign issuers to the coverage list; 6-K fixtures and gold-set entries, with both prompts scored again; depositary-share tickers and home-market names in the entity resolver; dates read in each company's own fiscal year
 - [ ] Read-only MCP server and directory listings
 - [ ] Weekly email and marketing-agent drafts (owner approves each)
 - [ ] Business setup: entity, terms, privacy policy, Stripe, sales tax (owner)
@@ -73,15 +79,18 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Companies listed only outside the US, one market at a time in order of how many listed drug developers each has (owner request 2026-10-17; ADR 0021):
   - per market, before any code: robots.txt and terms checked, a rate limit set, and any account or key found (gathered for the owner in one sitting); a market whose terms forbid automated collection is left out or reached through a licensed feed the owner approves;
   - quotes kept in the original language, character for character, with a labeled translation beside them; gold-set entries in each language before that market publishes;
-  - trial registries (EU CTIS, ISRCTN, jRCT, ChiCTR, ANZCTR, CRIS; WHO ICTRP as an index) and regulators (EMA, MHRA, PMDA, NMPA, Health Canada, TGA), each checked the same way;
+  - trial registries (EU CTIS and EudraCT, ISRCTN, jRCT, ChiCTR, ANZCTR, CRIS; WHO ICTRP as an index) and regulators (EMA, MHRA, PMDA, NMPA, Health Canada, TGA, Swissmedic, MFDS, Israel's Ministry of Health), each checked the same way;
   - ISIN and LEI codes and names in other scripts for the entity resolver;
-  - no market value, price statistics, or scenario price ranges until a price license covers that exchange and currency.
+  - companies already matched to an SEC number (through ISIN or LEI) are not added again;
+  - a machine translation is labeled as one and is never a claim; date phrases in each language (including Japan's era years) get property-based tests;
+  - no market value, price statistics, or scenario price ranges until a price license covers that exchange and currency;
+  - checkpoint CP9 per market: a separate random sample of that market's records meets the Gate 2 error rate before it publishes.
 
 ## Later (unscheduled)
 
 - [ ] Public API tier (about $50/month)
 - [ ] Second model provider for verification
-- [ ] EMA, PMDA, NMPA sources; conference abstracts at scale; Slack and Teams apps
+- [ ] Conference abstracts at scale; Slack and Teams apps (regulator sources outside the US moved to Phase 5)
 - [ ] Estimated results-reporting window for each trial (owner request, 2026-10-17). A trial's primary completion date is when the last measurement is due, not when results come out. Show a second window for when results are likely to be reported, chosen in this order:
   1. The company's own guidance ("topline data in 1H27"), whenever it exists.
   2. Otherwise, the company's own history: for its past trials, the gap between primary completion (ClinicalTrials.gov) and the press release or filing that reported the results.
@@ -95,7 +104,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
-| 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US through their EDGAR forms (6-K, 20-F, 40-F) in Phase 2, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
+| 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US (already on the coverage list) through the EDGAR forms each actually files (6-K, 20-F, 40-F, F-1, F-3, F-10, or the domestic forms) in Phase 1 before the gold set grows, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
 | 2026-10-17 | ADR 0018: verification stores each check's latest outcome per claim (pass, fail with reason, not applicable); built in five parts: rule checks, second extraction, cross-source and change checks, the planted-error test, and the publish gate |
 | 2026-10-17 | ADR 0017: catalyst scenarios added (spec and Phase 4): upside and downside scenarios with conditional price-move ranges, peak sales, and risk-adjusted value, plus a later item for reference ranges per trial measure; the "no price targets" rule now excepts only this feature; no securities lawyer review; disclaimers on every page (owner decisions) |
 | 2026-10-17 | ADR 0015 (part 4): each name in an extracted claim gets a stored match (resolved, ambiguous with candidates, or unknown); only a company's own quoted code name creates a drug; study names match only in capitals; roadmap item ticked |

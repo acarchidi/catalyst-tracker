@@ -26,6 +26,7 @@ Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 000
 | CP6 Billing | Before taking money | A full test-mode purchase, upgrade, and cancellation | **Opus** | Free users never see paid data; paid users always do |
 | Gate 4 | End of Phase 3 | 4 weeks of alert delivery logs | `/ultrareview` | Alerts delivered for every run in the 4 weeks |
 | CAL2 Benchmark calibration | Start of Phase 4 | 20 benchmark drafts | Owner (domain expert) | Owner approves at least 18 of 20 |
+| CP9 New market | Before each market of companies listed only outside the US publishes (ADR 0021) | 10 of that market's records beside their source sentences and labeled translations | **Opus** + reviewer subagent for the terms check | A separate random sample of that market's records meets the Gate 2 error rate; the market's terms allow collection |
 | CAL3 Scenario calibration | Before catalyst scenarios publish | 20 scenario drafts with every input, plus the backtest on past catalysts | **Opus** review of the math + owner (domain expert) | Owner approves at least 18 of 20; backtest interval score beats the naive baseline |
 
 ## Quality bars enforced in CI
