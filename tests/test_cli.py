@@ -236,13 +236,34 @@ def test_eval_extractor_writes_a_scores_record(
     scores = Scores(recall=0.9, precision=0.8, catalyst_type=1.0, window=0.95, drug=1.0, quote_found=1.0)
     monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
-    monkeypatch.setattr(cli, "evaluate", lambda *_args: (scores, []))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "evaluate", lambda *_args, **_options: (scores, []))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "scores.json"
     assert main(["eval-extractor", "--out", str(out)]) == 0
     record = json.loads(out.read_text())
     assert record["prompt_id"] == "extract_catalysts"
     assert record["scores"]["recall"] == 0.9
     assert json.loads(capsys.readouterr().out) == record
+
+
+def test_eval_extractor_scores_the_second_reading_with_its_own_role_and_prompt(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    scores = Scores(recall=0.9, precision=0.8, catalyst_type=1.0, window=0.95, drug=1.0, quote_found=1.0)
+    asked: dict[str, object] = {}
+
+    def scored(*_args: object, **options: object) -> tuple[Scores, list[object]]:
+        asked.update(options)
+        return scores, []
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "evaluate", scored)
+    out = tmp_path / "scores.json"
+    assert main(["eval-extractor", "--prompt", "verify_catalysts", "--out", str(out)]) == 0
+    capsys.readouterr()
+    assert asked == {"role": "verifier", "prompt_ref": ("verify_catalysts", "1.0.0")}
+    record = json.loads(out.read_text())
+    assert (record["prompt_id"], record["model"]) == ("verify_catalysts", "claude-sonnet-5-5")
 
 
 def test_eval_extractor_without_a_database_setting_says_so_plainly(

@@ -136,3 +136,13 @@ def test_a_baseline_must_name_every_score(tmp_path: Path) -> None:
     evals = _evals(tmp_path, scores=_scores(tmp_path, _prompt("1.1.0")), baseline=partial)
     (problem,) = gate_problems(_prompt("1.1.0"), ROLE_M, evals)
     assert "drug" in problem
+
+
+def test_the_second_reading_has_no_scores_yet_so_it_may_not_run() -> None:
+    """ADR 0018, part 2: the verifier runs live only once its own scores are committed."""
+    from catalyst.extract.evaluate import VERIFY_EVALS
+    from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
+
+    role = load_config().roles[VERIFIER_ROLE]
+    problems = gate_problems(load_prompt(*VERIFIER_PROMPT), role, VERIFY_EVALS, EVALS / "gold.jsonl")
+    assert problems == ["no scores.json and no unscored.json: the prompt has never been checked"]

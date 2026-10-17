@@ -43,6 +43,7 @@ from catalyst.snapshots import (
     verify_snapshots,
 )
 from catalyst.verify.run import run_checks
+from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 
 NEW_YORK = ZoneInfo("America/New_York")
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
@@ -115,6 +116,12 @@ def _parser() -> argparse.ArgumentParser:
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
     evaluate.add_argument("--out", type=Path, required=True, help="Write the scores record (JSON) here.")
+    evaluate.add_argument(
+        "--prompt",
+        choices=sorted(_READERS),
+        default=EXTRACTOR_PROMPT[0],
+        help="Which reader to score: the extractor (default) or the verifier's second reading.",
+    )
     return parser
 
 
@@ -305,6 +312,14 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+# Each reader scored on the gold set: its role and its prompt. The verifier's scores go in
+# evals/verify_catalysts/ (ADR 0018, part 2).
+_READERS = {
+    EXTRACTOR_PROMPT[0]: (ROLE, EXTRACTOR_PROMPT),
+    VERIFIER_PROMPT[0]: (VERIFIER_ROLE, VERIFIER_PROMPT),
+}
+
+
 def _evaluate(args: argparse.Namespace) -> int:
     try:
         adapter = anthropic_adapter.from_settings()
@@ -316,12 +331,13 @@ def _evaluate(args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
+        role_name, prompt_ref = _READERS[args.prompt]
         gold = load_gold(EVALS / "gold.jsonl")
-        scores, _ = evaluate(client, gold, EVALS / "documents")
+        scores, _ = evaluate(client, gold, EVALS / "documents", role=role_name, prompt_ref=prompt_ref)
     finally:
         engine.dispose()
-    role = config.roles[ROLE]
-    record = scores_record(scores, load_prompt(*EXTRACTOR_PROMPT), role, EVALS / "gold.jsonl", len(gold))
+    role = config.roles[role_name]
+    record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
     return 0

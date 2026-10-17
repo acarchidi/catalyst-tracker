@@ -120,10 +120,20 @@ def _checked(item: dict[str, Any], text: str, published: date) -> ExtractedCatal
     )
 
 
-def extract_catalysts(client: ModelClient, text: str, published: date) -> Extraction:
-    """Ask the extractor for the catalysts in `text` (published on `published`) and check each one."""
-    prompt = load_prompt(*EXTRACTOR_PROMPT)
-    result = client.run(ROLE, prompt, model_input(text, published))
+def extract_catalysts(
+    client: ModelClient,
+    text: str,
+    published: date,
+    *,
+    role: str = ROLE,
+    prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
+) -> Extraction:
+    """Ask a reader for the catalysts in `text` (published on `published`) and check each one.
+
+    The extractor is the default; the verifier's second reading uses its own role and prompt.
+    """
+    prompt = load_prompt(*prompt_ref)
+    result = client.run(role, prompt, model_input(text, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
     return Extraction(
         catalysts=tuple(_checked(item, text, published) for item in items),
@@ -152,7 +162,9 @@ def proposal_value(catalyst: ExtractedCatalyst) -> dict[str, Any]:
     }
 
 
-def catalyst_claims(extraction: Extraction, source_document_id: UUID, extracted_at: datetime) -> list[Claim]:
+def catalyst_claims(
+    extraction: Extraction, source_document_id: UUID, extracted_at: datetime, *, agent: str = ROLE
+) -> list[Claim]:
     """Return one claim per proposed catalyst whose quote was found in the source.
 
     Proposals whose quote is not the source's words make no claim: a claim always carries a
@@ -172,7 +184,7 @@ def catalyst_claims(extraction: Extraction, source_document_id: UUID, extracted_
                 quote=catalyst.quote.quote,
                 quote_start=catalyst.quote.start,
                 quote_end=catalyst.quote.end,
-                agent=ROLE,
+                agent=agent,
                 prompt_id=extraction.prompt_id,
                 prompt_version=extraction.prompt_version,
                 provider=extraction.provider,

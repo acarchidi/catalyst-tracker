@@ -16,7 +16,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from catalyst.extract.agent import ExtractedCatalyst, extract_catalysts
+from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE, ExtractedCatalyst, extract_catalysts
 from catalyst.extract.dates import DateWindow, parse_window
 from catalyst.extract.text import QuoteSpan, document_text, find_quote
 from catalyst.llm.client import ModelClient
@@ -169,13 +169,21 @@ def gold_fingerprint(path: Path) -> str:
 
 
 def evaluate(
-    client: ModelClient, gold: list[GoldDocument], copies: Path
+    client: ModelClient,
+    gold: list[GoldDocument],
+    copies: Path,
+    *,
+    role: str = ROLE,
+    prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
 ) -> tuple[Scores, list[DocumentScore]]:
-    """Run the extractor on every gold document (copies in `copies/<sha256>.htm`) and score it."""
+    """Run a reader on every gold document (copies in `copies/<sha256>.htm`) and score it.
+
+    The extractor is the default; the verifier's prompt is scored the same way, on the same set.
+    """
     results: list[DocumentScore] = []
     for document in gold:
         text = document_text((copies / f"{document.sha256}.htm").read_bytes(), document.content_type)
-        extraction = extract_catalysts(client, text, document.published)
+        extraction = extract_catalysts(client, text, document.published, role=role, prompt_ref=prompt_ref)
         results.append(
             score_document(text, document.published, list(document.catalysts), list(extraction.catalysts))
         )
@@ -183,6 +191,8 @@ def evaluate(
 
 
 EVALS = Path(__file__).resolve().parents[3] / "evals" / "extract_catalysts"
+# The verifier's second reading is scored on the same gold set; its scores sit in their own folder.
+VERIFY_EVALS = EVALS.parent / "verify_catalysts"
 FIRST_VERSION = "1.0.0"
 
 
@@ -227,7 +237,9 @@ def _mismatches(name: str, record: dict[str, Any], expected: dict[str, object]) 
     ]
 
 
-def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list[str]:
+def gate_problems(
+    prompt: Prompt, role: RoleConfig, evals: Path = EVALS, gold: Path | None = None
+) -> list[str]:
     """Return why the current prompt and model may not ship; empty when they may.
 
     Scored: `scores.json` must name exactly this prompt (id, version, and the fingerprint of its
@@ -247,7 +259,7 @@ def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list
             return ["no scores.json and no unscored.json: the prompt has never been checked"]
         return _mismatches("unscored.json", json.loads(unscored_path.read_text(encoding="utf-8")), expected)
     record: dict[str, Any] = json.loads(scores_path.read_text(encoding="utf-8"))
-    expected["gold_sha256"] = gold_fingerprint(evals / "gold.jsonl")
+    expected["gold_sha256"] = gold_fingerprint(gold or evals / "gold.jsonl")
     problems = _mismatches("scores.json", record, expected)
     baseline_path = evals / "baseline.json"
     if not baseline_path.exists():
