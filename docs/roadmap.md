@@ -58,6 +58,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 - [ ] Readout benchmarking, oncology first. Compares a readout with competitors' programs in development and their published data, approved drugs, and the marketed standard of care where one exists; every row carries its comparability label, so loose comparisons are shown as loose (spec: Readout benchmarking; owner confirmed the scope 2026-10-17)
 - [ ] Pipeline and competitive-landscape views: one company's programs by indication and phase, and every company's programs in one indication or against one target, each with its next catalyst; as a table and as a chart (phase on one axis, programs grouped by indication), every point linked to its source (owner request, 2026-10-17)
+- [ ] Catalyst scenarios (spec: Catalyst scenarios; owner decision 2026-10-17): for each upcoming catalyst, outcome scenarios with estimated peak sales, risk-adjusted value as a share of market value, and a price-move range, every input shown; needs readout benchmarking, market-size estimates, and the price-data license first; publishes its accuracy record
 - [ ] Key publications on each catalyst record, as a field the viewer can hide (owner request, 2026-10-17):
   - Only peer-reviewed journal articles: PubMed records of type "journal article" in MEDLINE-indexed journals; no preprints, posters, company documents, or self-published material.
   - Linked to the company in one of two checkable ways: the article reports one of the company's registered trials (its NCT number is in PubMed's record), or an author lists the company as an affiliation. Funding statements are free text and too unreliable to use alone.
@@ -83,6 +84,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | Catalyst scenarios added (spec and Phase 4): conditional price-move ranges with peak sales and risk-adjusted value; the "no price targets" rule now excepts only this feature; no securities lawyer review; disclaimers on every page (owner decisions) |
 | 2026-10-17 | Roadmap: show/hide any field and a catalyst timeline (Phase 2); pipeline and competitive-landscape views and key peer-reviewed publications per catalyst (Phase 4); readout benchmarking scope confirmed by the owner (owner requests) |
 | 2026-10-17 | ADR 0016: a catalyst links any number of drugs, each marked alone or in combination, and a combination lists its parts only where a source states them; every link names its claim; `catalyst.drug_id` is dropped by a migration that refuses to lose data |
 | 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |

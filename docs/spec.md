@@ -185,7 +185,7 @@ A claim publishes automatically only when checks with independent evidence agree
 
 ## Analysis layer
 
-The analysis layer has four products, all descriptive: none makes a buy, sell, or price-target call. In v1, agents draft every analysis and you approve it before it publishes. Your immuno-oncology background is the quality gate, so benchmarking starts in oncology.
+The analysis layer has five products. Four are descriptive. The fifth, catalyst scenarios, estimates conditional price-move ranges (owner decision 2026-10-17); none makes a buy or sell call, and none is tailored to a reader. In v1, agents draft every analysis and you approve it before it publishes. Your immuno-oncology background is the quality gate, so benchmarking starts in oncology.
 
 ### Readout benchmarking
 
@@ -212,8 +212,26 @@ An event study around each catalyst, measured against a biotech index (XBI) so m
 - Abnormal return on day 0, day +1, and day +5; 30-day pre-event run-up; volume versus its 20-day average.
 - **Day 0 alignment:** a release after the 16:00 close counts toward the next trading day. Research on FDA approvals found the share-price effect concentrated in after-close announcements, and misdating the event day distorts results ([UCC study](https://cora.ucc.ie/handle/10468/12099)).
 - Base rates grouped by catalyst type, phase, outcome, and market-cap bucket.
-- **No predictions in v1.** Any later predictive feature must publish its accuracy against a naive baseline. CatalystAlert's own track record shows its model scoring below an always-neutral baseline.
+- **No predictions in v1** except catalyst scenarios (below). Any predictive feature must publish its accuracy against a naive baseline. CatalystAlert's own track record shows its model scoring below an always-neutral baseline.
 - **Data license limit:** the API and MCP serve event-window statistics only, never continuous price or return series. A full return series can rebuild the price history, which data vendors' terms forbid.
+
+### Catalyst scenarios
+
+For an upcoming catalyst, a set of "what if" outcomes, each with a ballpark effect on the company's value and share price (owner decision 2026-10-17). The point is legibility: anyone can see every guess that went in and disagree with a specific one.
+
+- **Scenarios.** Built from the outcome measure the trial actually uses, net of placebo where the trial has one. For example: symptom reduction of 10%, 20%, or 30% on the primary endpoint; side effects better than, equal to, or worse than the leading marketed drug; and failure. Readout benchmarking supplies the competitors; any comparison its comparability label marks "not comparable" is shown as such, never silently used.
+- **Model per scenario,** each input sourced and its reasoning written out:
+  1. Patients reachable: the market-size estimate for the indication, line of therapy, and biomarker group.
+  2. Share captured: from efficacy and side effects relative to the standard of care, marketed drugs, and competitors in development, and from the order of arrival to market.
+  3. Net price: from comparable marketed drugs.
+  4. Years of sales: to expected loss of exclusivity.
+  5. Chance of approval from the phase the drug will be in after the catalyst: published base rates by phase and disease area.
+  6. Result: estimated peak sales, and risk-adjusted value (probability-weighted and discounted at a stated rate), shown as a share of the company's market value. For a company with several programs, each program is valued separately and the parts are added, with cash from the latest 10-Q.
+- **Price-move range.** The change in risk-adjusted value between now and each scenario, divided by market value, shown as a range (for example "+5% to +100%"), never a single target. The range is checked against how share prices moved after similar past catalysts (Price-impact statistics), and any gap between the two is shown.
+- **Readers.** Every page and response shows "Estimate. Not financial advice." beside the scenarios. Nothing is tailored to a reader's holdings.
+- **Accuracy record.** After each catalyst resolves, the actual move is compared with its scenario's range; hit rate and error are published against a naive baseline (the typical move for that catalyst type and phase).
+- **Review.** In v1, an AI analyst drafts the inputs with sources and you approve them before they publish.
+- **Data.** Share counts come free from SEC filings. Market value needs share prices, so this feature waits for the price-data license (Open questions: Tiingo's written confirmation, or Redistribution).
 
 ### Cash runway and dilution
 
@@ -359,11 +377,11 @@ Every component is documented for both people and agents, and the data schemas a
 
 ## Compliance and legal
 
-The product stays an impersonal publication, which keeps it outside investment-adviser registration under the publisher's exclusion ([*Lowe v. SEC*](https://chanrobles.com/usa/us_supremecourt/472/181/)). That rules out advice tailored to any user. This section lists constraints, not legal advice; a securities lawyer should review it before the paid launch.
+The product stays an impersonal publication, which keeps it outside investment-adviser registration under the publisher's exclusion ([*Lowe v. SEC*](https://chanrobles.com/usa/us_supremecourt/472/181/)). That rules out advice tailored to any user. This section lists constraints, not legal advice. Owner decision 2026-10-17: no securities lawyer review; every page, alert, and response states that nothing is financial advice. A disclaimer supports, but does not by itself decide, the publisher's exclusion; the exclusion rests on content staying impersonal and regularly published.
 
 | Area | Rule |
 | --- | --- |
-| Advice | No buy/sell ratings, price targets, or portfolio-specific answers. The assistant refuses these with a fixed message. |
+| Advice | No buy/sell ratings or portfolio-specific answers; the assistant refuses these with a fixed message. Price-move ranges appear only in catalyst scenarios, never as a single target (owner decision 2026-10-17). |
 | Disclaimers | On every page, alert, API response terms, and MCP tool description. |
 | Your positions | Written policy before launch: either no trading in covered stocks around publication, or disclosure of holdings. |
 | Motley Fool contract | Check outside-work, competition, and disclosure terms before launch. |
