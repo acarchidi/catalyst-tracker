@@ -5,7 +5,7 @@
 # Prices: US dollars per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing
 # (read 2026-10-16). cache_write is the 5-minute cache write price.
 
-version = "2026-10-16.1"
+version = "2026-10-17.1"
 
 [pricing.claude-haiku-5-5]
 input = "0.10"
@@ -32,69 +32,69 @@ cache_write = "5"
 cache_read = "0.20"
 output = "20"
 
-# Daily caps add up to $13.50, about $405 a month at most: inside the spec's $150 to $600
-# model-cost estimate. Owner's Anthropic workspace limit is $50 a month (docs/setup.md Part 2),
-# which is lower and wins until the owner raises it.
+# Daily caps add up to $6.00, about $180 a month at most (owner decision 2026-10-17, lowered
+# from $13.50 to fit the budget while building). Owner's Anthropic workspace limit is $50 a
+# month (docs/setup.md Part 2), which is lower and wins until the owner raises it.
 
 [roles.triage]
 provider = "anthropic"
 model = "claude-haiku-5-5"
 max_tokens = 1024
 effort = "low"
-daily_cap_usd = "0.50"
+daily_cap_usd = "0.25"
 
 [roles.extractor]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "4.00"
+daily_cap_usd = "2.00"
 
 [roles.verifier]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "4.00"
+daily_cap_usd = "2.00"
 
 [roles.entity_resolver]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 4000
 effort = "low"
-daily_cap_usd = "0.50"
+daily_cap_usd = "0.25"
 
 [roles.outcome]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "1.00"
+daily_cap_usd = "0.50"
 
 [roles.auditor]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "1.00"
+daily_cap_usd = "0.50"
 
 [roles.analyst]
 provider = "anthropic"
 model = "claude-opus-5-5"
 max_tokens = 16000
 effort = "high"
-daily_cap_usd = "1.50"
+daily_cap_usd = "0.25"
 
 [roles.assistant]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 4000
 effort = "low"
-daily_cap_usd = "0.50"
+daily_cap_usd = "0.125"
 
 [roles.orchestrator]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 4000
 effort = "low"
-daily_cap_usd = "0.50"
+daily_cap_usd = "0.125"
