@@ -19,6 +19,7 @@ import httpx
 from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.sql.elements import ColumnElement
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import (
@@ -27,6 +28,7 @@ from catalyst.extract.agent import (
     ExtractedCatalyst,
     catalyst_claims,
     extract_catalysts,
+    proposal_value,
 )
 from catalyst.extract.text import document_text
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
@@ -99,38 +101,18 @@ def _candidates(
         .limit(1)
         .scalar_subquery()
     )
-    query = select(documents, company.label("company")).where(documents.c.document_type.in_(document_types))
+    chosen: list[ColumnElement[bool]] = [documents.c.document_type.in_(document_types)]
     if since is not None:
-        query = query.where(
-            documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK)
-        )
-    finished = (
-        select(func.count()).select_from(documents).where(documents.c.document_type.in_(document_types), done)
-    )
-    if since is not None:
-        finished = finished.where(
-            documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK)
-        )
+        chosen.append(documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK))
+    query = select(documents, company.label("company")).where(*chosen)
+    finished = select(func.count()).select_from(documents).where(*chosen, done)
     skipped = session.execute(finished).scalar_one()
     rows = session.execute(query.where(~done).order_by(documents.c.published_at.desc()).limit(limit)).all()
     return list(rows), skipped
 
 
 def _shown(catalyst: ExtractedCatalyst) -> dict[str, Any]:
-    window = catalyst.window
-    return {
-        "catalyst_type": catalyst.catalyst_type.value,
-        "title": catalyst.title,
-        "drug": catalyst.drug,
-        "indication": catalyst.indication,
-        "date_text": catalyst.date_text,
-        "window_start": window.start.isoformat() if window else None,
-        "window_end": window.end.isoformat() if window else None,
-        "window_precision": window.precision.value if window else None,
-        "date_confidence": catalyst.date_confidence.value,
-        "quote": catalyst.quote.quote if catalyst.quote else None,
-        "problems": [problem.value for problem in catalyst.problems],
-    }
+    return proposal_value(catalyst) | {"quote": catalyst.quote.quote if catalyst.quote else None}
 
 
 def _store(session_factory: sessionmaker[Session], claims: list[Claim]) -> int:
