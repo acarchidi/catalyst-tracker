@@ -1,14 +1,22 @@
 name: Extract catalysts (live)
 
-# Runs the catalyst extractor on the newest press releases in the live database (ADR 0013).
+# Runs the catalyst extractor (ADR 0013), in one of two modes:
+# - extract: on the newest press releases in the live database. Safe to re-run: documents
+#   already extracted with the same prompt version are skipped. Results are claims, never
+#   published catalysts.
+# - evaluate: on the 12 recorded releases of the gold set, to earn the prompt's scores
+#   (ADR 0014). The scores go to the job summary for the coding session to commit.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
-# release, inside the extractor's daily cap (config/models.toml). Safe to re-run: documents
-# already extracted with the same prompt version are skipped. Results are claims, never
-# published catalysts.
+# release, inside the extractor's daily cap (config/models.toml).
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "extract (newest press releases) or evaluate (score on the gold set)"
+        type: choice
+        options: [extract, evaluate]
+        default: extract
       limit:
         description: "Most press releases to read in this run"
         type: number
@@ -36,6 +44,7 @@ jobs:
         run: uv sync --locked
 
       - name: Extract catalysts from the newest press releases
+        if: ${{ inputs.mode == 'extract' }}
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -58,4 +67,18 @@ jobs:
             cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
             echo "::endgroup::"
           fi
+          exit "$status"
+
+      - name: Score the extractor on the gold set
+        if: ${{ inputs.mode == 'evaluate' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          uv run catalyst eval-extractor --out "$RUNNER_TEMP/scores.json" > /dev/null
+          status=$?
+          { echo "## Extractor scores"; echo '```json'; cat "$RUNNER_TEMP/scores.json" 2>/dev/null; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
