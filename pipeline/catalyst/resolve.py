@@ -50,17 +50,22 @@ _KIND_RULE = {
 
 @dataclass(frozen=True)
 class Resolution:
-    """The candidates a rule found, and that rule; `id` is set only when there is exactly one."""
+    """The candidates a rule found, and that rule; `id` is set only when there is exactly one.
+
+    `several_named` marks a text that names more than one record, such as two registry numbers,
+    even when only one of them is on file: that is ambiguous, never resolved to the known one.
+    """
 
     candidates: tuple[UUID, ...] = ()
     matched_by: MatchedBy | None = None
+    several_named: bool = False
 
     @property
     def status(self) -> Status:
-        """Resolved for one candidate, ambiguous for several, unknown for none."""
-        if not self.candidates:
-            return Status.UNKNOWN
-        return Status.RESOLVED if len(self.candidates) == 1 else Status.AMBIGUOUS
+        """Resolved for one candidate, ambiguous for several (or several named), unknown for none."""
+        if self.several_named or len(self.candidates) > 1:
+            return Status.AMBIGUOUS
+        return Status.RESOLVED if self.candidates else Status.UNKNOWN
 
     @property
     def id(self) -> UUID | None:
@@ -130,7 +135,9 @@ class ReferenceData:
     ) -> None:
         """Index every name each record goes by."""
         self._companies = list(companies)
-        self._by_cik = {c.cik: c.id for c in self._companies}
+        self._by_cik: defaultdict[int, list[UUID]] = defaultdict(list)
+        for company in self._companies:
+            self._by_cik[company.cik].append(company.id)
         self._by_name: defaultdict[str, list[UUID]] = defaultdict(list)
         for company in self._companies:
             for name in company.names:
@@ -142,7 +149,7 @@ class ReferenceData:
                 if key := name_key(name):
                     self._drug_names[key].append((drug, kind))
         self._trials = list(trials)
-        self._by_nct = {t.nct_id: t.id for t in self._trials}
+        self._by_nct = {t.nct_id.upper(): t.id for t in self._trials}
 
     def resolve_company(
         self,
@@ -158,10 +165,11 @@ class ReferenceData:
         try the name.
         """
         if cik is not None:
-            found = self._by_cik.get(cik)
-            return _found([found] if found else [], MatchedBy.CIK)
+            return _found(self._by_cik.get(cik, []), MatchedBy.CIK)
         if ticker and (symbol := ticker.strip().lstrip("$").upper()):
-            held = [c.id for c in self._companies for t in c.tickers if t[0] == symbol and _held_on(t, on)]
+            held = [
+                c.id for c in self._companies for t in c.tickers if t[0].upper() == symbol and _held_on(t, on)
+            ]
             if held:
                 return _found(held, MatchedBy.TICKER)
         key = normalize_name(name or "")
@@ -180,10 +188,16 @@ class ReferenceData:
         return _found((drug.id for drug, _ in hits), rule)
 
     def resolve_trial(self, text: str, company_id: UUID | None = None) -> Resolution:
-        """Match registry numbers in the text, else a study name within the company's trials."""
-        numbers = [n.upper() for n in _NCT.findall(text)]
+        """Match registry numbers in the text, else a study name within the company's trials.
+
+        A text naming two different registry numbers is ambiguous, even if only one is on file.
+        """
+        numbers = set(n.upper() for n in _NCT.findall(text))
         if numbers:
-            return _found((self._by_nct[n] for n in numbers if n in self._by_nct), MatchedBy.NCT_ID)
+            found = _found((self._by_nct[n] for n in sorted(numbers) if n in self._by_nct), MatchedBy.NCT_ID)
+            if len(numbers) == 1:
+                return found
+            return Resolution(found.candidates, MatchedBy.NCT_ID, several_named=True)
         key = name_key(text)
         if not key:
             return _UNKNOWN

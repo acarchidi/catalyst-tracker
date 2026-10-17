@@ -202,3 +202,31 @@ def test_only_a_resolved_match_has_an_id() -> None:
         None,
     )
     assert isinstance(_references().resolve_company(cik=875320).id, UUID)
+
+
+def test_two_registry_numbers_go_to_review_even_when_only_one_is_on_file() -> None:
+    result = _references(trials=_trials()).resolve_trial("NCT06111111 and its extension study NCT09999999")
+    assert result.status is Status.AMBIGUOUS
+    assert (result.candidates, result.id) == ((AZURE1,), None)
+
+
+def test_the_same_registry_number_twice_is_one_trial() -> None:
+    assert _references(trials=_trials()).resolve_trial("NCT06111111 (nct06111111)").id == AZURE1
+
+
+def test_stored_numbers_and_tickers_match_whatever_their_case() -> None:
+    trial = TrialRef(id=uuid4(), nct_id="nct01234567", study_name=None, company_ids=frozenset())
+    company = CompanyRef(
+        id=uuid4(), cik=3000003, names=("Lower Co",), tickers=(("lowr", date(2020, 1, 1), None),)
+    )
+    references = ReferenceData(companies=[company], drugs=[], trials=[trial])
+    assert references.resolve_trial("NCT01234567").id == trial.id
+    assert references.resolve_company(ticker="LOWR").id == company.id
+
+
+def test_two_records_with_one_sec_number_are_ambiguous() -> None:
+    copy = CompanyRef(id=uuid4(), cik=875320, names=("Vertex copy",), tickers=())
+    references = ReferenceData(companies=[*_companies(), copy], drugs=[], trials=[])
+    result = references.resolve_company(cik=875320)
+    assert result.status is Status.AMBIGUOUS
+    assert set(result.candidates) == {VERTEX, copy.id}
