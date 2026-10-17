@@ -15,6 +15,11 @@ class MissingSettingError(RuntimeError):
 
 
 PASSWORD_PLACEHOLDER = "[YOUR-PASSWORD]"  # noqa: S105 - Supabase's placeholder text, not a password
+# This project's Session pooler (Supabase: Connect, then Session pooler; found on the live run of
+# 2026-10-17). Supabase's Direct address is IPv6 only and GitHub's machines have no IPv6, so a
+# Direct string in SUPABASE_DB_URL is sent through this pooler instead (ADR 0011).
+SESSION_POOLER_HOST = "aws-1-us-west-2.pooler.supabase.com"
+_DIRECT = re.compile(r"^(postgres(?:ql)?://)postgres:(\[YOUR-PASSWORD\])@db\.([a-z0-9]+)\.supabase\.co:5432/")
 
 
 def database_url() -> str:
@@ -23,6 +28,7 @@ def database_url() -> str:
     In order: `CATALYST_DATABASE_URL` (a local or test database); else the live database from
     `SUPABASE_DB_URL`, Supabase's Session pooler string copied unchanged with its
     `[YOUR-PASSWORD]` placeholder, filled from `SUPABASE_DB_PASSWORD`; else the local default.
+    A Direct connection string is accepted too and rewritten to the Session pooler.
     """
     if local := os.environ.get("CATALYST_DATABASE_URL"):
         return local
@@ -35,6 +41,7 @@ def database_url() -> str:
             "left in it. See docs/setup.md Part 5."
         )
     password = _required("SUPABASE_DB_PASSWORD", "Part 3, then Part 5")
+    pooler = _DIRECT.sub(rf"\1postgres.\3:\2@{SESSION_POOLER_HOST}:5432/", pooler)
     filled = pooler.replace(PASSWORD_PLACEHOLDER, quote(password, safe=""))
     return re.sub(r"^postgres(?:ql)?://", "postgresql+psycopg://", filled)
 

@@ -45,7 +45,7 @@ Live jobs run on GitHub's machines (ADR 0011), so the keys go only into GitHub's
 | `SUPABASE_URL` | Project URL (Part 3) |
 | `SUPABASE_SECRET_KEY` | `sb_secret_` key (Part 3) |
 | `SUPABASE_DB_PASSWORD` | Database password (Part 3) |
-| `SUPABASE_DB_URL` | Session pooler string, with `[YOUR-PASSWORD]` left in (Part 3) |
+| `SUPABASE_DB_URL` | Session pooler string, with `[YOUR-PASSWORD]` left in (Part 3). The Direct connection string works too; the code switches it to the pooler |
 | `SEC_CONTACT_EMAIL` | The project's SEC contact address: a new address made for this project, not a personal one; the SEC requires one on every automated request |
 | `CATALYST_ANTHROPIC_API_KEY` | Anthropic key (Part 2), when Phase 1 needs it |
 
