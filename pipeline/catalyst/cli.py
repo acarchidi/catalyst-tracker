@@ -30,6 +30,7 @@ from catalyst.llm import anthropic_adapter
 from catalyst.llm.client import ModelClient
 from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
+from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -263,7 +264,7 @@ def _evaluate(args: argparse.Namespace) -> int:
     finally:
         engine.dispose()
     model = config.roles[ROLE].model
-    record = scores_record(scores, EXTRACTOR_PROMPT, model, EVALS / "gold.jsonl", len(gold))
+    record = scores_record(scores, load_prompt(*EXTRACTOR_PROMPT), model, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
     return 0

@@ -187,6 +187,15 @@ def test_claims_are_made_only_for_catalysts_whose_quote_was_found() -> None:
     }
 
 
+def test_a_stored_claim_names_its_problems_by_short_code() -> None:
+    """Review of PR #17: the stored format stays the one PR #16 shipped."""
+    quote = "Enrollment in the BRIGHT trial was completed in the third quarter of 2026."
+    item = _item(catalyst_type="enrollment_completion", date_text="third quarter of 2026", quote=quote)
+    (claim,) = catalyst_claims(_extract(item)[1], uuid4(), NOW)
+    assert isinstance(claim.value, dict)
+    assert claim.value["problems"] == ["date_passed"]
+
+
 @pytest.mark.parametrize("answer", [{"catalysts": []}])
 def test_a_release_with_no_events_gives_none(answer: dict[str, object]) -> None:
     fake = _Fake(answer)

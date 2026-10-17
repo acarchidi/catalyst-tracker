@@ -147,7 +147,8 @@ def proposal_value(catalyst: ExtractedCatalyst) -> dict[str, Any]:
         "window_end": window.end.isoformat() if window else None,
         "window_precision": window.precision.value if window else None,
         "date_confidence": catalyst.date_confidence.value,
-        "problems": [problem.value for problem in catalyst.problems],
+        # Stored claims keep short codes such as "quote_not_found" (format of PR #16).
+        "problems": [problem.name.lower() for problem in catalyst.problems],
     }
 
 

@@ -112,7 +112,11 @@ def _candidates(
 
 
 def _shown(catalyst: ExtractedCatalyst) -> dict[str, Any]:
-    return proposal_value(catalyst) | {"quote": catalyst.quote.quote if catalyst.quote else None}
+    # The job's report spells problems out for people; stored claims keep the short codes.
+    return proposal_value(catalyst) | {
+        "quote": catalyst.quote.quote if catalyst.quote else None,
+        "problems": [problem.value for problem in catalyst.problems],
+    }
 
 
 def _store(session_factory: sessionmaker[Session], claims: list[Claim]) -> int:

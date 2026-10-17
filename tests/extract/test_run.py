@@ -102,6 +102,7 @@ def test_press_releases_become_checked_claims_once(
         "stopped_early": None,
     }
     assert report.documents[0].catalysts[0]["window_start"] == "2027-07-01"
+    assert report.documents[0].catalysts[0]["problems"] == []
     again = extract_documents(session_factory, store, client, limit=10, now=lambda: NOW)
     assert len(fake.calls) == 1
     assert again.summary()["documents_skipped_already_done"] == 1

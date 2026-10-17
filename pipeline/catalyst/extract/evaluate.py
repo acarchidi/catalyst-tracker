@@ -20,6 +20,7 @@ from catalyst.extract.agent import ExtractedCatalyst, extract_catalysts
 from catalyst.extract.dates import DateWindow, parse_window
 from catalyst.extract.text import QuoteSpan, document_text, find_quote
 from catalyst.llm.client import ModelClient
+from catalyst.llm.prompts import Prompt
 from catalyst.schemas.enums import CatalystType
 
 
@@ -184,49 +185,71 @@ EVALS = Path(__file__).resolve().parents[3] / "evals" / "extract_catalysts"
 FIRST_VERSION = "1.0.0"
 
 
+def prompt_fingerprint(prompt: Prompt) -> str:
+    """Return the SHA-256 of what the model is sent from the prompt file: its instructions and schema.
+
+    A score names this fingerprint, so editing a prompt's words without a new version is caught.
+    """
+    content = json.dumps({"system": prompt.system, "output_schema": prompt.output_schema}, sort_keys=True)
+    return hashlib.sha256(content.encode()).hexdigest()
+
+
+def _identity(prompt: Prompt, model: str) -> dict[str, str]:
+    return {
+        "prompt_id": prompt.id,
+        "prompt_version": prompt.version,
+        "prompt_sha256": prompt_fingerprint(prompt),
+        "model": model,
+    }
+
+
 def scores_record(
-    scores: Scores, prompt: tuple[str, str], model: str, gold_path: Path, documents: int
+    scores: Scores, prompt: Prompt, model: str, gold_path: Path, documents: int
 ) -> dict[str, Any]:
     """Return what `scores.json` holds: the scores and exactly what earned them."""
     return {
-        "prompt_id": prompt[0],
-        "prompt_version": prompt[1],
-        "model": model,
+        **_identity(prompt, model),
         "gold_sha256": gold_fingerprint(gold_path),
         "documents": documents,
         "scores": asdict(scores),
     }
 
 
-def gate_problems(prompt: tuple[str, str], model: str, evals: Path = EVALS) -> list[str]:
+def _mismatches(name: str, record: dict[str, Any], expected: dict[str, str]) -> list[str]:
+    return [
+        f"{name} names {key} {record.get(key)!r}, not the current {value!r}"
+        for key, value in expected.items()
+        if record.get(key) != value
+    ]
+
+
+def gate_problems(prompt: Prompt, model: str, evals: Path = EVALS) -> list[str]:
     """Return why the current prompt and model may not ship; empty when they may.
 
-    The first prompt version may ship unscored. Any later version, another model, or a changed
-    gold set needs a `scores.json` earned on exactly that combination, and no score in it may be
-    lower than in `baseline.json` (AGENTS.md: CI blocks a drop in any field's accuracy).
+    Scored: `scores.json` must name exactly this prompt (id, version, and the fingerprint of its
+    words), this model, and this gold set, and no score may be below `baseline.json`, which
+    must exist. Unscored: allowed only for the first prompt version, and only for the exact
+    prompt words and model recorded in `unscored.json`. So a new version, edited words, another
+    model, or another gold set all fail until new scores are committed (ADR 0014).
     """
-    scores_path, baseline_path = evals / "scores.json", evals / "baseline.json"
+    expected = _identity(prompt, model)
+    scores_path = evals / "scores.json"
     if not scores_path.exists():
-        if prompt[1] == FIRST_VERSION:
-            return []
-        return [
-            f"prompt version {prompt[1]} has no scores; run `catalyst eval-extractor` and commit scores.json"
-        ]
+        if prompt.version != FIRST_VERSION:
+            return [f"prompt version {prompt.version} has no scores; run `catalyst eval-extractor`"]
+        unscored_path = evals / "unscored.json"
+        if not unscored_path.exists():
+            return ["no scores.json and no unscored.json: the prompt has never been checked"]
+        return _mismatches("unscored.json", json.loads(unscored_path.read_text(encoding="utf-8")), expected)
     record: dict[str, Any] = json.loads(scores_path.read_text(encoding="utf-8"))
-    problems: list[str] = []
-    expected = {
-        "prompt_id": prompt[0],
-        "prompt_version": prompt[1],
-        "model": model,
-        "gold_sha256": gold_fingerprint(evals / "gold.jsonl"),
-    }
-    for key, value in expected.items():
-        if record.get(key) != value:
-            problems.append(f"scores.json was earned with {key} {record.get(key)!r}, not {value!r}")
-    if baseline_path.exists():
-        floor: dict[str, float] = json.loads(baseline_path.read_text(encoding="utf-8"))
-        for name, minimum in floor.items():
-            earned = float(record["scores"].get(name, 0.0))
-            if earned < minimum:
-                problems.append(f"{name} fell to {earned}, below the baseline {minimum}")
+    expected["gold_sha256"] = gold_fingerprint(evals / "gold.jsonl")
+    problems = _mismatches("scores.json", record, expected)
+    baseline_path = evals / "baseline.json"
+    if not baseline_path.exists():
+        return [*problems, "scores.json exists but baseline.json does not: there is no floor to check"]
+    floor: dict[str, float] = json.loads(baseline_path.read_text(encoding="utf-8"))
+    for name, minimum in floor.items():
+        earned = float(record["scores"].get(name, 0.0))
+        if earned < minimum:
+            problems.append(f"{name} fell to {earned}, below the baseline {minimum}")
     return problems
