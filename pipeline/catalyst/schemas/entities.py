@@ -20,6 +20,7 @@ from catalyst.schemas.enums import (
     DatePrecision,
     DocumentMatch,
     DrugNameKind,
+    DrugRole,
     LineOfTherapy,
     Modality,
     ModelCallStatus,
@@ -218,7 +219,6 @@ class Catalyst(Entity):
 
     catalyst_type: CatalystType = Field(description="What kind of event this is.")
     company_id: Annotated[UUID, References("company")] = Field(description="The company the event concerns.")
-    drug_id: Annotated[UUID, References("drug")] | None = Field(default=None, description="The drug, if any.")
     indication_id: Annotated[UUID, References("indication")] | None = Field(
         default=None, description="The indication, if any."
     )
@@ -250,6 +250,44 @@ class CatalystTrial(Entity):
 
     catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst.")
     trial_id: Annotated[UUID, References("trial")] = Field(description="The trial.")
+
+
+class CatalystDrug(Entity):
+    """Links a catalyst to one drug it concerns, tested alone or in combination (ADR 0016).
+
+    A catalyst may link many drugs, and one drug both alone and in combination. Each link names
+    the claim whose quote states it.
+    """
+
+    __tablename__ = "catalyst_drug"
+    __unique__ = (("catalyst_id", "drug_id", "role"),)
+
+    catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst.")
+    drug_id: Annotated[UUID, References("drug")] = Field(description="A drug the catalyst concerns.")
+    role: DrugRole = Field(description="Whether the drug is tested alone or in combination.")
+    claim_id: Annotated[UUID, References("claim")] = Field(
+        description="The claim whose quote states this link."
+    )
+
+
+class DrugComponent(Entity):
+    """One part of a combination drug, recorded only where a source states it (ADR 0016)."""
+
+    __tablename__ = "drug_component"
+    __unique__ = (("combination_id", "component_id"),)
+    __checks__: ClassVar[dict[str, str]] = {"not_itself": "combination_id <> component_id"}
+
+    combination_id: Annotated[UUID, References("drug")] = Field(description="The combination.")
+    component_id: Annotated[UUID, References("drug")] = Field(description="One drug in it.")
+    claim_id: Annotated[UUID, References("claim")] = Field(
+        description="The claim whose quote names this part."
+    )
+
+    @model_validator(mode="after")
+    def _not_itself(self) -> Self:
+        if self.combination_id == self.component_id:
+            raise ValueError("a combination cannot be its own component")
+        return self
 
 
 class Claim(Entity):

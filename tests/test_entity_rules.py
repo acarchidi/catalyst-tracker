@@ -378,7 +378,8 @@ def test_a_change_names_a_real_catalyst_field() -> None:
 
 
 def test_every_changeable_catalyst_field_can_be_named() -> None:
-    assert {f.value for f in CatalystField} == set(Catalyst.model_fields) - {"id"}
+    # The drug list lives in catalyst_drug (ADR 0016); its changes are recorded as "drugs".
+    assert {f.value for f in CatalystField} == set(Catalyst.model_fields) - {"id"} | {"drugs"}
 
 
 def test_source_tiers_follow_the_provenance_ranking_and_exclude_news() -> None:

@@ -196,7 +196,6 @@ An expected event that can move a company's value, with its date window. These a
 | `id` | identifier | yes | Internal identifier. |
 | `catalyst_type` | one of: `pdufa_date`, `advisory_committee`, `topline_readout`, `conference_presentation`, `regulatory_submission`, `regulatory_acceptance`, `chmp_opinion`, `complete_response_letter`, `label_expansion`, `enrollment_completion`, `offering`, `shelf_filing`, `merger_acquisition`, `earnings` | yes | What kind of event this is. |
 | `company_id` | link to `company` | yes | The company the event concerns. |
-| `drug_id` | link to `drug` | no | The drug, if any. |
 | `indication_id` | link to `indication` | no | The indication, if any. |
 | `title` | text, up to 300 characters | yes | One-line description shown to users. |
 | `window_start` | date | yes | Earliest day the event may happen. |
@@ -255,6 +254,38 @@ Rules:
 - Database check `quote_not_blank`: `length(btrim(quote)) > 0`
 - Database check `has_value`: `value <> 'null'::jsonb`
 
+## `catalyst_drug`
+
+Links a catalyst to one drug it concerns, tested alone or in combination (ADR 0016). A catalyst may link many drugs, and one drug both alone and in combination. Each link names the claim whose quote states it.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `catalyst_id` | link to `catalyst` | yes | The catalyst. |
+| `drug_id` | link to `drug` | yes | A drug the catalyst concerns. |
+| `role` | one of: `alone`, `in_combination` | yes | Whether the drug is tested alone or in combination. |
+| `claim_id` | link to `claim` | yes | The claim whose quote states this link. |
+
+Rules:
+
+- Unique: `catalyst_id`, `drug_id`, `role`
+
+## `drug_component`
+
+One part of a combination drug, recorded only where a source states it (ADR 0016).
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `combination_id` | link to `drug` | yes | The combination. |
+| `component_id` | link to `drug` | yes | One drug in it. |
+| `claim_id` | link to `claim` | yes | The claim whose quote names this part. |
+
+Rules:
+
+- Unique: `combination_id`, `component_id`
+- Database check `not_itself`: `combination_id <> component_id`
+
 ## `catalyst_change`
 
 One change to a catalyst field (spec: Change history). Append-only: rows are added, never edited or deleted. The database enforces this.
@@ -263,7 +294,7 @@ One change to a catalyst field (spec: Change history). Append-only: rows are add
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
 | `catalyst_id` | link to `catalyst` | yes | The catalyst that changed. |
-| `field` | one of: `catalyst_type`, `company_id`, `drug_id`, `indication_id`, `title`, `window_start`, `window_end`, `window_precision`, `window_raw_text`, `date_confidence`, `status` | yes | Which catalyst field changed. |
+| `field` | one of: `catalyst_type`, `company_id`, `drugs`, `indication_id`, `title`, `window_start`, `window_end`, `window_precision`, `window_raw_text`, `date_confidence`, `status` | yes | Which catalyst field changed. |
 | `old_value` | structured value (JSON) | no | Value before the change; empty for a first value. |
 | `new_value` | structured value (JSON) | yes | Value after the change. |
 | `claim_id` | link to `claim` | yes | The claim that caused the change. |

@@ -19,6 +19,7 @@ from catalyst.schemas import (
     ALL_MODELS,
     Catalyst,
     CatalystChange,
+    CatalystDrug,
     CatalystField,
     CatalystStatus,
     CatalystType,
@@ -29,6 +30,8 @@ from catalyst.schemas import (
     DateConfidence,
     DatePrecision,
     Drug,
+    DrugComponent,
+    DrugRole,
     Entity,
     Indication,
     SourceDocument,
@@ -78,7 +81,6 @@ EXPECTED_FOREIGN_KEYS = {
     ("drug_target", "drug_id", "drug"),
     ("drug_target", "target_id", "target"),
     ("catalyst", "company_id", "company"),
-    ("catalyst", "drug_id", "drug"),
     ("catalyst", "indication_id", "indication"),
     ("catalyst_trial", "catalyst_id", "catalyst"),
     ("catalyst_trial", "trial_id", "trial"),
@@ -89,6 +91,12 @@ EXPECTED_FOREIGN_KEYS = {
     ("outcome", "resolution_claim_id", "claim"),
     ("company_document", "company_id", "company"),
     ("company_document", "source_document_id", "source_document"),
+    ("catalyst_drug", "catalyst_id", "catalyst"),
+    ("catalyst_drug", "drug_id", "drug"),
+    ("catalyst_drug", "claim_id", "claim"),
+    ("drug_component", "combination_id", "drug"),
+    ("drug_component", "component_id", "drug"),
+    ("drug_component", "claim_id", "claim"),
 }
 
 
@@ -149,7 +157,6 @@ def chain(engine: Engine) -> Iterator[dict[str, UUID]]:
     catalyst = Catalyst(
         catalyst_type=CatalystType.PDUFA_DATE,
         company_id=company.id,
-        drug_id=drug.id,
         indication_id=indication.id,
         title="FDA decision on povetacicept",
         window_start=date(2026, 11, 30),
@@ -177,7 +184,7 @@ def chain(engine: Engine) -> Iterator[dict[str, UUID]]:
     )
     for record in (company, drug, indication, source, catalyst, claim):
         _insert(engine, record, TABLES[type(record)])
-    yield {"company": company.id, "catalyst": catalyst.id, "claim": claim.id}
+    yield {"company": company.id, "catalyst": catalyst.id, "claim": claim.id, "drug": drug.id}
     truncate_all(engine)
 
 
@@ -347,3 +354,78 @@ def test_every_table_is_closed_to_supabase_public_api_roles(engine: Engine) -> N
             .all()
         )
     assert open_tables == []
+
+
+# --- Several drugs per catalyst (owner ruling 2026-10-17, rule 3; ADR 0016) ---
+
+
+def _second_drug(engine: Engine, chain: dict[str, UUID], name: str) -> UUID:
+    drug = Drug(company_id=chain["company"], preferred_name=name)
+    return _insert(engine, drug, TABLES[Drug])
+
+
+def test_one_catalyst_links_several_drugs_alone_and_in_combination(
+    chain: dict[str, UUID], engine: Engine
+) -> None:
+    other = _second_drug(engine, chain, "SPY002")
+    combo = _second_drug(engine, chain, "SPY120")
+    links = [
+        (chain["drug"], DrugRole.ALONE),
+        (chain["drug"], DrugRole.IN_COMBINATION),
+        (other, DrugRole.ALONE),
+        (combo, DrugRole.IN_COMBINATION),
+    ]
+    for drug_id, role in links:
+        link = CatalystDrug(
+            catalyst_id=chain["catalyst"], drug_id=drug_id, role=role, claim_id=chain["claim"]
+        )
+        _insert(engine, link, TABLES[CatalystDrug])
+    with engine.connect() as connection:
+        count = connection.execute(
+            text("SELECT count(*) FROM catalyst_drug WHERE catalyst_id = :c"), {"c": chain["catalyst"]}
+        )
+        assert count.scalar_one() == len(links)
+
+
+def test_the_same_drug_link_cannot_be_stored_twice(chain: dict[str, UUID], engine: Engine) -> None:
+    link = {
+        "catalyst_id": chain["catalyst"],
+        "drug_id": chain["drug"],
+        "role": "alone",
+        "claim_id": chain["claim"],
+    }
+    _raw_insert(engine, TABLES[CatalystDrug], link)
+    with pytest.raises(IntegrityError, match="uq_catalyst_drug"):
+        _raw_insert(engine, TABLES[CatalystDrug], link)
+
+
+@pytest.mark.parametrize("table", ["catalyst_drug", "drug_component"])
+def test_a_drug_link_needs_a_stored_claim(chain: dict[str, UUID], engine: Engine, table: str) -> None:
+    other = _second_drug(engine, chain, "SPY002")
+    values = (
+        {"catalyst_id": chain["catalyst"], "drug_id": other, "role": "alone"}
+        if table == "catalyst_drug"
+        else {"combination_id": chain["drug"], "component_id": other}
+    )
+    model = CatalystDrug if table == "catalyst_drug" else DrugComponent
+    with pytest.raises(IntegrityError, match=f"fk_{table}_claim_id_claim"):
+        _raw_insert(engine, TABLES[model], {**values, "claim_id": uuid4()})
+
+
+def test_a_combination_lists_its_parts_but_never_itself(chain: dict[str, UUID], engine: Engine) -> None:
+    part = _second_drug(engine, chain, "SPY002")
+    combo = _second_drug(engine, chain, "SPY120")
+    part_link = DrugComponent(combination_id=combo, component_id=part, claim_id=chain["claim"])
+    _insert(engine, part_link, TABLES[DrugComponent])
+    with pytest.raises(IntegrityError, match="not_itself"):
+        _raw_insert(
+            engine,
+            TABLES[DrugComponent],
+            {"combination_id": combo, "component_id": combo, "claim_id": chain["claim"]},
+        )
+
+
+def test_the_model_refuses_a_combination_of_itself() -> None:
+    drug = uuid4()
+    with pytest.raises(ValueError, match="cannot be its own component"):
+        DrugComponent(combination_id=drug, component_id=drug, claim_id=uuid4())
