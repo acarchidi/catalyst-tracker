@@ -25,10 +25,10 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Verification checks and publish gate
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
-- [ ] Auditor agent, weekly link check, daily status report to the owner
+- [ ] Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary (owner decision 2026-10-17)
 - [ ] Gold set of 200 verified catalysts. Includes giving the Spyre SKYLINE Part B gold entry its full drug list once the drug field is a list (owner ruling, 2026-10-17, rule 3)
 
-**Gate 2 (the one that matters most):** weekly random sample under 2% errors; 100% of published records carry a deep source link.
+**Gate 2 (the one that matters most):** error rate under 1% at 95% confidence on a random sample of published records, checked independently (owner target 2026-10-17: 99% to start, 99.9% later); 100% of published records carry a deep source link.
 
 ## Phase 2 — Free launch (weeks 9–12)
 
@@ -85,7 +85,9 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 | --- | --- |
 | 2026-10-17 | ADR 0015 (part 4): each name in an extracted claim gets a stored match (resolved, ambiguous with candidates, or unknown); only a company's own quoted code name creates a drug; study names match only in capitals; roadmap item ticked |
 | 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
+| 2026-10-17 | Gate 2 raised to an error rate under 1% at 95% confidence on a random sample of published records (owner target: 99% to start, 99.9% later); the extractor's score floor (`baseline.json`) and its retired exemption (`unscored.json`) are merged by the owner only; a stronger Claude model checks the weekly random sample and the owner settles only disagreements; alerts only when something needs the owner, plus a weekly summary, replace the daily report |
 | 2026-10-17 | Roadmap: show/hide any field and a catalyst timeline (Phase 2); pipeline and competitive-landscape views and key peer-reviewed publications per catalyst (Phase 4); readout benchmarking scope confirmed by the owner (owner requests) |
+| 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
 | 2026-10-17 | ADR 0016: a catalyst links any number of drugs, each marked alone or in combination, and a combination lists its parts only where a source states them; every link names its claim; `catalyst.drug_id` is dropped by a migration that refuses to lose data |
 | 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |
 | 2026-10-17 | Gold-set counting rules from the owner: two trials or two diseases in one sentence are separate events; a multi-drug trial names every drug and combination, searchable by each; data with no named meeting is a readout; the dated event is the data, not a later approval |
