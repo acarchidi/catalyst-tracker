@@ -34,6 +34,8 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 - [ ] Public site, catalyst calendar, public pages
 - [ ] Basic search and filters. A search for one drug finds the trials of combinations that contain it and shows that drug first; a long drug list expands on request and never takes over the page (owner ruling, 2026-10-17)
+- [ ] Show or hide any field: every table and record view lets the viewer hide fields they do not want; the choice is remembered on their device, and for signed-in users once accounts exist (owner request, 2026-10-17)
+- [ ] Catalyst timeline: each catalyst drawn as a bar across its date window on a time axis, so a quarter-wide window looks wider than a fixed date; rows by company or drug, side by side for comparison; past windows faded; each bar links to its record and source (owner request, 2026-10-17)
 - [ ] Read-only MCP server and directory listings
 - [ ] Weekly email and marketing-agent drafts (owner approves each)
 - [ ] Business setup: entity, terms, privacy policy, Stripe, sales tax (owner)
@@ -54,7 +56,13 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 ## Phase 4 — Analysis (weeks 17–24)
 
-- [ ] Readout benchmarking, oncology first
+- [ ] Readout benchmarking, oncology first. Compares a readout with competitors' programs in development and their published data, approved drugs, and the marketed standard of care where one exists; every row carries its comparability label, so loose comparisons are shown as loose (spec: Readout benchmarking; owner confirmed the scope 2026-10-17)
+- [ ] Pipeline and competitive-landscape views: one company's programs by indication and phase, and every company's programs in one indication or against one target, each with its next catalyst; as a table and as a chart (phase on one axis, programs grouped by indication), every point linked to its source (owner request, 2026-10-17)
+- [ ] Key publications on each catalyst record, as a field the viewer can hide (owner request, 2026-10-17):
+  - Only peer-reviewed journal articles: PubMed records of type "journal article" in MEDLINE-indexed journals; no preprints, posters, company documents, or self-published material.
+  - Linked to the company in one of two checkable ways: the article reports one of the company's registered trials (its NCT number is in PubMed's record), or an author lists the company as an affiliation. Funding statements are free text and too unreliable to use alone.
+  - "Most important" ranked by NIH iCite's Relative Citation Ratio, which compares an article's citations with others in its field and year, so older articles do not win just by age; the top five shown, each linked to the journal's page.
+  - Free sources with no new account: PubMed E-utilities and iCite.
 - [ ] Market-size estimates
 
 ## Later (unscheduled)
@@ -75,6 +83,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | Roadmap: show/hide any field and a catalyst timeline (Phase 2); pipeline and competitive-landscape views and key peer-reviewed publications per catalyst (Phase 4); readout benchmarking scope confirmed by the owner (owner requests) |
 | 2026-10-17 | ADR 0016: a catalyst links any number of drugs, each marked alone or in combination, and a combination lists its parts only where a source states them; every link names its claim; `catalyst.drug_id` is dropped by a migration that refuses to lose data |
 | 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |
 | 2026-10-17 | Gold-set counting rules from the owner: two trials or two diseases in one sentence are separate events; a multi-drug trial names every drug and combination, searchable by each; data with no named meeting is a readout; the dated event is the data, not a later approval |
