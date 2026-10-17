@@ -21,7 +21,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 ## Phase 1 — Core data (weeks 4–8)
 
 - [x] Extractor agents and prompt evaluation sets
-- [ ] Entity resolver and reference tables
+- [ ] Entity resolver and reference tables. Includes trials of several drugs: every drug and combination is listed, each from a quoted source sentence, marked as tested alone or in combination (owner ruling, 2026-10-17; `evals/extract_catalysts/README.md`, rule 3)
 - [ ] Verification checks and publish gate
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
@@ -33,7 +33,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 ## Phase 2 — Free launch (weeks 9–12)
 
 - [ ] Public site, catalyst calendar, public pages
-- [ ] Basic search and filters
+- [ ] Basic search and filters. A search for one drug finds the trials of combinations that contain it and shows that drug first; a long drug list expands on request and never takes over the page (owner ruling, 2026-10-17)
 - [ ] Read-only MCP server and directory listings
 - [ ] Weekly email and marketing-agent drafts (owner approves each)
 - [ ] Business setup: entity, terms, privacy policy, Stripe, sales tax (owner)
@@ -75,6 +75,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | Gold-set counting rules from the owner: two trials or two diseases in one sentence are separate events; a multi-drug trial names every drug and combination, searchable by each; data with no named meeting is a readout; the dated event is the data, not a later approval |
 | 2026-10-17 | Roadmap: added an estimated results-reporting window per trial (company guidance first, then the company's own completion-to-results history, then a base rate by phase), with a tooltip naming its basis (owner request) |
 | 2026-10-17 | ADR 0014: the extractor's first evaluation set is 12 recorded press releases with 20 agent-labeled events (owner confirmation pending); scores are earned in GitHub Actions with the product key and committed; a CI test blocks an unscored prompt change, a score earned on another prompt, model or gold set, and any drop below the baseline |
 | 2026-10-17 | ADR 0013: the extractor proposes catalysts with a date phrase and a quote; code checks the quote, reads the window, and labels PDUFA and advisory dates regulator-scheduled; results are stored as claims, never catalysts; documents already extracted with the same prompt version are skipped |
