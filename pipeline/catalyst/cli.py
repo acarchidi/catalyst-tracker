@@ -250,12 +250,17 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         client = ModelClient(load_config(), {adapter.name: adapter}, DatabaseLedger(engine))
         report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
+        # The extraction stands if either step fails; both re-run next time.
+        checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
         try:
             matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now).summary()
-            checks: dict[str, Any] = run_checks(sessionmaker(engine), _utc_now).summary()
-        except SQLAlchemyError as error:  # the extraction stands; matching and checks re-run next time
+        except SQLAlchemyError as error:
             matches = {"error": f"{type(error).__name__}: matching did not finish"}
-            checks = {"error": "checks did not run"}
+        else:
+            try:
+                checks = run_checks(sessionmaker(engine), _utc_now).summary()
+            except SQLAlchemyError as error:
+                checks = {"error": f"{type(error).__name__}: checks did not finish"}
     finally:
         engine.dispose()
     if args.out is not None:

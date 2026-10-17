@@ -6,6 +6,7 @@ answers pass, fail with a reason a person can read, or not applicable.
 
 from __future__ import annotations
 
+import calendar
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -13,6 +14,8 @@ from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
+from catalyst.extract.agent import has_words
+from catalyst.extract.dates import parse_window
 from catalyst.schemas import CheckOutcome, TrialPhase
 
 PDUFA_MONTHS = 15  # longest standard review (12 months from submission) plus a 3-month extension
@@ -64,15 +67,61 @@ def _not_applicable(check: str, reason: str) -> CheckResult:
 
 
 def _day(value: object) -> date | None:
-    return date.fromisoformat(value) if isinstance(value, str) else None
+    try:
+        return date.fromisoformat(value) if isinstance(value, str) else None
+    except ValueError:
+        return None
+
+
+def _date_text(facts: ClaimFacts) -> str | None:
+    text = facts.value.get("date_text")
+    return text if isinstance(text, str) and text.strip() else None
 
 
 def _extractor_checks(facts: ClaimFacts, _today: date) -> CheckResult:
     listed: object = facts.value.get("problems")
-    problems = [str(p) for p in cast(list[object], listed)] if isinstance(listed, list) else []
+    if not isinstance(listed, list):
+        return _failed("extractor_checks", "the claim has no list of the extractor's problems")
+    problems = [str(p) for p in cast(list[object], listed)]
     if problems:
         return _failed("extractor_checks", "the extractor flagged: " + ", ".join(problems))
     return _passed("extractor_checks")
+
+
+# The next two redo the extractor's date checks in this module, so they hold even if a stored
+# value was never checked or was changed later (review of PR #29).
+def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
+    text = _date_text(facts)
+    if text is None:
+        return _failed("date_words_in_quote", "the claim has no date words")
+    if not has_words(facts.quote, text):
+        return _failed("date_words_in_quote", f"the date words '{text}' are not in the quote")
+    return _passed("date_words_in_quote")
+
+
+def _window_matches_words(facts: ClaimFacts, _today: date) -> CheckResult:
+    text = _date_text(facts)
+    if text is None:
+        return _failed("window_matches_words", "the claim has no date words")
+    window = parse_window(text, facts.published)
+    as_of = f"'{text}' as of {facts.published.isoformat()}"
+    if window is None:
+        return _failed("window_matches_words", f"{as_of} names no window")
+    if window.end < facts.published:
+        return _failed("window_matches_words", f"{as_of} names a window that had already ended")
+    stored = (
+        _day(facts.value.get("window_start")),
+        _day(facts.value.get("window_end")),
+        facts.value.get("window_precision"),
+    )
+    if stored != (window.start, window.end, window.precision.value):
+        start, end, precision = (str(part) for part in stored)
+        return _failed(
+            "window_matches_words",
+            f"{as_of} reads as {window.start.isoformat()} to {window.end.isoformat()} "
+            f"({window.precision.value}), not the stored {start} to {end} ({precision})",
+        )
+    return _passed("window_matches_words")
 
 
 def _has_window(facts: ClaimFacts, _today: date) -> CheckResult:
@@ -102,8 +151,10 @@ def _names_matched(facts: ClaimFacts, _today: date) -> CheckResult:
 
 
 _ROMAN = {"i": 1, "ii": 2, "iii": 3, "iv": 4}
+# "Phase 1/2", "Phase 2-3" and "Phase 2\u20133" are one combined phase; "Phase 3-ready" is Phase 3.
 _PHASE = re.compile(
-    r"\bphase\s*(?P<first>iv|i{1,3}|[1-4])[ab]?(?:\s*/\s*(?P<second>i{1,3}|[1-3])[ab]?)?(?![a-z0-9])",
+    r"\bphase\s*(?P<first>iv|i{1,3}|[1-4])[ab]?"
+    r"(?:\s*[/\-\u2010-\u2015]\s*(?P<second>i{1,3}|[1-3])[ab]?(?![a-z0-9]))?(?![a-z0-9])",
     re.IGNORECASE,
 )
 _SINGLE = {1: TrialPhase.PHASE_1, 2: TrialPhase.PHASE_2, 3: TrialPhase.PHASE_3, 4: TrialPhase.PHASE_4}
@@ -117,6 +168,16 @@ _PARTS: dict[TrialPhase, frozenset[int]] = {
     TrialPhase.PHASE_3: frozenset({3}),
     TrialPhase.PHASE_4: frozenset({4}),
     TrialPhase.NOT_APPLICABLE: frozenset(),
+}
+_WORDS = {
+    TrialPhase.EARLY_PHASE_1: "Early Phase 1",
+    TrialPhase.PHASE_1: "Phase 1",
+    TrialPhase.PHASE_1_2: "Phase 1/2",
+    TrialPhase.PHASE_2: "Phase 2",
+    TrialPhase.PHASE_2_3: "Phase 2/3",
+    TrialPhase.PHASE_3: "Phase 3",
+    TrialPhase.PHASE_4: "Phase 4",
+    TrialPhase.NOT_APPLICABLE: "no phase",
 }
 
 
@@ -147,29 +208,34 @@ def _phase_matches_registry(facts: ClaimFacts, _today: date) -> CheckResult:
         return _not_applicable("phase_matches_registry", "no stated phase, or no matched trial with a phase")
     for phase in stated:
         if not any(_PARTS[phase] & _PARTS[trial] for trial in known):
-            names = ", ".join(sorted(p.value for p in known))
+            names = ", ".join(sorted({_WORDS[p] for p in known}))
             return _failed(
-                "phase_matches_registry", f"the quote says {phase.value}; the registry says {names}"
+                "phase_matches_registry", f"the quote says {_WORDS[phase]}; the registry says {names}"
             )
     return _passed("phase_matches_registry")
 
 
 def _months_after(start: date, months: int) -> date:
+    """Return the same day `months` later, or that month's last day if it is shorter (Oct 31 → Jan 31)."""
     month = start.month - 1 + months
     year, month = start.year + month // 12, month % 12 + 1
-    return date(year, month, min(start.day, 28))
+    return date(year, month, min(start.day, calendar.monthrange(year, month)[1]))
 
 
 def _pdufa_date_plausible(facts: ClaimFacts, _today: date) -> CheckResult:
+    """Check that an FDA decision date can fall after the release and within 15 months of it.
+
+    A release may give a single day, or only the month or quarter.
+    """
     if facts.value.get("catalyst_type") != "pdufa_date":
         return _not_applicable("pdufa_date_plausible", "not an FDA decision date")
-    day = _day(facts.value.get("window_start"))
-    if facts.value.get("window_precision") != "day" or day is None:
-        return _failed("pdufa_date_plausible", "an FDA decision date is a single day")
-    if day <= facts.published:
+    start, end = _day(facts.value.get("window_start")), _day(facts.value.get("window_end"))
+    if start is None or end is None:
+        return _failed("pdufa_date_plausible", "the decision date has no window")
+    if end <= facts.published:
         return _failed("pdufa_date_plausible", "the decision date is not after the release")
     latest = _months_after(facts.published, PDUFA_MONTHS)
-    if day > latest:
+    if start > latest:
         return _failed(
             "pdufa_date_plausible",
             f"the decision date is more than {PDUFA_MONTHS} months after the release "
@@ -180,6 +246,8 @@ def _pdufa_date_plausible(facts: ClaimFacts, _today: date) -> CheckResult:
 
 RULES: tuple[Callable[[ClaimFacts, date], CheckResult], ...] = (
     _extractor_checks,
+    _date_words_in_quote,
+    _window_matches_words,
     _has_window,
     _window_not_past,
     _names_matched,

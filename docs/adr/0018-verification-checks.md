@@ -23,17 +23,25 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
 
 ## Decision
 
-1. **Every check's latest outcome is stored per claim.** The table is `claim_check`: one row per claim and check, with an outcome of pass, fail, or not applicable, and a plain-words reason. The database refuses a failure without a reason. The publish gate, the review queue, and the planted-error test all read this one table.
+1. **Every check's latest outcome is stored per claim.** The table is `claim_check`: one row per claim and check (`check_name`, since `check` is a reserved word in SQL), with an outcome of pass, fail, or not applicable, and a plain-words reason. The database refuses a failure without a reason. The publish gate, the review queue, and the planted-error test all read this one table.
 2. **Built in five parts, each its own pull request:**
    1. **Rule checks in code** (this part, `catalyst.verify.rules`):
-      - the extractor's own checks are clean (quote found, date words in the quote, a window, not already past at publication);
+      - the extractor's own checks are clean, and the claim carries the list of them (a missing list fails);
+      - the date words appear in the quote, checked again here rather than taken from the extractor;
+      - the stored window is exactly what the date words give as of the release's New York date, and had not ended by then (checked again here too, so a changed or unchecked value cannot pass);
       - the claim has a window;
       - the window has not passed;
       - every name the resolver saw matched exactly one record, and the document has a company;
-      - a phase written in the quote ("Phase 3", "Phase III", "Phase 2b", "Phase 1/2") overlaps the matched trial's ClinicalTrials.gov phase;
-      - an FDA decision (PDUFA) date is a single day after the release, and no more than 15 months after it. That is the longest standard review, 12 months from submission, plus the 3-month extension for a major amendment. Without the submission date, this is a necessary condition, not a sufficient one.
+      - a phase written in the quote ("Phase 3", "Phase III", "Phase 2b", "Phase 1/2", "Phase 2–3") overlaps the matched trial's ClinicalTrials.gov phase;
+      - an FDA decision (PDUFA) date, or the month or quarter a release gives for it, can fall after the release and no more than 15 months after it. That is the longest standard review, 12 months from submission, plus the 3-month extension for a major amendment. Without the submission date, this is a necessary condition, not a sufficient one.
 
-      The job runs after each extraction and after matching, and also as `catalyst verify-claims`.
+      The job runs after each extraction and after matching, and also as `catalyst verify-claims`. "Today" and the release date are New York dates, as in the extractor.
+
+      Left to later parts (Opus review of PR #29):
+      - The quote is matched against the stored copy of the source at extraction time. The publish gate (part 5) matches it again against the stored copy before publishing (spec: Provenance), because that needs the snapshot store.
+      - A claim with no drug name passes `names_matched`. The second extraction (part 2) compares the drug field, so a missing drug there is a disagreement.
+      - Any other phase written in the quote ("after Phase 2 data, Phase 3 AZURE-1") can fail a good claim. The error sends the claim to review, never to publication; part 3 revisits it with the planted-error results.
+      - With several matched trials, a stated phase needs to match only one of them.
    2. **Second extraction:**
       - a different prompt reads the same release;
       - fields are compared one by one (type, window, drug, trial);
@@ -53,6 +61,8 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - claims that pass the publish rule become catalysts, with drug and trial links;
       - each link's claim must be about that catalyst and field (from the PR #23 review);
       - everything else gets a review status with its reasons;
+      - a claim with a missing check row (for example, after a run where matching failed) counts as not passing;
+      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item;
       - prompt-injection fixtures prove that text in a source cannot change a stored value.
 
       CP4 then runs (Opus review).

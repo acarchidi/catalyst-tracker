@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
+from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.schemas import Claim, ClaimCheck, EntityMatch, SourceDocument, Trial, TrialPhase
 from catalyst.verify.rules import ClaimFacts, Match, Outcome, rule_checks
@@ -77,7 +78,7 @@ def _facts(session: Session) -> list[ClaimFacts]:
             id=row.id,
             value=_value(row.value),
             quote=row.quote,
-            published=row.published_at.date(),
+            published=row.published_at.astimezone(NEW_YORK).date(),
             matches=tuple(matches.get(row.id, [])),
             trial_phases=phases,
         )
@@ -86,17 +87,21 @@ def _facts(session: Session) -> list[ClaimFacts]:
 
 
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
-    """Run every rule check on every extractor claim; store one outcome per claim and check."""
+    """Run every rule check on every extractor claim; store one outcome per claim and check.
+
+    Dates are New York dates, as in the extractor: a 9pm run on October 17 checks against October 17.
+    """
     report = CheckReport()
     at = now()
+    today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
         for facts in _facts(session):
             report.claims += 1
-            results = rule_checks(facts, at.date())
+            results = rule_checks(facts, today)
             for result in results:
                 row = ClaimCheck(
                     claim_id=facts.id,
-                    check=result.check,
+                    check_name=result.check,
                     outcome=result.outcome,
                     reason=result.reason[:300] if result.reason else None,
                     checked_at=at,
@@ -104,7 +109,7 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
                 changes = {k: row[k] for k in ("outcome", "reason", "checked_at")}
                 statement = insert(_CHECK).values(**row)
                 session.execute(
-                    statement.on_conflict_do_update(index_elements=["claim_id", "check"], set_=changes)
+                    statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes)
                 )
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
             if all(result.outcome is not Outcome.FAIL for result in results):

@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Uuid(), nullable=False, comment="Internal identifier."),
         sa.Column("claim_id", sa.Uuid(), nullable=False, comment="The claim checked."),
         sa.Column(
-            "check",
+            "check_name",
             sa.String(length=100),
             nullable=False,
             comment="Which check, for example 'window_not_past'.",
@@ -51,7 +51,7 @@ def upgrade() -> None:
             ["claim_id"], ["claim.id"], name=op.f("fk_claim_check_claim_id_claim"), ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_claim_check")),
-        sa.UniqueConstraint("claim_id", "check", name=op.f("uq_claim_check_claim_id_check")),
+        sa.UniqueConstraint("claim_id", "check_name", name=op.f("uq_claim_check_claim_id_check_name")),
         comment="One verification check's outcome for one claim (spec: Verification; ADR 0018).",
     )
     op.execute('ALTER TABLE "claim_check" ENABLE ROW LEVEL SECURITY')

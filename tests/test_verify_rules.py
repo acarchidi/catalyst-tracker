@@ -4,6 +4,7 @@ Each check answers pass, fail (with a reason a person can read), or not applicab
 come from regulation and from our own records, never from a model's output.
 """
 
+from dataclasses import replace
 from datetime import date
 from typing import Any
 from uuid import uuid4
@@ -60,6 +61,8 @@ def test_a_clean_claim_passes_every_check() -> None:
     assert {name for name, (outcome, _) in outcomes.items() if outcome is Outcome.FAIL} == set()
     assert set(outcomes) == {
         "extractor_checks",
+        "date_words_in_quote",
+        "window_matches_words",
         "has_window",
         "window_not_past",
         "names_matched",
@@ -72,6 +75,71 @@ def test_a_problem_the_extractor_found_fails_with_its_reason() -> None:
     outcome, reason = _outcomes(_facts(problems=["date_not_in_quote"]))["extractor_checks"]
     assert outcome is Outcome.FAIL
     assert reason == "the extractor flagged: date_not_in_quote"
+
+
+@pytest.mark.parametrize(
+    "problems", [None, "date_passed", {"date_passed": True}], ids=["missing", "text", "map"]
+)
+def test_a_claim_without_a_list_of_extractor_problems_fails(problems: object) -> None:
+    facts = _facts(problems=problems)
+    if problems is None:
+        facts = replace(facts, value={k: v for k, v in facts.value.items() if k != "problems"})
+    outcome, reason = _outcomes(facts)["extractor_checks"]
+    assert outcome is Outcome.FAIL
+    assert reason == "the claim has no list of the extractor's problems"
+
+
+def test_date_words_missing_from_the_quote_fail_even_if_the_extractor_saw_no_problem() -> None:
+    facts = _facts("Phase 3 AZURE-1 topline data expected later this year.")
+    outcome, reason = _outcomes(facts)["date_words_in_quote"]
+    assert (outcome, reason) == (Outcome.FAIL, "the date words 'Q4 2026' are not in the quote")
+
+
+def test_date_words_that_name_no_window_fail() -> None:
+    facts = _facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon")
+    outcome, reason = _outcomes(facts)["window_matches_words"]
+    assert (outcome, reason) == (Outcome.FAIL, "'soon' as of 2026-10-01 names no window")
+
+
+@pytest.mark.parametrize("date_text", [None, "", 7], ids=["missing", "empty", "number"])
+def test_a_claim_without_date_words_fails(date_text: object) -> None:
+    assert _outcomes(_facts(date_text=date_text))["date_words_in_quote"][0] is Outcome.FAIL
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        {"window_start": "2027-01-01", "window_end": "2027-03-31"},
+        {"window_precision": "month"},
+        {"window_end": "2026-12-30"},
+    ],
+    ids=["a different quarter", "a different precision", "a shifted end"],
+)
+def test_a_stored_window_that_the_date_words_do_not_give_fails(changes: dict[str, Any]) -> None:
+    outcome, reason = _outcomes(_facts(**changes))["window_matches_words"]
+    assert outcome is Outcome.FAIL
+    assert reason is not None
+    assert reason.startswith("'Q4 2026' as of 2026-10-01 reads as 2026-10-01 to 2026-12-31 (quarter)")
+
+
+def test_date_words_already_past_at_publication_fail() -> None:
+    facts = _facts(
+        "Phase 3 AZURE-1 topline data expected in Q3 2026.",
+        date_text="Q3 2026",
+        window_start="2026-07-01",
+        window_end="2026-09-30",
+    )
+    outcome, reason = _outcomes(facts)["window_matches_words"]
+    assert (outcome, reason) == (
+        Outcome.FAIL,
+        "'Q3 2026' as of 2026-10-01 names a window that had already ended",
+    )
+
+
+def test_a_malformed_stored_date_fails_instead_of_stopping_the_run() -> None:
+    outcomes = _outcomes(_facts(window_end="2026-13-45"))
+    assert outcomes["has_window"][0] is Outcome.FAIL
+    assert outcomes["window_matches_words"][0] is Outcome.FAIL
 
 
 def test_no_window_fails_and_the_past_check_does_not_apply() -> None:
@@ -113,6 +181,8 @@ def test_a_claim_with_no_company_match_at_all_fails() -> None:
         ("Phase 2b AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_2, Outcome.PASS),
         ("Phase 2 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_2_3, Outcome.PASS),
         ("Phase 1/2 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_1_2, Outcome.PASS),
+        ("Phase 2\u20133 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_3, Outcome.PASS),
+        ("Phase 2-3 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_3, Outcome.PASS),
         ("Phase 3 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_2, Outcome.FAIL),
         ("Phase 1 AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_3, Outcome.FAIL),
         ("AZURE-1 data are expected in Q4 2026.", TrialPhase.PHASE_3, Outcome.NOT_APPLICABLE),
@@ -132,6 +202,17 @@ def test_phase_words_are_read_in_every_common_spelling() -> None:
         TrialPhase.PHASE_3,
         TrialPhase.PHASE_1_2,
     }
+    assert stated_phases("a Phase 2\u20133 study and a Phase I-II study") == {
+        TrialPhase.PHASE_2_3,
+        TrialPhase.PHASE_1_2,
+    }
+    assert stated_phases("a Phase 3-ready program") == {TrialPhase.PHASE_3}
+
+
+def test_a_phase_disagreement_is_explained_in_plain_words() -> None:
+    facts = _facts("Phase 1/2 AZURE-1 data are expected in Q4 2026.")
+    _, reason = _outcomes(facts)["phase_matches_registry"]
+    assert reason == "the quote says Phase 1/2; the registry says Phase 3"
 
 
 @pytest.mark.parametrize(
@@ -142,16 +223,42 @@ def test_phase_words_are_read_in_every_common_spelling() -> None:
         ({"window_start": "2026-09-01", "window_end": "2026-09-01", "window_precision": "day"}, Outcome.FAIL),
         (
             {"window_start": "2027-01-01", "window_end": "2027-03-31", "window_precision": "quarter"},
+            Outcome.PASS,
+        ),
+        (
+            {"window_start": "2028-04-01", "window_end": "2028-06-30", "window_precision": "quarter"},
+            Outcome.FAIL,
+        ),
+        (
+            {"window_start": "2026-07-01", "window_end": "2026-09-30", "window_precision": "quarter"},
             Outcome.FAIL,
         ),
     ],
-    ids=["five months out", "seventeen months out", "before the release", "a quarter, not a day"],
+    ids=[
+        "five months out",
+        "seventeen months out",
+        "before the release",
+        "a quarter within fifteen months",
+        "a quarter more than fifteen months out",
+        "a quarter before the release",
+    ],
 )
-def test_a_pdufa_date_is_a_day_after_the_release_and_within_fifteen_months(
+def test_a_pdufa_date_falls_after_the_release_and_within_fifteen_months(
     changes: dict[str, Any], expected: Outcome
 ) -> None:
     facts = _facts("The PDUFA target action date is set.", catalyst_type="pdufa_date", **changes)
     assert _outcomes(facts)["pdufa_date_plausible"][0] is expected
+
+
+@pytest.mark.parametrize(
+    ("day", "expected"),
+    [(date(2028, 1, 31), Outcome.PASS), (date(2028, 2, 1), Outcome.FAIL)],
+    ids=["the last day of the fifteenth month", "the day after"],
+)
+def test_the_fifteen_month_limit_runs_to_the_end_of_a_short_month(day: date, expected: Outcome) -> None:
+    window = {"window_start": day.isoformat(), "window_end": day.isoformat(), "window_precision": "day"}
+    facts = _facts("The PDUFA target action date is set.", catalyst_type="pdufa_date", **window)
+    assert _outcomes(replace(facts, published=date(2026, 10, 31)))["pdufa_date_plausible"][0] is expected
 
 
 def test_the_pdufa_rule_does_not_apply_to_other_catalysts() -> None:

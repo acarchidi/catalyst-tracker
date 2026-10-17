@@ -399,11 +399,11 @@ class ClaimCheck(Entity):
     """
 
     __tablename__ = "claim_check"
-    __unique__ = (("claim_id", "check"),)
+    __unique__ = (("claim_id", "check_name"),)
     __checks__: ClassVar[dict[str, str]] = {"fail_has_reason": "outcome <> 'fail' OR reason IS NOT NULL"}
 
     claim_id: Annotated[UUID, References("claim")] = Field(description="The claim checked.")
-    check: ShortText = Field(description="Which check, for example 'window_not_past'.")
+    check_name: ShortText = Field(description="Which check, for example 'window_not_past'.")
     outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
     checked_at: AwareDatetime = Field(description="When the check last ran.")

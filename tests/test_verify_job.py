@@ -93,7 +93,7 @@ def _claim(session_factory: sessionmaker[Session], document: UUID, quote: str, *
 def _outcomes(session_factory: sessionmaker[Session]) -> dict[str, tuple[str, str | None]]:
     with session_factory() as session:
         rows = session.execute(select(TABLES[ClaimCheck])).mappings()
-        return {r["check"]: (r["outcome"], r["reason"]) for r in rows}
+        return {r["check_name"]: (r["outcome"], r["reason"]) for r in rows}
 
 
 def test_every_check_is_stored_for_a_claim(
@@ -116,7 +116,7 @@ def test_a_wrong_phase_is_caught_against_the_registry(
     report = run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
     assert _outcomes(session_factory)["phase_matches_registry"] == (
         "fail",
-        "the quote says phase_3; the registry says phase_2",
+        "the quote says Phase 3; the registry says Phase 2",
     )
     assert report.claims_passing == 0
 
@@ -134,6 +134,13 @@ def test_a_re_run_keeps_one_row_per_check_and_updates_it(
     assert (first["window_not_past"][0], later["window_not_past"][0]) == ("pass", "fail")
 
 
+def test_today_is_the_new_york_date(session_factory: sessionmaker[Session], release: dict[str, UUID]) -> None:
+    _claim(session_factory, release["document"], "AZURE-1 topline data are expected in Q4 2026.")
+    # 10pm on December 31 in New York is already January 1 in UTC; the Q4 window has not ended.
+    run_checks(session_factory, lambda: datetime(2027, 1, 1, 3, 0, tzinfo=UTC))
+    assert _outcomes(session_factory)["window_not_past"][0] == "pass"
+
+
 def test_a_claim_whose_names_were_never_matched_fails_that_check(
     session_factory: sessionmaker[Session], release: dict[str, UUID]
 ) -> None:
@@ -148,6 +155,6 @@ def test_a_failed_check_must_say_why(
     from uuid import uuid4
 
     claim = _claim(session_factory, release["document"], "Topline data are expected in Q4 2026.")
-    row = {"id": uuid4(), "claim_id": claim, "check": "has_window", "outcome": "fail", "reason": None}
+    row = {"id": uuid4(), "claim_id": claim, "check_name": "has_window", "outcome": "fail", "reason": None}
     with pytest.raises(IntegrityError, match="fail_has_reason"), session_factory.begin() as session:
         session.execute(insert(TABLES[ClaimCheck]).values(**row, checked_at=PUBLISHED))

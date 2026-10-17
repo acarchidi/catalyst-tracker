@@ -315,14 +315,14 @@ One verification check's outcome for one claim (spec: Verification; ADR 0018). A
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
 | `claim_id` | link to `claim` | yes | The claim checked. |
-| `check` | text, up to 100 characters | yes | Which check, for example 'window_not_past'. |
+| `check_name` | text, up to 100 characters | yes | Which check, for example 'window_not_past'. |
 | `outcome` | one of: `pass`, `fail`, `not_applicable` | yes | Pass, fail, or not applicable. |
 | `reason` | text, up to 300 characters | no | Why it failed or did not apply, in plain words. |
 | `checked_at` | date and time (with time zone) | yes | When the check last ran. |
 
 Rules:
 
-- Unique: `claim_id`, `check`
+- Unique: `claim_id`, `check_name`
 - Database check `fail_has_reason`: `outcome <> 'fail' OR reason IS NOT NULL`
 
 ## `catalyst_change`

@@ -289,6 +289,25 @@ def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
     assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]
 
 
+def test_extract_catalysts_keeps_the_match_counts_when_only_the_checks_fail(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    def broken(*_args: object) -> CheckReport:
+        raise OperationalError("select", {}, Exception("database went away"))
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", broken)
+    assert main(["extract-catalysts"]) == 0
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["matches"]["claims"] == 2
+    assert summary["checks"] == {"error": "OperationalError: checks did not finish"}
+
+
 def test_verify_claims_prints_the_counts(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
