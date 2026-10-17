@@ -3,7 +3,9 @@ name: Gate 1 live run
 # Runs Gate 1 against the live Supabase database (docs/gate1.md, ADR 0010, ADR 0011):
 # migrate, collect the 50 Gate 1 companies, check every stored copy and link, and print the
 # 10-record sample. Started by hand from the Actions tab; safe to re-run (every job is
-# idempotent). Each step gets only the secrets it needs (docs/setup.md Part 5).
+# idempotent). Each step gets only the secrets it needs (docs/setup.md Part 5). At the end, plain
+# code turns the steps' results into alert issues for the owner (ADR 0023); a separate job, the
+# only one that may write issues, posts them.
 
 on:
   workflow_dispatch:
@@ -20,6 +22,8 @@ jobs:
     name: Gate 1 live run
     runs-on: ubuntu-latest
     timeout-minutes: 150
+    outputs:
+      alerts: ${{ steps.alerts.outputs.plan }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,6 +40,7 @@ jobs:
         run: uv run alembic upgrade head
 
       - name: Collect the 50 Gate 1 companies
+        id: collect
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -54,6 +59,7 @@ jobs:
       # The checks below run even when collection fails, but never on a database the migration
       # did not bring up to date.
       - name: Check every stored copy against its fingerprint
+        id: verify
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -69,6 +75,7 @@ jobs:
           exit "$status"
 
       - name: Check every source link
+        id: links
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -82,6 +89,7 @@ jobs:
           exit "$status"
 
       - name: Ten records for the owner to click
+        id: sample
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -92,3 +100,48 @@ jobs:
           status=$?
           { echo "## Ten records to click"; cat "$RUNNER_TEMP/sample.md"; } | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Free: no model call and no database. Runs even when a step above failed.
+      - name: Build alerts from this run
+        id: alerts
+        if: ${{ !cancelled() }}
+        env:
+          MIGRATE: ${{ steps.migrate.outcome }}
+          COLLECT: ${{ steps.collect.outcome }}
+          VERIFY: ${{ steps.verify.outcome }}
+          LINKS: ${{ steps.links.outcome }}
+          SAMPLE: ${{ steps.sample.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
+            --run "collect:$COLLECT:$RUNNER_TEMP/collect.json" \
+            --run "snapshots-verify:$VERIFY:$RUNNER_TEMP/verify.json" \
+            --run "check-links:$LINKS" --run "sample-records:$SAMPLE" \
+            --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  post-alerts:
+    name: Post alerts
+    needs: gate1
+    if: ${{ !cancelled() && needs.gate1.outputs.alerts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open, update, or close alert issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.gate1.outputs.alerts }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/alerts.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/alerts.json"

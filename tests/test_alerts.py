@@ -1,0 +1,239 @@
+"""Alerts come from run summaries and spend, in plain code, and only when something needs the owner."""
+
+import json
+from datetime import UTC, date, datetime
+from decimal import Decimal
+from pathlib import Path
+from typing import Any
+
+import httpx
+import pytest
+from sqlalchemy import Engine, insert
+from sqlalchemy.orm import Session, sessionmaker
+
+from catalyst import cli
+from catalyst.alerts import JobRun, Thresholds, build_alerts, load_thresholds, parse_run, spend_today
+from catalyst.cli import main
+from catalyst.db.tables import TABLES
+from catalyst.issues import Action, Close, Open
+from catalyst.llm.config import load_config
+from catalyst.schemas import ModelCall, ModelCallStatus
+
+RUN_URL = "https://github.com/acarchidi/catalyst-tracker/actions/runs/1"
+LIMITS = Thresholds(failed_runs_in_a_row=2, spend_share_of_cap=Decimal("0.9"))
+CLEAN_EXTRACT: dict[str, Any] = {
+    "documents_read": 3,
+    "documents_failed": 0,
+    "stopped_early": None,
+    "matches": {"claims": 4},
+    "checks": {"claims": 4, "claims_passing": 3, "outcomes": {}},
+    "second_reading": {"skipped": ["verify_catalysts has no scores.json"], "stopped_early": None},
+}
+
+
+def _keys(plan: dict[str, Any]) -> list[str]:
+    return [issue["key"] for issue in plan["issues"]]
+
+
+def test_the_owner_file_holds_the_starting_thresholds() -> None:
+    assert load_thresholds() == LIMITS
+
+
+def test_a_clean_run_raises_nothing_and_closes_its_old_alert() -> None:
+    plan = build_alerts([JobRun("extract-catalysts", "success", CLEAN_EXTRACT)], None, LIMITS, RUN_URL)
+    assert plan["mode"] == "alert"
+    assert plan["issues"] == []
+    assert [s["key"] for s in plan["solved"]] == ["job-failed:extract-catalysts"]
+    assert RUN_URL in plan["solved"][0]["comment"]
+
+
+def test_a_second_reading_without_scores_is_never_an_alert() -> None:
+    plan = build_alerts([JobRun("extract-catalysts", "success", CLEAN_EXTRACT)], None, LIMITS, RUN_URL)
+    assert plan["issues"] == []
+
+
+@pytest.mark.parametrize(
+    ("change", "words"),
+    [
+        ({"documents_failed": 2}, "2 documents could not be read"),
+        ({"stopped_early": "extractor has spent $1.90 of its $2.00 daily cap"}, "stopped early"),
+        ({"matches": {"error": "OperationalError: matching did not finish"}}, "Matching names"),
+        ({"checks": {"error": "checks did not run"}}, "checks did not finish"),
+        ({"second_reading": {"error": "KeyError: x"}}, "second reading did not finish"),
+        ({"second_reading": {"skipped": [], "documents_failed": 1}}, "second reading could not read 1"),
+        (
+            {"second_reading": {"skipped": [], "stopped_early": "verifier cap"}},
+            "second reading stopped early",
+        ),
+    ],
+)
+def test_a_problem_in_the_summary_raises_one_alert_for_the_job(change: dict[str, Any], words: str) -> None:
+    summary = CLEAN_EXTRACT | change
+    plan = build_alerts([JobRun("extract-catalysts", "failure", summary)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:extract-catalysts"]
+    issue = plan["issues"][0]
+    assert words in issue["body"]
+    assert RUN_URL in issue["body"]
+    assert issue["escalate_at"] == 2
+    assert plan["solved"] == []
+
+
+def test_alert_text_never_copies_error_messages_from_the_run() -> None:
+    # Error text can carry addresses or words from a source; the alert names the run log instead.
+    summary = CLEAN_EXTRACT | {"stopped_early": "secret-looking text https://x.supabase.co"}
+    plan = build_alerts([JobRun("extract-catalysts", "failure", summary)], None, LIMITS, RUN_URL)
+    assert "supabase" not in json.dumps(plan)
+
+
+def test_collection_and_stored_copy_problems_are_named() -> None:
+    runs = [
+        JobRun(
+            "collect", "failure", [{"source": "sec", "error": "boom"}, {"source": "ctgov", "error": None}]
+        ),
+        JobRun("snapshots-verify", "failure", {"checked": 9, "missing": 1, "changed": 2, "unreadable": 0}),
+    ]
+    plan = build_alerts(runs, None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:collect", "job-failed:snapshots-verify"]
+    assert "sec" in plan["issues"][0]["body"]
+    assert "ctgov" not in plan["issues"][0]["body"]
+    assert "1 stored copy is missing" in plan["issues"][1]["body"]
+    assert "2 stored copies changed" in plan["issues"][1]["body"]
+
+
+def test_a_failed_step_without_a_readable_summary_still_alerts() -> None:
+    plan = build_alerts([JobRun("check-links", "failure", None)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:check-links"]
+    assert "Link check" in plan["issues"][0]["title"]
+
+
+def test_a_skipped_or_cancelled_step_neither_alerts_nor_closes() -> None:
+    plan = build_alerts(
+        [JobRun("collect", "skipped", None), JobRun("check-links", "cancelled", None)], None, LIMITS, RUN_URL
+    )
+    assert plan["issues"] == []
+    assert plan["solved"] == []
+
+
+def test_a_role_near_its_cap_alerts_and_a_role_under_it_is_solved() -> None:
+    spend = {"extractor": (Decimal("1.85"), Decimal("2.00")), "verifier": (Decimal("0.10"), Decimal("2.00"))}
+    plan = build_alerts([], spend, LIMITS, RUN_URL)
+    assert _keys(plan) == ["spend-cap:extractor"]
+    body = plan["issues"][0]["body"]
+    assert "$1.85 of its $2.00 daily cap" in body
+    assert "config/models.toml" in body
+    assert plan["issues"][0]["escalate_at"] is None
+    assert [s["key"] for s in plan["solved"]] == ["spend-cap:verifier"]
+
+
+def test_parse_run_reads_the_summary_file(tmp_path: Path) -> None:
+    path = tmp_path / "summary.json"
+    path.write_text(json.dumps(CLEAN_EXTRACT), encoding="utf-8")
+    assert parse_run(f"extract-catalysts:success:{path}") == JobRun(
+        "extract-catalysts", "success", CLEAN_EXTRACT
+    )
+    assert parse_run("migrate:failure") == JobRun("migrate", "failure", None)
+
+
+def test_an_unreadable_summary_after_success_is_a_problem(tmp_path: Path) -> None:
+    path = tmp_path / "summary.json"
+    path.write_text("not json", encoding="utf-8")
+    run = parse_run(f"collect:success:{path}")
+    plan = build_alerts([run], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:collect"]
+    assert "report could not be read" in plan["issues"][0]["body"]
+
+
+def test_parse_run_refuses_an_unknown_outcome() -> None:
+    with pytest.raises(ValueError, match="outcome"):
+        parse_run("collect:maybe")
+
+
+def _call(role: str, cost: str, at: datetime) -> dict[str, Any]:
+    return ModelCall(
+        role=role,
+        provider="anthropic",
+        model="claude-sonnet-5-5",
+        prompt_id="demo",
+        prompt_version="1.0.0",
+        input_tokens=1,
+        output_tokens=1,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
+        cost_usd=Decimal(cost),
+        latency_ms=1,
+        status=ModelCallStatus.OK,
+        called_at=at,
+        config_version="test-1",
+    ).model_dump()
+
+
+def test_spend_today_sums_each_role_for_the_new_york_day(
+    engine: Engine, session_factory: sessionmaker[Session]
+) -> None:
+    calls = [
+        _call("extractor", "1.00", datetime(2026, 10, 17, 14, 0, tzinfo=UTC)),
+        _call("extractor", "0.50", datetime(2026, 10, 18, 3, 0, tzinfo=UTC)),  # still the 17th in New York
+        _call("extractor", "9.00", datetime(2026, 10, 17, 3, 0, tzinfo=UTC)),  # the 16th in New York
+    ]
+    with engine.begin() as connection:
+        connection.execute(insert(TABLES[ModelCall]), calls)
+    spend = spend_today(engine, load_config(), date(2026, 10, 17))
+    assert spend["extractor"] == (Decimal("1.50"), Decimal("2.00"))
+    assert spend["verifier"] == (Decimal(0), Decimal("2.00"))
+
+
+def test_the_alerts_command_writes_the_plan_and_prints_the_bodies(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    summary, out = tmp_path / "summary.json", tmp_path / "alerts.json"
+    summary.write_text(json.dumps(CLEAN_EXTRACT | {"documents_failed": 1}), encoding="utf-8")
+    runs = ["--run", f"extract-catalysts:failure:{summary}", "--run", "migrate:success"]
+    assert main(["alerts", *runs, "--run-url", RUN_URL, "--out", str(out)]) == 0
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [i["key"] for i in plan["issues"]] == ["job-failed:extract-catalysts"]
+    assert [s["key"] for s in plan["solved"]] == ["job-failed:migrate"]
+    assert "## Catalyst extraction needs a look" in capsys.readouterr().out
+
+
+def test_spending_that_cannot_be_read_is_itself_an_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:9/none_test")
+    out = tmp_path / "alerts.json"
+    assert main(["alerts", "--spend", "--run-url", RUN_URL, "--out", str(out)]) == 0
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [i["key"] for i in plan["issues"]] == ["job-failed:spend-check"]
+    assert "Spending check needs a look" in capsys.readouterr().out
+
+
+def test_posting_needs_the_token_github_gives_each_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    assert main(["post-issues", "--from", str(tmp_path / "plan.json")]) == 2
+    assert "GITHUB_TOKEN is missing" in capsys.readouterr().err
+
+
+def test_posting_reports_what_it_changed_or_why_it_stopped(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "token-for-tests")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "o/r")
+    path = tmp_path / "plan.json"
+    path.write_text(json.dumps({"mode": "alert", "label": "alert", "issues": [], "solved": []}))
+
+    def done(*_: object) -> list[Action]:
+        return [Open("t", "b", "alert"), Close(3, None)]
+
+    monkeypatch.setattr(cli, "post", done)
+    assert main(["post-issues", "--from", str(path)]) == 0
+    assert json.loads(capsys.readouterr().out) == {"changes": ["open", "close"]}
+
+    def refused(*_: object) -> list[Action]:
+        raise httpx.ConnectError("no route")
+
+    monkeypatch.setattr(cli, "post", refused)
+    assert main(["post-issues", "--from", str(path)]) == 1
+    error = capsys.readouterr().err
+    assert "ConnectError" in error
+    assert "token-for-tests" not in error

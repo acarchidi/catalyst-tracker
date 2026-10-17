@@ -38,6 +38,7 @@ OWNER_PATHS = (
     ".gitleaks.toml",
     ".pre-commit-config.yaml",
     "config/models.toml",
+    "config/orchestrator.toml",  # the alert and oversight thresholds (ADR 0019, ADR 0023)
     "evals/extract_catalysts/baseline.json",  # the floor CI holds every prompt to (ADR 0014)
     "evals/extract_catalysts/unscored.json",  # the retired exemption from that floor
     "evals/verify_catalysts/baseline.json",  # the second reading's floor (ADR 0018, part 2)
