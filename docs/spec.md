@@ -21,7 +21,7 @@ The product rests on five openings found in the [competitor matrix](https://clau
 | Ingestion cadence | Twice daily: pre-market and post-close |
 | Advice | Never personalized investment advice |
 | Verification | Independent cross-checks; any model provider can be plugged in |
-| Human role | You review a flagged queue plus a weekly random sample |
+| Human role | You settle the records the weekly sample checker disagrees on, and the flagged queue (owner decision 2026-10-17) |
 | Deferred | Business setup (entity, terms, billing) and the distribution plan |
 
 **Not in v1:** seconds-level latency, institutional features (SSO, security audits, bulk feeds), and a native mobile app.
@@ -133,14 +133,14 @@ flowchart TD
   D --> O[Web app, API, MCP, assistant]
   D --> A[Auditor agent]
   A -- re-check findings --> V
-  X[Orchestrator: reads run results, daily report] -.-> C
+  X[Orchestrator: reads run results, alerts, weekly summary] -.-> C
 ```
 
 Collection and publishing are plain code; AI agents handle reading, judging, and drafting.
 
 | Agent | Job | Can access | Cannot |
 | --- | --- | --- | --- |
-| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and sends you a daily plain-English status report | Job queue, run logs | Read web text; write data |
+| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and alerts you only when something needs you (a failed job, a spending cap reached, a decision that is yours), plus a plain-English weekly summary with the error rate (owner decision 2026-10-17) | Job queue, run logs | Read web text; write data |
 | Extractor | Turns one source document into structured claims with quotes | The document it is given | Browse, call tools, write to live data |
 | Entity resolver | Maps names to canonical company, drug, and trial IDs | Reference tables | Write to live data; ambiguous matches go to review |
 | Verifier | Re-extracts with a different prompt (later a different provider) and runs cross-checks | Staged claims, source copies | Publish |
@@ -179,7 +179,7 @@ A claim publishes automatically only when checks with independent evidence agree
 
 - **Review queue.** One screen shows the highlighted source sentence beside the extracted fields. Approve, correct, or reject in one action, with keyboard shortcuts. Each decision is added to the gold set.
 - **Gold set.** Start with 200 hand-verified catalysts. Agents prepare them; you confirm them.
-- **Weekly random sample.** You check 30 auto-published records each week. If all 30 are correct, the error rate is below about 10% at 95% confidence; 300 clean checks push that bound below 1%. This sample is the only real measure of the system's accuracy.
+- **Weekly random sample.** Each week 30 auto-published records are drawn at random and checked against their sources by a different, stronger Claude model than the ones that extracted and verified them; you settle only the records where it disagrees (owner decision 2026-10-17). If all 30 are correct, the error rate is below about 10% at 95% confidence; about 300 clean checks push that bound below 1%. This sample is the only real measure of the system's accuracy. Two models from one company can share blind spots, so the planted-error test (records with known, deliberately inserted errors) also runs and shows how many errors the checker catches; a second AI company can replace the checker later.
 - **Corrections.** A fixed error gets a change-log entry labeled "correction", alerts everyone watching that catalyst, and appears on a public corrections page.
 - **Dashboard metrics:** error rate from the sample, auto-publish rate, queue size, hours from source publication to our publication, and disagreement rate per field.
 
