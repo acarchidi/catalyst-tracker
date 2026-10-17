@@ -70,7 +70,7 @@ def model_input(text: str, published: date) -> str:
     return f"Publication date: {published.isoformat()}\n\n{text}"
 
 
-def _has_words(quote: str, words: str) -> bool:
+def has_words(quote: str, words: str) -> bool:
     """Return whether `words` appear in `quote` as whole words, in order; only spacing may differ."""
     parts = words.split()
     if not parts:
@@ -98,7 +98,7 @@ def _checked(item: dict[str, Any], text: str, published: date) -> ExtractedCatal
     span = find_quote(text, str(item["quote"]))
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)
-    elif not _has_words(span.quote, date_text):
+    elif not has_words(span.quote, date_text):
         problems.append(Problem.DATE_NOT_IN_QUOTE)
     else:
         window = parse_window(date_text, published)

@@ -15,6 +15,7 @@ from catalyst.schemas.enums import (
     CatalystField,
     CatalystStatus,
     CatalystType,
+    CheckOutcome,
     ClaimSubject,
     DateConfidence,
     DatePrecision,
@@ -389,6 +390,23 @@ class EntityMatch(Entity):
         if (self.status is MatchStatus.RESOLVED) != (self.matched_id is not None):
             raise ValueError("a resolved match names its record, and only a resolved match does")
         return self
+
+
+class ClaimCheck(Entity):
+    """One verification check's outcome for one claim (spec: Verification; ADR 0018).
+
+    A later run replaces the outcome, so the table always holds each claim's latest result.
+    """
+
+    __tablename__ = "claim_check"
+    __unique__ = (("claim_id", "check_name"),)
+    __checks__: ClassVar[dict[str, str]] = {"fail_has_reason": "outcome <> 'fail' OR reason IS NOT NULL"}
+
+    claim_id: Annotated[UUID, References("claim")] = Field(description="The claim checked.")
+    check_name: ShortText = Field(description="Which check, for example 'window_not_past'.")
+    outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
+    reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
+    checked_at: AwareDatetime = Field(description="When the check last ran.")
 
 
 class CatalystChange(Entity):
