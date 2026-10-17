@@ -34,7 +34,10 @@ _MONTHS = {
 }
 _MONTH = "(?P<month>" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\.?"
 _ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4}
-_YEAR = r"(?P<year>\d{4}|'?\d{2}|this year|next year|the year)"
+# A two-digit year needs an apostrophe ("April '27"), except in compact forms such as 2H26 and
+# 1Q27: alone, "April 27" or "26" is a day or a number, not a year (review of PR #14).
+_YEAR = r"(?P<year>\d{4}|'\d{2}|this year|next year|the year)"
+_COMPACT_YEAR = r"(?P<year>\d{4}|'?\d{2})"
 _PREFIX = re.compile(r"^(?:(?:in|during|around|the)\s+)+")
 
 _Period = tuple[date, date, DatePrecision]
@@ -91,6 +94,15 @@ def _day(found: dict[str, str | None], year: int, published: date) -> _Period:
     return day, day, DatePrecision.DAY
 
 
+def _day_this_year(found: dict[str, str | None], year: int, published: date) -> _Period | None:
+    """Read "November 12" as that day in the document's year, if it is still ahead; else no window.
+
+    A day already past could be a past event or the same day next year; code does not guess.
+    """
+    start, end, precision = _day(found, published.year, published)
+    return (start, end, precision) if start >= published else None
+
+
 def _month(found: dict[str, str | None], year: int, published: date) -> _Period:
     month = _MONTHS[found["month"] or ""]
     last = calendar.monthrange(year, month)[1]
@@ -107,17 +119,18 @@ def _whole_year(found: dict[str, str | None], year: int, published: date) -> _Pe
     return date(year, 1, 1), date(year, 12, 31), DatePrecision.YEAR
 
 
-_Builder = Callable[[dict[str, str | None], int, date], _Period]
+_Builder = Callable[[dict[str, str | None], int, date], _Period | None]
 _OPTIONAL_YEAR = "(?: " + _YEAR + ")?"
 _PATTERNS: list[tuple[re.Pattern[str], _Builder]] = [
     (re.compile(_MONTH + r" (?P<day>\d{1,2}), (?P<year>\d{4})"), _day),
+    (re.compile(_MONTH + r" (?P<day>\d{1,2})"), _day_this_year),
     (re.compile(_MONTH + r" (?:of )?" + _YEAR), _month),
-    (re.compile(r"q(?P<n>[1-4]) ?" + _YEAR), _quarter_of),
-    (re.compile(r"(?P<n>[1-4])q ?" + _YEAR), _quarter_of),
+    (re.compile(r"q(?P<n>[1-4]) ?" + _COMPACT_YEAR), _quarter_of),
+    (re.compile(r"(?P<n>[1-4])q ?" + _COMPACT_YEAR), _quarter_of),
     (re.compile(r"(?P<ord>first|second|third|fourth) quarter(?: of)?" + _OPTIONAL_YEAR), _quarter_of),
     (re.compile(r"this quarter"), _this_quarter),
-    (re.compile(r"(?P<n>[12])h ?" + _YEAR), _half_of),
-    (re.compile(r"h(?P<n>[12]) ?" + _YEAR), _half_of),
+    (re.compile(r"(?P<n>[12])h ?" + _COMPACT_YEAR), _half_of),
+    (re.compile(r"h(?P<n>[12]) ?" + _COMPACT_YEAR), _half_of),
     (re.compile(r"(?P<ord>first|second) half(?: of)?" + _OPTIONAL_YEAR), _half_of),
     (re.compile(r"(?P<part>early|mid|late)[- ]" + _YEAR), _part_of_year),
     (re.compile(r"(?:year[- ]end|(?:the )?end of(?: the)? year)" + _OPTIONAL_YEAR), _year_end),

@@ -79,10 +79,60 @@ def test_phrases_that_lean_on_the_document_date(
 
 
 @pytest.mark.parametrize(
-    "text", ["", "soon", "in the coming months", "upon FDA approval", "Q5 2026", "13H26", "February 30, 2027"]
+    "text",
+    [
+        "",
+        "soon",
+        "in the coming months",
+        "upon FDA approval",
+        "Q5 2026",
+        "13H26",
+        "February 30, 2027",
+        # A bare two-digit number is not a year (review of PR #14).
+        "10",
+        "in 26",
+        "March 26",  # a day before the document's date with no year: next year or a past event?
+        "June 15",
+    ],
 )
 def test_vague_or_impossible_phrases_give_no_window(text: str) -> None:
     assert parse_window(text, PUBLISHED) is None
+
+
+@pytest.mark.parametrize(
+    ("text", "day"),
+    [("November 12", date(2026, 11, 12)), ("Oct. 14", date(2026, 10, 14)), ("December 1", date(2026, 12, 1))],
+)
+def test_a_day_without_a_year_is_that_day_in_the_document_year_if_still_ahead(text: str, day: date) -> None:
+    assert _parsed(text) == (day, day, DatePrecision.DAY)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("April '27", _window(date(2027, 4, 1), date(2027, 4, 30), DatePrecision.MONTH)),
+        ("'27", _window(date(2027, 1, 1), date(2027, 12, 31), DatePrecision.YEAR)),
+        ("Q1 27", _window(date(2027, 1, 1), date(2027, 3, 31), DatePrecision.QUARTER)),
+        ("H2 26", _window(date(2026, 7, 1), date(2026, 12, 31), DatePrecision.HALF)),
+    ],
+)
+def test_two_digit_years_need_an_apostrophe_except_in_compact_forms(
+    text: str, expected: tuple[date, date, DatePrecision]
+) -> None:
+    assert _parsed(text) == expected
+
+
+@given(
+    month=st.integers(min_value=1, max_value=12),
+    day=st.integers(min_value=1, max_value=28),
+    published=st.dates(min_value=date(2000, 1, 1), max_value=date(2099, 12, 31)),
+)
+def test_a_month_and_day_is_never_read_as_a_month_and_year(month: int, day: int, published: date) -> None:
+    window = parse_window(f"{date(2000, month, 1):%B} {day}", published)
+    if window is not None:
+        assert window.precision is DatePrecision.DAY
+        assert window.start == date(published.year, month, day)
+        assert window.start >= published
 
 
 def test_a_by_deadline_already_past_gives_no_window() -> None:

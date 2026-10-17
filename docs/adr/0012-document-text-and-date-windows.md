@@ -12,11 +12,13 @@ A claim stores a verbatim quote and its character offsets "in the stored copy's 
 
 1. **Document text.** `catalyst.extract.text.document_text` turns a stored copy into plain text: only the SEC `<TEXT>` part of a filing, no head, style, or script; one line per block element (paragraph, div, list item, table row, line break); table cells separated by a space; character references decoded once; runs of spaces made one space; blank lines dropped. The rules carry `TEXT_VERSION = "1"`. Changing them means a new version, and claims made against the old one are re-checked.
 2. **Quotes.** `find_quote` accepts a quote only if its words appear in the text in the same order, with the same case and punctuation; only the spacing between words may differ (a model may write a line break as a space). The stored quote is always the text's own characters at the found offsets, so it is always the source's words.
+   Copies that are not HTML (the JSON records from ClinicalTrials.gov, openFDA, and the Federal Register) keep their characters and get only the spacing tidied; the extractor reads press releases, so this matters only if a later agent quotes a JSON record.
 3. **Date windows,** read by code from the source's own phrase, as of the document's publication date:
 
 | Phrase | Window | Precision |
 | --- | --- | --- |
 | October 30, 2026 | that day | day |
+| November 12 (no year) | that day in the document's year if not before the document's date; otherwise no window | day |
 | April 2027 | the month | month |
 | Q1 2027, 1Q27, first quarter of 2027 | the quarter | quarter |
 | 2H26, H2 2026, second half of 2026 | July to December | half |
@@ -27,6 +29,8 @@ A claim stores a verbatim quote and its character offsets "in the stored copy's 
 | by (the end of) a period | the document's date to the end of that period | that period's |
 | by year-end, later this year | the document's date to December 31 | year |
 | no year given (the fourth quarter, this quarter, next year) | the document's year, or the next year for "next" | as above |
+
+   A two-digit year needs an apostrophe ("April '27", "'27"), except in compact forms (2H26, 1Q27, Q1 27, H2 26). Alone, "April 27" is a day and "26" is a number, never a year. This rule came from the review of the first version, which read "November 12" as November 2012.
 
    A "by" deadline already past on the document's date gives no window, and a "by" window that is one day long has day precision (the `catalyst` table requires that). Vague phrases ("soon", "in the coming months", "upon approval") and impossible dates (February 30) give no window: the claim goes to review rather than get an invented date.
 
@@ -39,5 +43,5 @@ A claim stores a verbatim quote and its character offsets "in the stored copy's 
 ## Consequences
 
 - Every quote can be checked by code: find it in the text, compare the offsets. A quote the model changed even slightly fails, and the claim does not publish.
-- On the 96 press releases from the Gate 1 rehearsal, the text is 2,798 to 69,569 characters (median 12,977), and all 534 common date phrases found in them by a simple search were read.
+- On the 96 press releases from the Gate 1 rehearsal, the text is 2,798 to 69,569 characters (median 12,977), a simple search found 1,728 date phrases; 1,392 got a window (858 days, 408 quarters, 120 halves, 6 years). The rest are days without a year that fall before the document's date, which get no window by design.
 - New phrase shapes need a new pattern and tests; until then they give no window and go to review.
