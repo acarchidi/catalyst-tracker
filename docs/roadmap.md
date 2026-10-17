@@ -85,7 +85,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
-| 2026-10-17 | ADR 0017: catalyst scenarios added (spec and Phase 4): conditional price-move ranges with peak sales and risk-adjusted value; the "no price targets" rule now excepts only this feature; no securities lawyer review; disclaimers on every page (owner decisions) |
+| 2026-10-17 | ADR 0017: catalyst scenarios added (spec and Phase 4): upside and downside scenarios with conditional price-move ranges, peak sales, and risk-adjusted value, plus a later item for reference ranges per trial measure; the "no price targets" rule now excepts only this feature; no securities lawyer review; disclaimers on every page (owner decisions) |
 | 2026-10-17 | Gate 2 raised to an error rate under 1% at 95% confidence on a random sample of published records (owner target: 99% to start, 99.9% later); the extractor's score floor (`baseline.json`) and its retired exemption (`unscored.json`) are merged by the owner only; a stronger Claude model checks the weekly random sample and the owner settles only disagreements; alerts only when something needs the owner, plus a weekly summary, replace the daily report |
 | 2026-10-17 | Roadmap: show/hide any field and a catalyst timeline (Phase 2); pipeline and competitive-landscape views and key peer-reviewed publications per catalyst (Phase 4); readout benchmarking scope confirmed by the owner (owner requests) |
 | 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
