@@ -168,6 +168,22 @@ class ModelCallStatus(StrEnum):
     ERROR = "error"
 
 
+class MatchStatus(StrEnum):
+    """Whether a name found exactly one record (ADR 0015)."""
+
+    RESOLVED = "resolved"
+    AMBIGUOUS = "ambiguous"
+    UNKNOWN = "unknown"
+
+
+class MatchedEntity(StrEnum):
+    """Which kind of record a name in a claim was matched to."""
+
+    COMPANY = "company"
+    DRUG = "drug"
+    TRIAL = "trial"
+
+
 class DocumentMatch(StrEnum):
     """How a source document was linked to a company."""
 

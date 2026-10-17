@@ -22,6 +22,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument
@@ -208,8 +209,13 @@ def recording_trials(
     trial row stays without its record until the next run stores it; nothing is duplicated.
     """
     for fetched in documents():
-        with session_factory.begin() as session:
-            record_trial(session, trial_from_study(json.loads(fetched.content)))
+        try:
+            trial = trial_from_study(json.loads(fetched.content))
+            with session_factory.begin() as session:
+                record_trial(session, trial)
+        except (ValidationError, KeyError, ValueError, SQLAlchemyError) as error:
+            # One bad registry record must not stop the company's other trials (PR #25 review).
+            log_event(_log, "reference_skipped", what="trial", error=f"{type(error).__name__}: {error}"[:300])
         yield fetched
 
 

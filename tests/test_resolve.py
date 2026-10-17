@@ -238,3 +238,33 @@ def test_two_trial_records_with_one_registry_number_are_ambiguous() -> None:
     result = references.resolve_trial("NCT06111111")
     assert result.status is Status.AMBIGUOUS
     assert set(result.candidates) == {AZURE1, copy.id}
+
+
+# Trials named inside a longer text (part 4)
+
+
+def test_study_names_written_in_capitals_are_found_in_a_sentence() -> None:
+    references = _references(trials=_trials())
+    found = references.trials_mentioned(
+        "Topline data from AZURE-1 and AZURE 4 are due in 2026.", company_id=SPYRE
+    )
+    assert {(name, result.id) for name, result in found} == {("AZURE-1", AZURE1), ("AZURE 4", AZURE4)}
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["Questions about azure-1 remain.", "AZURE-14 data are due.", "The AZURE program reads out.", ""],
+    ids=["not in capitals", "a longer number", "no number", "empty"],
+)
+def test_lower_case_words_and_near_names_are_not_trials(text: str) -> None:
+    assert _references(trials=_trials()).trials_mentioned(text, company_id=SPYRE) == []
+
+
+def test_registry_numbers_in_a_sentence_are_each_reported() -> None:
+    found = _references(trials=_trials()).trials_mentioned(
+        "See NCT06111111 and NCT09999999.", company_id=SPYRE
+    )
+    assert [(name, result.status) for name, result in found] == [
+        ("NCT06111111", Status.RESOLVED),
+        ("NCT09999999", Status.UNKNOWN),
+    ]

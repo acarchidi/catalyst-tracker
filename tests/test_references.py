@@ -336,3 +336,18 @@ def test_a_failure_recording_names_alerts_and_the_run_goes_on(
     assert by_source["sec:VRTX"].created == 1
     assert by_source["wire:prnewswire"].created == 20
     assert any(r.getMessage() == "collector_failed" for r in caplog.records)
+
+
+def test_one_bad_registry_record_is_skipped_and_the_rest_are_recorded(
+    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    good, bad = _studies()[0], _studies()[1]
+    bad["protocolSection"]["identificationModule"]["acronym"] = "X" * 301
+    documents = [ctgov.to_document(bad), ctgov.to_document(good)]
+    passed = list(recording_trials(session_factory, lambda: documents))
+    assert len(passed) == 2
+    assert [t["nct_id"] for t in _rows(session_factory, Trial)] == [
+        good["protocolSection"]["identificationModule"]["nctId"]
+    ]
+    assert any(r.getMessage() == "reference_skipped" for r in caplog.records)

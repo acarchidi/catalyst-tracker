@@ -286,6 +286,27 @@ Rules:
 - Unique: `combination_id`, `component_id`
 - Database check `not_itself`: `combination_id <> component_id`
 
+## `entity_match`
+
+How one name in a claim was matched to a company, drug, or trial (ADR 0015, part 4). Resolved matches name their record. Ambiguous and unknown ones wait for review, with every candidate. A later run updates the row as the reference tables grow.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `claim_id` | link to `claim` | yes | The claim the name comes from. |
+| `entity_type` | one of: `company`, `drug`, `trial` | yes | Company, drug, or trial. |
+| `name` | text, up to 300 characters | yes | The name as the claim gives it, or the source link for a company. |
+| `status` | one of: `resolved`, `ambiguous`, `unknown` | yes | Resolved (one record), ambiguous (several), or unknown (none). |
+| `matched_id` | identifier | no | The record, when resolved. |
+| `candidates` | structured value (JSON) | yes | Every candidate record's id, as a list; empty when unknown. |
+| `matched_by` | text, up to 100 characters | no | Which rule found the candidates, for example 'cik' or 'code_name'. |
+| `resolved_at` | date and time (with time zone) | yes | When this match was last made. |
+
+Rules:
+
+- Unique: `claim_id`, `entity_type`, `name`
+- Database check `resolved_has_record`: `(status = 'resolved') = (matched_id IS NOT NULL)`
+
 ## `catalyst_change`
 
 One change to a catalyst field (spec: Change history). Append-only: rows are added, never edited or deleted. The database enforces this.

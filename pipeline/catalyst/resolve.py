@@ -17,15 +17,9 @@ from enum import StrEnum
 from uuid import UUID
 
 from catalyst.collectors.coverage import normalize_name
-from catalyst.schemas import DrugNameKind
+from catalyst.schemas import DrugNameKind, MatchStatus
 
-
-class Status(StrEnum):
-    """Whether a name found exactly one record."""
-
-    RESOLVED = "resolved"
-    AMBIGUOUS = "ambiguous"
-    UNKNOWN = "unknown"
+Status = MatchStatus  # resolved, ambiguous, or unknown; stored as EntityMatch.status
 
 
 class MatchedBy(StrEnum):
@@ -39,6 +33,7 @@ class MatchedBy(StrEnum):
     BRAND = "brand"
     NCT_ID = "nct_id"
     STUDY_NAME = "study_name"
+    NEW_CODE_NAME = "new_code_name"  # the company's own code name, first seen in its release
 
 
 _KIND_RULE = {
@@ -120,6 +115,17 @@ def name_key(name: str) -> str:
     return "".join(ch for ch in text if ch.isalnum())
 
 
+def _letters(text: str) -> str:
+    return "".join(ch for ch in text if ch.isalpha())
+
+
+def _study_pattern(study_name: str) -> re.Pattern[str]:
+    """Match the study name as a whole word, allowing any spacing or dash between its parts."""
+    parts = re.findall(r"[^\W_]+", study_name)
+    body = r"[\s\-\u2010-\u2015]*".join(re.escape(part) for part in parts)
+    return re.compile(rf"(?<![^\W_]){body}(?![^\W_])", re.IGNORECASE) if parts else re.compile(r"(?!)")
+
+
 def _held_on(period: tuple[str, date, date | None], on: date | None) -> bool:
     _, valid_from, valid_to = period
     if on is None:
@@ -192,6 +198,33 @@ class ReferenceData:
             return _UNKNOWN
         rule = _KIND_RULE[min((kind for _, kind in hits), key=list(DrugNameKind).index)]
         return _found((drug.id for drug, _ in hits), rule)
+
+    def add_drug(self, drug: DrugRef) -> None:
+        """Index a drug created after loading, so later lookups in the same run find it."""
+        for name, kind in drug.names:
+            if key := name_key(name):
+                self._drug_names[key].append((drug, kind))
+
+    def trials_mentioned(self, text: str, company_id: UUID | None = None) -> list[tuple[str, Resolution]]:
+        """Find every trial a longer text names: registry numbers, and study names in capitals.
+
+        A study name counts only as a whole word written with the same capital letters as the
+        registry has it, so "ARISE" is a trial and "questions may arise" is not. Each name found is
+        reported once, with its own resolution; an unknown registry number is reported as unknown.
+        """
+        found: list[tuple[str, Resolution]] = []
+        for number in dict.fromkeys(n.upper() for n in _NCT.findall(text)):
+            found.append((number, _found(self._by_nct.get(number, []), MatchedBy.NCT_ID)))
+        by_key: dict[str, tuple[str, list[UUID]]] = {}
+        for trial in self._trials:
+            if not trial.study_name or (company_id is not None and company_id not in trial.company_ids):
+                continue
+            for match in _study_pattern(trial.study_name).finditer(text):
+                written = match.group(0)
+                if _letters(written) == _letters(trial.study_name):
+                    by_key.setdefault(name_key(written), (written, []))[1].append(trial.id)
+        found += [(written, _found(ids, MatchedBy.STUDY_NAME)) for written, ids in by_key.values()]
+        return found
 
     def resolve_trial(self, text: str, company_id: UUID | None = None) -> Resolution:
         """Match registry numbers in the text, else a study name within the company's trials.
