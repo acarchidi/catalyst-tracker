@@ -20,6 +20,7 @@ from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 from catalyst.verify.run import CheckReport
+from catalyst.verify.second_run import SecondReadingReport
 
 
 def test_missing_sec_contact_email_exits_with_setup_step(
@@ -220,6 +221,30 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     (written,) = json.loads(out.read_text())
     assert written["company"] == "Acme Bio"
     assert written["published"] == "2026-10-14"
+
+
+def test_extract_catalysts_runs_the_second_reading_only_through_its_gate(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0018, part 2: the second reading follows extraction, and today its gate keeps it off."""
+    asked: dict[str, Any] = {}
+
+    def second(*_args: object, **options: Any) -> SecondReadingReport:
+        asked.update(options)
+        return SecondReadingReport(skipped=options["problems"])
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", second)
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=0))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts", "--limit", "4"]) == 0
+    assert (asked["model"], asked["limit"]) == ("claude-sonnet-5-5", 4)
+    assert asked["problems"] == [
+        "verify_catalysts has no scores.json: run `catalyst eval-extractor --prompt verify_catalysts`"
+    ]
+    assert json.loads(capsys.readouterr().out)["second_reading"]["skipped"] == asked["problems"]
 
 
 def test_eval_extractor_needs_the_product_key(

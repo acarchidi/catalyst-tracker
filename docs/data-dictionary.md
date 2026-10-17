@@ -325,6 +325,26 @@ Rules:
 - Unique: `claim_id`, `check_name`
 - Database check `fail_has_reason`: `outcome <> 'fail' OR reason IS NOT NULL`
 
+## `document_reading`
+
+One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `source_document_id` | link to `source_document` | yes | The document read. |
+| `agent` | text, up to 100 characters | yes | Which reader, for example 'verifier'. |
+| `prompt_id` | text, up to 100 characters | yes | Prompt used. |
+| `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
+| `model` | text, up to 100 characters | yes | Model that answered. |
+| `catalysts` | whole number | yes | How many catalysts the reader proposed. |
+| `read_at` | date and time (with time zone) | yes | When the document was read. |
+
+Rules:
+
+- Unique: `source_document_id`, `agent`, `prompt_id`, `prompt_version`, `model`
+- Database check `catalysts_not_negative`: `catalysts >= 0`
+
 ## `catalyst_change`
 
 One change to a catalyst field (spec: Change history). Append-only: rows are added, never edited or deleted. The database enforces this.
