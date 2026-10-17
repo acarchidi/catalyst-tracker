@@ -4,6 +4,8 @@ Error messages name the setting and the setup step, never the value.
 """
 
 import os
+import re
+from urllib.parse import quote
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/catalyst"
 
@@ -12,9 +14,29 @@ class MissingSettingError(RuntimeError):
     """A required setting is absent or unusable; the message names the setup step that fixes it."""
 
 
+PASSWORD_PLACEHOLDER = "[YOUR-PASSWORD]"  # noqa: S105 - Supabase's placeholder text, not a password
+
+
 def database_url() -> str:
-    """Return the database address: `CATALYST_DATABASE_URL`, or the local development database."""
-    return os.environ.get("CATALYST_DATABASE_URL") or DEFAULT_DATABASE_URL
+    """Return the database address.
+
+    In order: `CATALYST_DATABASE_URL` (a local or test database); else the live database from
+    `SUPABASE_DB_URL`, Supabase's Session pooler string copied unchanged with its
+    `[YOUR-PASSWORD]` placeholder, filled from `SUPABASE_DB_PASSWORD`; else the local default.
+    """
+    if local := os.environ.get("CATALYST_DATABASE_URL"):
+        return local
+    pooler = os.environ.get("SUPABASE_DB_URL", "").strip()
+    if not pooler:
+        return DEFAULT_DATABASE_URL
+    if PASSWORD_PLACEHOLDER not in pooler:
+        raise MissingSettingError(
+            f"SUPABASE_DB_URL must be Supabase's Session pooler string with {PASSWORD_PLACEHOLDER} "
+            "left in it. See docs/setup.md Part 5."
+        )
+    password = _required("SUPABASE_DB_PASSWORD", "Part 3, then Part 5")
+    filled = pooler.replace(PASSWORD_PLACEHOLDER, quote(password, safe=""))
+    return re.sub(r"^postgres(?:ql)?://", "postgresql+psycopg://", filled)
 
 
 def sec_contact_email() -> str:
@@ -22,7 +44,7 @@ def sec_contact_email() -> str:
     value = os.environ.get("SEC_CONTACT_EMAIL", "").strip()
     if "@" not in value:
         raise MissingSettingError(
-            "SEC_CONTACT_EMAIL is missing or is not an email address. See docs/setup.md Part 4."
+            "SEC_CONTACT_EMAIL is missing or is not an email address. See docs/setup.md Part 5."
         )
     return value
 
@@ -32,7 +54,7 @@ def catalyst_anthropic_api_key() -> str:
     value = os.environ.get("CATALYST_ANTHROPIC_API_KEY", "").strip()
     if not value:
         raise MissingSettingError(
-            "CATALYST_ANTHROPIC_API_KEY is missing. See docs/setup.md Part 2, then Part 4."
+            "CATALYST_ANTHROPIC_API_KEY is missing. See docs/setup.md Part 2, then Part 5."
         )
     return value
 
@@ -46,9 +68,9 @@ def _required(name: str, step: str) -> str:
 
 def supabase_url() -> str:
     """Return the Supabase project address, for example https://<project>.supabase.co."""
-    return _required("SUPABASE_URL", "Part 3, then Part 4")
+    return _required("SUPABASE_URL", "Part 3, then Part 5")
 
 
 def supabase_secret_key() -> str:
     """Return the Supabase secret key for server-side access (storage and database)."""
-    return _required("SUPABASE_SECRET_KEY", "Part 3, then Part 4")
+    return _required("SUPABASE_SECRET_KEY", "Part 3, then Part 5")

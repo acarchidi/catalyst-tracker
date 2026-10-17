@@ -15,7 +15,7 @@ The repository `catalyst-tracker` exists. If the Claude GitHub App is set to "On
 3. Click the new workspace.
 4. Open the **Limits** tab, click **Change Limit**, and enter **50** ($50 a month).
 5. Open the **API Keys** tab and click **Create Key**. Name it `catalyst-tracker`, then click **Create Key**.
-6. Copy the key now; it is shown once. Keep it in a private note until Part 4.
+6. Copy the key now; it is shown once. Keep it in a private note until Part 5.
 
 ## Part 3 — Supabase database (5 minutes)
 
@@ -27,58 +27,29 @@ The repository `catalyst-tracker` exists. If the Claude GitHub App is set to "On
    - **Region**: **East US (North Virginia)**
    - Click **Create new project** and wait about 2 minutes
 4. Copy into your note:
-   - **Project URL**: click **Connect** at the top; it looks like `https://xxxx.supabase.co`
-   - **Secret key**: gear icon (**Project Settings**), then **API Keys**; copy the key that starts with `sb_secret_`. If none is listed, click the button to create one
+   - **Project URL**: shown on the project's home page, like `https://xxxx.supabase.co`
+   - **Secret key**: **API Keys** at the bottom of the home page (or gear icon, then **API Keys**); copy the key that starts with `sb_secret_`. If none is listed, click the button to create one
+   - **Session pooler string**: green **Connect** button, then **Session pooler**; copy it exactly, with `[YOUR-PASSWORD]` left in. The password itself goes in its own secret, without square brackets
 
-## Part 4 — Give Claude Code the keys (5 minutes)
+## Part 4 — Not needed
 
-This creates a separate environment so other projects' sessions never see these keys.
+Live jobs run on GitHub's machines (ADR 0011), so the keys go only into GitHub's secrets (Part 5). A coding session's network cannot reach the live database anyway.
 
-1. Go to **claude.ai/code**.
-2. Under the message box, click the first control (the environment selector), then **New environment**.
-3. **Name**: `catalyst-tracker`.
-4. **Network access**: choose **Custom**. Paste this list into **Allowed domains**, then tick **Also include default list of common package managers**:
+## Part 5 — Keys in GitHub's secrets (done 2026-10-17 for Supabase and SEC)
 
-```
-api.anthropic.com
-*.supabase.co
-*.supabase.com
-sec.gov
-*.sec.gov
-clinicaltrials.gov
-*.clinicaltrials.gov
-*.fda.gov
-www.federalregister.gov
-*.ncbi.nlm.nih.gov
-*.globenewswire.com
-*.businesswire.com
-*.prnewswire.com
-```
+1. Go to **github.com/acarchidi/catalyst-tracker/settings/secrets/actions**.
+2. For each row, click **New repository secret**, type the name exactly, paste the value, click **Add secret**.
 
-5. **Environment variables**: paste these lines, replacing each `...` with the value from your note:
+| Name | Value |
+| --- | --- |
+| `SUPABASE_URL` | Project URL (Part 3) |
+| `SUPABASE_SECRET_KEY` | `sb_secret_` key (Part 3) |
+| `SUPABASE_DB_PASSWORD` | Database password (Part 3) |
+| `SUPABASE_DB_URL` | Session pooler string, with `[YOUR-PASSWORD]` left in (Part 3) |
+| `SEC_CONTACT_EMAIL` | The project's SEC contact address: a new address made for this project, not a personal one; the SEC requires one on every automated request |
+| `CATALYST_ANTHROPIC_API_KEY` | Anthropic key (Part 2), when Phase 1 needs it |
 
-```
-CATALYST_ANTHROPIC_API_KEY=...
-SUPABASE_URL=...
-SUPABASE_SECRET_KEY=...
-SUPABASE_DB_PASSWORD=...
-SEC_CONTACT_EMAIL=...
-```
-
-6. Click **Add environment**. Start every catalyst-tracker session in this environment.
-
-The key is deliberately not named `ANTHROPIC_API_KEY`, so Claude Code never bills its own coding work to it.
-
-**SEC contact email:** use a new free address made for this project rather than your personal one. The SEC requires every automated request to carry a contact email.
-
-## Part 5 — The same keys in GitHub, for scheduled jobs
-
-Claude Code tries this step itself with `gh secret set` (after asking you). If GitHub refuses, do it by hand:
-
-1. Go to the repository, then **Settings**, then **Secrets and variables**, then **Actions**.
-2. Click **New repository secret**. Name `CATALYST_ANTHROPIC_API_KEY`, paste the value, click **Add secret**.
-3. Repeat for the other four names in Part 4.
-4. Delete your note with the keys.
+3. Delete your note with the keys.
 
 ## Part 6 — Reviewer key, so pull requests merge themselves (5 minutes, once)
 
