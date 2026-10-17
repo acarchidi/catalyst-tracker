@@ -93,6 +93,7 @@ def test_phrases_that_lean_on_the_document_date(
         "in 26",
         "March 26",  # a day before the document's date with no year: next year or a past event?
         "June 15",
+        "by year-end 26",  # a two-digit year needs an apostrophe here too (review of PR #14)
     ],
 )
 def test_vague_or_impossible_phrases_give_no_window(text: str) -> None:
@@ -114,6 +115,7 @@ def test_a_day_without_a_year_is_that_day_in_the_document_year_if_still_ahead(te
         ("'27", _window(date(2027, 1, 1), date(2027, 12, 31), DatePrecision.YEAR)),
         ("Q1 27", _window(date(2027, 1, 1), date(2027, 3, 31), DatePrecision.QUARTER)),
         ("H2 26", _window(date(2026, 7, 1), date(2026, 12, 31), DatePrecision.HALF)),
+        ("by year-end '27", _window(PUBLISHED, date(2027, 12, 31), DatePrecision.YEAR)),
     ],
 )
 def test_two_digit_years_need_an_apostrophe_except_in_compact_forms(
