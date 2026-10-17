@@ -134,22 +134,23 @@ flowchart TD
   D --> O[Web app, API, MCP, assistant]
   D --> A[Auditor agent]
   A -- re-check findings --> V
-  X[Orchestrator: reads run results, alerts, weekly summary] -.-> C
+  X[Orchestrator: watches runs; may pause, hold, re-run, roll back] -.-> C
 ```
 
 Collection and publishing are plain code; AI agents handle reading, judging, and drafting.
 
 | Agent | Job | Can access | Cannot |
 | --- | --- | --- | --- |
-| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and alerts you only when something needs you (a failed job, a spending cap reached, a decision that is yours), plus a plain-English weekly summary with the error rate (owner decision 2026-10-17) | Job queue, run logs | Read web text; write data |
+| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and alerts you only when something needs you (a failed job, a spending cap reached, a decision that is yours), plus a plain-English weekly summary with the error rate (owner decision 2026-10-17). It watches every product agent and may stop, hold, and re-run: pause a role, hold a run's records from publishing, re-run a job once a day, or go back to the last prompt version that passed its tests. Plain-code rules in `config/orchestrator.toml` decide when; each action is recorded and reported to you with how to undo it (owner decision 2026-10-17; ADR 0019) | Job queue, run logs, check results, spend | Read web text; change records (it writes only its own pause, hold, and action rows); write prompts; change thresholds or caps; lift a pause or hold you set |
 | Extractor | Turns one source document into structured claims with quotes | The document it is given | Browse, call tools, write to live data |
 | Entity resolver | Maps names to canonical company, drug, and trial IDs | Reference tables | Write to live data; ambiguous matches go to review |
 | Verifier | Re-extracts with a different prompt (later a different provider) and runs cross-checks | Staged claims, source copies | Publish |
 | Auditor | Re-checks published records: sources still say the same, links alive, dates passed without an outcome | Live data (read), source fetches via collectors | Publish; findings re-enter verification |
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
 | Analyst | Drafts benchmarks, market-size estimates, and catalyst-scenario inputs | Published data, published literature | Publish; all drafts go to review in v1 |
-| Marketing | Drafts newsletter issues and posts from published data | Published data | Post anything; you approve each item |
+| Marketing and outreach | Drafts the weekly newsletter, notes to named people (journalists, newsletter writers, podcast hosts, investor communities), directory submissions, and public-page text, all from published data; no social posts for now (owner decision 2026-10-17; ADR 0020) | Published data; contact pages fetched by collectors | Send, post, or submit anything; a plain-code sender acts only on text you approved word for word |
 | Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; a merge workflow merges its pull requests after CI and the reviewer agent pass, and you merge changes to that workflow or the review |
+| Build overseer | A GitHub Actions job on every pull-request event and once a day: checks that each pull request does the next roadmap item and follows `AGENTS.md`, finds stuck or drifting work, and keeps a pinned "Build status" issue listing what each building agent is doing (owner decision 2026-10-17; ADR 0019) | Repository, pull requests, CI results (read-only; the model answers in JSON and a plain-code script acts) | Push code, approve, or merge; the script may comment, fail the "Overseer" check, add or remove only its own `overseer-hold` label, re-run a failed CI job once, and open an issue for a decision that is yours |
 | Research assistant (user-facing) | Helps users find features and data | Published data through the public API | Web browsing; advice; anything a user could not see themselves |
 
 **Prompt-injection defenses:** extractors output only schema-valid JSON; every value must match a verbatim quote found in the stored source; secrets never enter any prompt; each agent has its own least-privilege credentials.
@@ -394,7 +395,8 @@ The product stays an impersonal publication, which keeps it outside investment-a
 | Source content | Store facts, links, and short verification quotes; never republish full press releases or abstracts; respect conference embargoes. |
 | Price data | Use only within the vendor license; serve event-window statistics, not raw price series (see Open questions). |
 | Privacy | Privacy policy; collect minimal personal data; honor deletion requests. |
-| Marketing automation | Only scheduled original posts; no automated replies or DMs. X requires written approval for AI reply bots and suspended about 42,000 accounts for automated replies in April 2026. |
+| Marketing automation | Only scheduled original posts; no automated replies or DMs. X requires written approval for AI reply bots and suspended about 42,000 accounts for automated replies in April 2026. Social posts are out of scope for now (owner decision 2026-10-17). |
+| Email and outreach | CAN-SPAM covers all commercial email, business-to-business included: accurate headers and subjects, a physical postal address, an opt-out that works for at least 30 days, and opt-outs honored within 10 business days ([FTC guide](https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business)). Notes say they are promotional; opting out takes only a reply or one page; opted-out addresses are never sold or passed on; the sender stays responsible for its email service. Outreach uses public professional contact details of US contacts only for now, one note plus at most one follow-up per person, and you approve every item: its text, its recipients, and its channel (ADR 0020). |
 | Business setup | Entity, terms of service, Stripe, and sales tax on digital subscriptions: deferred, but required before taking payment. |
 
 ## Costs
@@ -457,7 +459,9 @@ These are starting defaults; the evaluation harness decides each role's model on
 | Outcome and auditor agents | Sonnet-class | Same task shape as extraction |
 | Analyst drafts (benchmarks, market size, scenario inputs) | Opus-class | Hardest reasoning, low volume, every draft reviewed |
 | Research assistant | Sonnet-class | Speed and cost per question |
-| Orchestrator | Sonnet-class | Routing, not judgment |
+| Orchestrator | Sonnet-class | Routing, not judgment; plain-code rules choose its actions |
+| Build overseer | Opus-class, on the review's key | Judges alignment across pull requests; one run per event plus a daily sweep |
+| Marketing and outreach drafts | Sonnet-class | Short drafts from published data; every item reviewed |
 
 **Cost guardrails:** each role has a daily spend cap in the config file. A role that reaches its cap stops and alerts you; it never switches to a pricier model on its own.
 
@@ -515,7 +519,8 @@ Foreign companies (ADR 0021): a US depositary share's market value needs its rat
 - [ ] How far back to backfill outcomes (2016 or 2010)
 - [ ] Hours per week you can give the review queue; this sets how fast coverage can grow
 - [ ] Business setup: entity, terms of service, privacy policy, Stripe, sales tax (deferred; needed before taking payment)
-- [ ] Distribution plan: public pages, newsletter, your byline (you are still deciding)
+- [ ] Distribution plan: public pages, newsletter, direct outreach, and listings chosen; social posts left out for now (owner decision 2026-10-17); your byline still to decide
+- [ ] A physical postal address for commercial email (a registered PO box or private mailbox is enough), set up with the business
 - [ ] Whether $15 is the right long-term price once benchmarks ship
 
 Build phases, the tracker, and the decision log: [docs/roadmap.md](roadmap.md)

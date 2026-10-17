@@ -187,6 +187,18 @@ def test_claims_are_made_only_for_catalysts_whose_quote_was_found() -> None:
     }
 
 
+def test_the_second_reading_uses_its_own_role_prompt_and_agent_name() -> None:
+    """ADR 0018, part 2: the verifier's claims are stored apart from the extractor's."""
+    config = CONFIG.model_copy(update={"roles": {**CONFIG.roles, "verifier": CONFIG.roles["extractor"]}})
+    fake = _Fake({"catalysts": [_item()]})
+    client = ModelClient(config, {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
+    reading = extract_catalysts(
+        client, TEXT, PUBLISHED, role="verifier", prompt_ref=("verify_catalysts", "1.0.0")
+    )
+    (claim,) = catalyst_claims(reading, uuid4(), NOW, agent="verifier")
+    assert (claim.agent, claim.prompt_id) == ("verifier", "verify_catalysts")
+
+
 def test_a_stored_claim_names_its_problems_by_short_code() -> None:
     """Review of PR #17: the stored format stays the one PR #16 shipped."""
     quote = "Enrollment in the BRIGHT trial was completed in the third quarter of 2026."

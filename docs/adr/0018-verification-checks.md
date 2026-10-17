@@ -42,11 +42,17 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - A claim with no drug name passes `names_matched`. The second extraction (part 2) compares the drug field, so a missing drug there is a disagreement.
       - Any other phase written in the quote ("after Phase 2 data, Phase 3 AZURE-1") can fail a good claim. The error sends the claim to review, never to publication; part 3 revisits it with the planted-error results.
       - With several matched trials, a stated phase needs to match only one of them.
-   2. **Second extraction:**
-      - a different prompt reads the same release;
-      - fields are compared one by one (type, window, drug, trial);
-      - a disagreement fails the check;
-      - the verifier prompt gets its own scores on the gold set, like the extractor's.
+   2. **Second extraction** (two pull requests: the prompt and the comparison first, then the job):
+      - a different prompt, `verify_catalysts`, reads the same release on the verifier role. It never sees the extractor's answer, so it cannot simply agree with it. It answers in the extractor's format, and its claims are stored under the agent name `verifier`. They are never published; they only vouch for the extractor's claims;
+      - plain code (`catalyst.verify.second`) pairs each extracted catalyst with one of the verifier's. Two readings can be the same event when their quotes overlap, or, in different sentences, when they give the same type, the same complete window, and the same named drug. The closest pairs are taken first, so the order of either list never changes an outcome. Each verifier catalyst vouches for one extracted catalyst at most;
+      - the check `second_reading_agrees` passes only when the type, the window, and the drug all agree:
+        - drug names agree when they match apart from case, spaces, and punctuation (every letter counts, in any script), or when the reference tables call them the same drug;
+        - a missing window never agrees;
+        - a missing drug never agrees, except that a deal (`merger_acquisition`) need not name one;
+        - anything else fails with both values, and an event the verifier did not find fails too;
+      - trials are left to part 3, which checks them against the registry. The extractor names no trial field, so the two readings have nothing to compare;
+      - the verifier prompt gets its own scores on the same gold set (`catalyst eval-extractor --prompt verify_catalysts`), stored in `evals/verify_catalysts/`. The second reading runs live only once those scores match the current prompt and model. The extractor's first-version exemption (`unscored.json`) does not apply to it (review of PR #31). Until then, claims have no `second_reading_agrees` row, and the publish gate counts that as not passing. Before any scores or floor are committed there, `evals/verify_catalysts/baseline.json` and `unscored.json` join `OWNER_PATHS`, in a pull request the owner merges;
+      - both readings use the same model family for now. The spec counts that as weak evidence, so a second provider stays the plan.
    3. **Cross-source and change checks:**
       - the same fact from a second document (8-K versus release versus registry);
       - an advisory meeting needs a Federal Register notice;

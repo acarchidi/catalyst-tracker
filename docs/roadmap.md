@@ -23,9 +23,11 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [x] Extractor agents and prompt evaluation sets
 - [x] Entity resolver and reference tables. Includes trials of several drugs: every drug and combination is listed, each from a quoted source sentence, marked as tested alone or in combination (owner ruling, 2026-10-17; `evals/extract_catalysts/README.md`, rule 3)
 - [ ] Verification checks and publish gate
+- [ ] Build overseer: a GitHub Actions job on every pull-request event and once a day that checks each pull request against the roadmap and `AGENTS.md`, comments, holds the merge on a blocking finding, re-runs a failed CI job once, escalates owner decisions, and keeps a pinned "Build status" issue. The model only answers in JSON; `scripts/overseer_verdict.py` acts and touches only its own `overseer-hold` label. The workflow lands first; then "Overseer" becomes a required check, the robot also respects `overseer-hold`, and the Overseer workflow wakes the robot. The verdict script joins `OWNER_PATHS`; checkpoint CP8 (owner request 2026-10-17; ADR 0019)
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
 - [ ] Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary (owner decision 2026-10-17)
+- [ ] Orchestrator controls: plain-code rules in `config/orchestrator.toml` may pause a role, hold a run's records from publishing, re-run a job once a day, or go back to the last prompt version that passed its tests; every action recorded and reported to the owner with how to undo it; held claims publish only when the owner clears them; rollback only to a version that passes today's floor and output format, with a per-version pass record in `evals/`; `config/orchestrator.toml` joins `OWNER_PATHS`; checkpoint CP8 (owner request 2026-10-17; ADR 0019)
 - [ ] Foreign companies listed in the US (owner request 2026-10-17; ADR 0021). They are already on the coverage list, but their filings are not read yet:
   - forms: 6-K press releases (every EX-99 exhibit, or the main document when there is none), 20-F and 40-F annual reports, half-year and quarterly results on 6-K, F-1, F-3, and F-10 offerings, and their amendments; for companies that file 8-K, 10-Q, and 10-K by choice, those forms;
   - triage screens out 6-Ks that are not catalyst news (such as buyback notices) before extraction;
@@ -44,7 +46,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Show or hide any field: every table and record view lets the viewer hide fields they do not want; the choice is remembered on their device, and for signed-in users once accounts exist (owner request, 2026-10-17)
 - [ ] Catalyst timeline: each catalyst drawn as a bar across its date window on a time axis, so a quarter-wide window looks wider than a fixed date; rows by company or drug, side by side for comparison; past windows faded; each bar links to its record and source (owner request, 2026-10-17)
 - [ ] Read-only MCP server and directory listings
-- [ ] Weekly email and marketing-agent drafts (owner approves each)
+- [ ] Marketing and outreach agent: weekly newsletter, notes to named people, directory listings, and search-friendly page text, all drafted from published data; the owner approves every item (text, recipients, and channel), and a plain-code sender acts only on what was approved; CAN-SPAM rules built in; US contacts only for now; the sender stays off until business setup gives a postal address, a sending service, and a sending domain; checkpoint CP7 (owner decision 2026-10-17; ADR 0020)
 - [ ] Business setup: entity, terms, privacy policy, Stripe, sales tax (owner)
 
 **Gate 3:** business set up (entity, terms, Stripe, sales tax).
@@ -105,6 +107,8 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 | Date | Decision |
 | --- | --- |
 | 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US (already on the coverage list) through the EDGAR forms each actually files (6-K, 20-F, 40-F, F-1, F-3, F-10, or the domestic forms) in Phase 1 before the gold set grows, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
+| 2026-10-17 | ADR 0020: a marketing and outreach agent drafts the newsletter, notes to named people, directory listings, and page text from published data; the owner approves every item and a plain-code sender acts only on approved text; no social posts for now (owner decisions) |
+| 2026-10-17 | ADR 0019: oversight in two parts, both able to stop, hold, and re-run but not change data or prompts: a pipeline orchestrator whose actions plain-code rules choose, and a build overseer that checks every pull request against the roadmap and `AGENTS.md` and is a required check for the merge robot (owner decisions) |
 | 2026-10-17 | ADR 0018: verification stores each check's latest outcome per claim (pass, fail with reason, not applicable); built in five parts: rule checks, second extraction, cross-source and change checks, the planted-error test, and the publish gate |
 | 2026-10-17 | ADR 0017: catalyst scenarios added (spec and Phase 4): upside and downside scenarios with conditional price-move ranges, peak sales, and risk-adjusted value, plus a later item for reference ranges per trial measure; the "no price targets" rule now excepts only this feature; no securities lawyer review; disclaimers on every page (owner decisions) |
 | 2026-10-17 | ADR 0015 (part 4): each name in an extracted claim gets a stored match (resolved, ambiguous with candidates, or unknown); only a company's own quoted code name creates a drug; study names match only in capitals; roadmap item ticked |
