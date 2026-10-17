@@ -1,0 +1,57 @@
+# 0015 — Entity resolver: exact matching in plain code, ambiguity goes to review
+
+- **Status:** accepted
+- **Date:** 2026-10-17
+- **Roadmap item:** Phase 1, "Entity resolver and reference tables"
+
+## Context
+
+The spec's entity resolver "maps names to canonical company, drug, and trial IDs". It reads reference tables, never writes live data, and sends ambiguous matches to review. A Sonnet-class model handles "ambiguous cases only". AGENTS.md requires tests written first for entity matching.
+
+Sources name the same thing in many ways:
+- SEC writes "VERTEX PHARMACEUTICALS INC / MA"; a press release writes "Vertex".
+- Code names appear as "SPY001", "SPY-001", and "SPY 001".
+- Study names appear as "AZURE-1" and "AZURE 1".
+- Tickers change hands: AGLE belonged to Aeglea (now Spyre) until 2023.
+
+On 2026-10-17 the owner ruled that a trial of several drugs names every drug and combination, marks each as tested alone or in combination, and is found by a search for any of them (`evals/extract_catalysts/README.md`, rule 3).
+
+## Decision
+
+1. **Plain code, exact rules, no model in this item** (`catalyst.resolve`). A name matches once spelling is set aside: case, punctuation, spacing, trademark signs, and, for companies, legal-form words and EDGAR's state suffix (the coverage list's `normalize_name`). A partial name never matches. A model may later suggest candidates for unknown names, but its suggestion goes to review and never resolves a match by itself.
+2. **Each lookup returns a status.**
+   - Resolved: exactly one candidate.
+   - Ambiguous: several candidates. All of them are kept for review.
+   - Unknown: none.
+   - Each result also names the rule that found its candidates.
+3. **Companies.**
+   - An SEC number (CIK) decides alone. An unknown CIK is an unknown company, never a cue to try the name.
+   - Otherwise, a ticker matches the company that held it on the document's date (today's tickers when no date is given).
+   - Otherwise, the current or any former name matches.
+4. **Drugs.**
+   - A generic (INN) or brand name matches for any company, because licensed drugs change hands.
+   - A code name matches only the given company's drugs, because two companies can use the same code. With no company given, a code name two companies share is ambiguous.
+5. **Trials.**
+   - A ClinicalTrials.gov number in the text matches exactly. Two numbers in one text are ambiguous.
+   - Otherwise, a study name matches within the given company's trials.
+6. **Planned parts of this item**, each its own pull request:
+   - **Several drugs per catalyst:**
+     - a `catalyst_drug` table links each catalyst to each drug it concerns, marked alone or in combination;
+     - a `drug_component` table names a combination's parts, only where a source states them;
+     - each link is backed by a claim with a quote. Combination codes such as SPY120 are shown as the company wrote them, and their parts are never inferred from the code.
+   - **Fill the reference tables from stored source copies:**
+     - tickers and former names from SEC company records;
+     - trials, study names, and intervention names from ClinicalTrials.gov records.
+   - **Resolve extracted claims.** Resolved names link the claim. Ambiguous and unknown names wait in the review queue with their candidates.
+
+## Alternatives
+
+- **Fuzzy string matching** (edit distance, token overlap). It turns "SPY001" into "SPY002" and "AZURE-1" into "AZURE-14". A wrong link publishes a wrong fact under a real company, which is worse than a review item.
+- **A model resolves every name.** It costs a call per name and cannot be checked by a test. It also adds a model's errors to a step that exact rules handle for nearly every name.
+- **Global code names.** Two companies can use the same code name, so matching a code name without its company would link one company's catalyst to another company's drug.
+
+## Consequences
+
+- Every resolved link can be explained by one rule, and tests pin each rule.
+- New spellings that the rules do not cover (an abbreviation such as "BMS") go to review until a reference table records them, for example as a former name or an alias. The review queue will show how often this happens. If it happens often, a model that suggests candidates for review becomes worth building.
+- The catalyst's single `drug_id` is replaced in the multi-drug part, by a reversible migration.
