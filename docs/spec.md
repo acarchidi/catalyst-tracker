@@ -55,7 +55,7 @@ $15 a month is below every competitor's paid tier, which runs $20 to $99. The lo
 
 ## Data sources and coverage
 
-All launch sources are free public feeds, and plain code (not AI agents) collects them twice each weekday. Coverage starts with US-listed therapeutics developers filed under SEC industry codes 2834 (pharmaceutical preparations), 2836 (biological products), and 8731 (commercial biological research); building that list needs no price data. It grows toward the 1,500 to 1,800 companies competitors track.
+All launch sources are free public feeds, and plain code (not AI agents) collects them twice each weekday. Coverage starts with US-listed therapeutics developers filed under SEC industry codes 2834 (pharmaceutical preparations), 2836 (biological products), and 8731 (commercial biological research); building that list needs no price data. It grows toward the 1,500 to 1,800 companies competitors track. Foreign companies follow in two stages (owner request 2026-10-17; ADR 0021): first those listed in the US, which file Forms 6-K, 20-F, and 40-F on EDGAR instead of 8-Ks; then companies listed only outside the US, market by market, each source checked for its terms, any key, and its language first.
 
 | Source | What it supplies | Access |
 | --- | --- | --- |
