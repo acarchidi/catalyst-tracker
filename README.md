@@ -12,12 +12,11 @@ Tracks biotech and biopharma catalysts (PDUFA dates, trial readouts, advisory co
 Claude Code checks these at the start of every session with `python3 scripts/check_setup.py` and reminds the owner of anything missing. Step-by-step instructions: [docs/setup.md](docs/setup.md).
 
 - [x] Part 1 — Create the GitHub repository (done 2026-10-16)
-- [ ] Part 2 — Anthropic API key in its own workspace, $50/month limit (5 min)
-- [ ] Part 3 — Supabase account and project (5 min)
-- [ ] Part 4 — Claude Code cloud environment `catalyst-tracker` with the keys and allowed domains (5 min)
-- [ ] Part 5 — Same keys as GitHub Actions secrets (Claude Code tries this itself first)
-- [ ] Part 6 — Reviewer key, so pull requests merge themselves (5 min)
-- [ ] Choose a project email for SEC requests (goes in Part 4)
+- [ ] Part 2 — Anthropic API key in its own workspace, $50/month limit (5 min; needed for Phase 1)
+- [x] Part 3 — Supabase account and project (done 2026-10-17)
+- [x] Part 4 — Not needed (live jobs run in GitHub Actions, ADR 0011)
+- [x] Part 5 — Keys in GitHub's secrets (Supabase and SEC done 2026-10-17; the Anthropic key joins in Phase 1)
+- [x] Part 6 — Reviewer key, so pull requests merge themselves (done 2026-10-16)
 
 Not needed yet; Claude Code says when: Vercel, Resend, Sentry, domain (Phase 2); business entity and Stripe (Gate 3); Tiingo price data (Phase 3).
 
@@ -47,7 +46,7 @@ Copies go to `var/snapshots/` unless a command gets `--snapshot-store supabase` 
 
 ## How to start building
 
-1. Start a Claude Code session on this repository (use the `catalyst-tracker` environment once Part 4 is done).
+1. Start a Claude Code session on this repository.
 2. Say: **start implementing**.
 
 Claude Code runs the setup check, reminds you of anything missing, works through the roadmap, and sends you a preview at each checkpoint without stopping (ADR 0007). Reply with anything you want changed, at any time.

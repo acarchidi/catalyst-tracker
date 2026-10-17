@@ -22,7 +22,7 @@ def test_missing_sec_contact_email_exits_with_setup_step(
 ) -> None:
     monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
     assert main(["sec-press-release", "--cik", "875320"]) == 2
-    assert "docs/setup.md Part 4" in capsys.readouterr().err
+    assert "docs/setup.md Part 5" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize(
@@ -83,7 +83,7 @@ def test_coverage_build_needs_the_sec_contact_email(
 ) -> None:
     monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
     assert main(["coverage-build"]) == 2
-    assert "docs/setup.md Part 4" in capsys.readouterr().err
+    assert "docs/setup.md Part 5" in capsys.readouterr().err
 
 
 def test_coverage_build_writes_the_list_and_the_review_file(
@@ -138,7 +138,7 @@ def test_check_links_needs_the_sec_contact_email(
     monkeypatch.delenv("SEC_CONTACT_EMAIL", raising=False)
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["check-links"]) == 2
-    assert "docs/setup.md Part 4" in capsys.readouterr().err
+    assert "docs/setup.md Part 5" in capsys.readouterr().err
 
 
 def test_check_links_fails_when_any_link_does_not_work(

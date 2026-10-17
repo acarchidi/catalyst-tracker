@@ -12,7 +12,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 2. Show the owner the result.
 3. If anything is missing, quote the matching steps from `docs/setup.md` word for word, and say which upcoming roadmap item needs it.
 4. Keep working on items that do not need the missing setting. Building, schemas, and tests on recorded fixtures need no keys. Remind the owner again before starting any item that does need it.
-5. If the session has all five settings but GitHub Actions secrets are missing, ask the owner: "May I copy the five settings into the repository's GitHub Actions secrets?" On yes, run `gh secret set NAME --body "$NAME"` for each, never printing a value. If GitHub refuses, give the owner `docs/setup.md` Part 5.
+5. Live jobs read their settings from the repository's GitHub Actions secrets, not from the session (ADR 0011). A live job that fails on a missing setting names it; then give the owner `docs/setup.md` Part 5.
 
 ## How work proceeds
 
@@ -20,6 +20,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 - Do not stop at checkpoints (owner decision, 2026-10-16; ADR 0007). At every checkpoint in `docs/quality-gates.md`, run its review, fix what it finds, post the plain-English preview to the owner, and continue with the next item. An objection from the owner, whenever it comes, becomes the next item.
 - For an **Opus** checkpoint, run the fresh-eyes review with a reviewer subagent on the Opus model.
 - Stop and ask the owner only before something that cannot be undone or reaches outside the project: making data, pages, or the API public; sending anything to people outside the project; spending money beyond the daily caps in `config/models.toml`; creating accounts or keys. When every remaining item needs something only the owner can give (a key, an account, a judgment), stop and say exactly what is needed.
+- Keep the owner's setup work to a minimum (owner request, 2026-10-17). Prefer designs that need no new account or key. When one is unavoidable, gather every account and key the next stretch of work needs into one sitting, give one small step at a time with exact names and copy-ready values, and check the result yourself instead of asking the owner to.
 - If an approach fails twice, stop and explain the problem instead of trying a third variation.
 - Every design choice the spec leaves open becomes an ADR in `docs/adr/NNNN-title.md` (context, decision, alternatives, consequences) and a line in the roadmap's decision log.
 - Tick roadmap items in the pull request that finishes them.
@@ -63,9 +64,11 @@ Read settings only from environment variables. Names:
 | Variable | Use |
 | --- | --- |
 | `CATALYST_ANTHROPIC_API_KEY` | The product's own model calls. Deliberately not `ANTHROPIC_API_KEY`, so coding sessions never bill to it. |
-| `SUPABASE_URL` | Database and storage address |
-| `SUPABASE_SECRET_KEY` | Server-side database access |
-| `SUPABASE_DB_PASSWORD` | Direct Postgres connection for migrations |
+| `SUPABASE_URL` | Storage address |
+| `SUPABASE_SECRET_KEY` | Server-side storage access |
+| `SUPABASE_DB_URL` | Live database: Supabase's Session pooler string, with its `[YOUR-PASSWORD]` placeholder left in |
+| `SUPABASE_DB_PASSWORD` | Live database password, filled into `SUPABASE_DB_URL` by the code |
+| `CATALYST_DATABASE_URL` | A local or test database; wins over `SUPABASE_DB_URL` when set |
 | `SEC_CONTACT_EMAIL` | Contact address in the SEC User-Agent header |
 
 Never put a secret in code, prompts, logs, test fixtures, or pull request text. Never print a secret's value.

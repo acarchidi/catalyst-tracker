@@ -33,12 +33,15 @@ class Requirement:
     purpose: str
 
 
+# Live jobs run in GitHub Actions and read these from the repository's Actions secrets
+# (ADR 0011); a coding session does not need them and cannot reach the live database.
 REQUIREMENTS: tuple[Requirement, ...] = (
-    Requirement("CATALYST_ANTHROPIC_API_KEY", "Part 2, then Part 4", "model calls by the product's agents"),
-    Requirement("SUPABASE_URL", "Part 3, then Part 4", "database and storage address"),
-    Requirement("SUPABASE_SECRET_KEY", "Part 3, then Part 4", "server-side database access"),
-    Requirement("SUPABASE_DB_PASSWORD", "Part 3, then Part 4", "direct Postgres connection for migrations"),
-    Requirement("SEC_CONTACT_EMAIL", "Part 4", "contact address the SEC requires on every request"),
+    Requirement("CATALYST_ANTHROPIC_API_KEY", "Part 2, then Part 5", "model calls by the product's agents"),
+    Requirement("SUPABASE_URL", "Part 3, then Part 5", "storage address"),
+    Requirement("SUPABASE_SECRET_KEY", "Part 3, then Part 5", "server-side storage access"),
+    Requirement("SUPABASE_DB_URL", "Part 3, then Part 5", "live database address (Session pooler)"),
+    Requirement("SUPABASE_DB_PASSWORD", "Part 3, then Part 5", "live database password"),
+    Requirement("SEC_CONTACT_EMAIL", "Part 5", "contact address the SEC requires on every request"),
 )
 
 TIMEOUT_SECONDS = 15
@@ -60,7 +63,7 @@ def _get(url: str, headers: dict[str, str]) -> int:
 def _describe(status: int) -> str:
     """Turn an HTTP status into a short verdict."""
     if status == 0:
-        return "UNREACHABLE (check the environment's allowed domains, docs/setup.md Part 4)"
+        return "UNREACHABLE (check the environment's allowed domains, docs/setup.md Part 5)"
     if 200 <= status < 300:
         return "works"
     if status in (401, 403):
@@ -121,24 +124,22 @@ def main() -> int:
     args = parser.parse_args()
 
     env = {req.name: os.environ.get(req.name, "") for req in REQUIREMENTS}
-    missing = [req for req in REQUIREMENTS if not env[req.name]]
 
     print("Setup check (docs/setup.md has the steps)\n")
-    print("Session environment variables:")
-    for req in REQUIREMENTS:
-        mark = "ok     " if env[req.name] else "MISSING"
-        print(f"  [{mark}] {req.name:<28} {req.purpose}  ->  {req.step}")
-
     secrets = github_secret_names()
-    print("\nGitHub Actions secrets (needed for scheduled jobs, Part 5):")
+    print("GitHub Actions secrets (live jobs read these, Part 5):")
     if secrets is None:
-        print(
-            "  [unknown] could not list them from here; Claude Code will try `gh secret set`, or see Part 5"
-        )
+        print("  [unknown] cannot be listed from a coding session; a live job names any missing one")
+        missing: list[Requirement] = []
     else:
+        missing = [req for req in REQUIREMENTS if req.name not in secrets]
         for req in REQUIREMENTS:
             mark = "ok     " if req.name in secrets else "MISSING"
-            print(f"  [{mark}] {req.name}")
+            print(f"  [{mark}] {req.name:<28} {req.purpose}  ->  {req.step}")
+
+    print("\nIn this session (optional; for local runs only):")
+    for req in REQUIREMENTS:
+        print(f"  [{'set    ' if env[req.name] else 'not set'}] {req.name}")
 
     if args.online:
         print("\nLive checks:")
@@ -149,7 +150,7 @@ def main() -> int:
         first = missing[0]
         print(f"\nNEXT STEP FOR THE OWNER: {first.step} in docs/setup.md (provides {first.name}).")
         return 1
-    print("\nAll session settings are present.")
+    print("\nNothing for the owner to do here.")
     return 0
 
 

@@ -329,3 +329,22 @@ def test_an_empty_old_value_is_stored_as_sql_null(chain: dict[str, UUID], engine
     with engine.connect() as connection:
         empty = connection.execute(text("SELECT count(*) FROM catalyst_change WHERE old_value IS NULL"))
         assert empty.scalar_one() == 1
+
+
+def test_every_table_is_closed_to_supabase_public_api_roles(engine: Engine) -> None:
+    # Supabase serves tables in the public schema to anyone holding the project's publishable
+    # key unless row-level security is on. With it on and no policies, only the server's
+    # own connection (table owner, or the secret key) can read or write (ADR 0011).
+    with engine.connect() as connection:
+        open_tables = (
+            connection.execute(
+                text(
+                    "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity "
+                    "AND c.relname <> 'alembic_version'"
+                )
+            )
+            .scalars()
+            .all()
+        )
+    assert open_tables == []

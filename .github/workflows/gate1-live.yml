@@ -1,0 +1,76 @@
+name: Gate 1 live run
+
+# Runs Gate 1 against the live Supabase database (docs/gate1.md, ADR 0010, ADR 0011):
+# migrate, collect the 50 Gate 1 companies, check every stored copy and link, and print the
+# 10-record sample. Started by hand from the Actions tab; safe to re-run (every job is
+# idempotent). Secrets come from the repository's Actions secrets (docs/setup.md Part 5).
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  gate1:
+    name: Gate 1 live run
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Bring the live database up to date
+        run: uv run alembic upgrade head
+
+      - name: Collect the 50 Gate 1 companies
+        run: |
+          set +e
+          uv run catalyst collect --companies config/gate1_companies.toml --since 2026-07-01 \
+            --snapshot-store supabase > "$RUNNER_TEMP/collect.json"
+          status=$?
+          { echo "## Collection"; echo '```json'; cat "$RUNNER_TEMP/collect.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Check every stored copy against its fingerprint
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          uv run catalyst snapshots-verify --snapshot-store supabase > "$RUNNER_TEMP/verify.json"
+          status=$?
+          { echo "## Stored copies"; echo '```json'; cat "$RUNNER_TEMP/verify.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      - name: Check every source link
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          uv run catalyst check-links > "$RUNNER_TEMP/links.md"
+          status=$?
+          tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/links.md"
+          exit "$status"
+
+      - name: Ten records for the owner to click
+        if: ${{ !cancelled() }}
+        run: |
+          set +e
+          uv run catalyst sample-records > "$RUNNER_TEMP/sample.md"
+          status=$?
+          { echo "## Ten records to click"; cat "$RUNNER_TEMP/sample.md"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
