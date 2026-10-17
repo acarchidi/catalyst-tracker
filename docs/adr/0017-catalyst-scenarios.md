@@ -14,9 +14,12 @@ The spec banned price targets, and said "no predictions in v1". Any predictive f
 
 1. **Owner decisions (2026-10-17):**
    - Each scenario shows estimated peak sales, risk-adjusted value as a share of market value, and a price-move range, never a single target.
+   - Downside scenarios (a result below what is needed, a missed endpoint, a safety problem, a delay) sit beside the upside ones; owner confirmed 2026-10-17.
+   - Later: reference ranges for each trial measure, showing what result would likely read as negative, in line with the standard of care, or clearly positive, each linked to its sources.
    - The "no price targets" hard rule excepts only this feature.
-   - There is no securities lawyer review.
+   - There is no securities lawyer review (owner confirmed 2026-10-17).
    - Every page, alert, API response, and MCP tool description that carries scenarios shows "Estimate. Not financial advice."
+   - Free users see one featured catalyst's scenarios a week; the accuracy record is always free (owner confirmed 2026-10-17, "for now").
    - Personalized advice and buy/sell ratings stay banned.
 2. **Defaults the owner did not override:**
    - An AI analyst drafts the inputs, and the owner approves them before they publish.
@@ -26,6 +29,7 @@ The spec banned price targets, and said "no predictions in v1". Any predictive f
    - Each program is valued as patients × share × net price over launch, uptake, and exclusivity, times operating margin, less remaining development cost, adjusted for partner terms, probability-weighted, and discounted.
    - The company's value in a scenario is: program value + other programs + cash − debt.
    - The price-move range is (company value in the scenario ÷ market value) − 1. Its ends come from the low and high market-size cases.
+   - Dilution: a company that must raise cash before launch (cash-runway flags) has the expected new shares counted in each scenario (from the PR #27 review).
    - "Before" is the market's own price, not our model's.
 4. **Inputs this ADR's build must pin down, with a named source for each:**
    - discount rate;
