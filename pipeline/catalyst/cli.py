@@ -44,7 +44,7 @@ from catalyst.snapshots import (
 )
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
-from catalyst.verify.second_run import run_second_reading, second_reading_problems
+from catalyst.verify.second_run import run_second_reading
 
 NEW_YORK = ZoneInfo("America/New_York")
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
@@ -260,18 +260,6 @@ def _extract(args: argparse.Namespace) -> int:
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
         report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
         # The extraction stands if a later step fails; each re-runs next time.
-        try:
-            second: dict[str, Any] = run_second_reading(
-                sessionmaker(engine),
-                store,
-                client,
-                model=config.roles[VERIFIER_ROLE].model,
-                limit=args.limit,
-                now=_utc_now,
-                problems=second_reading_problems(config),
-            ).summary()
-        except SQLAlchemyError as error:
-            second = {"error": f"{type(error).__name__}: the second reading did not finish"}
         checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
         try:
             matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now).summary()
@@ -282,14 +270,22 @@ def _extract(args: argparse.Namespace) -> int:
                 checks = run_checks(sessionmaker(engine), _utc_now).summary()
             except SQLAlchemyError as error:
                 checks = {"error": f"{type(error).__name__}: checks did not finish"}
+        # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
+        try:
+            second: dict[str, Any] = run_second_reading(
+                sessionmaker(engine), store, client, config, limit=args.limit, now=_utc_now
+            ).summary()
+        except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
+            second = {"error": f"{type(error).__name__}: the second reading did not finish"}
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary() | {"second_reading": second, "matches": matches, "checks": checks}
+    summary = report.summary() | {"matches": matches, "checks": checks, "second_reading": second}
     print(json.dumps(summary, indent=2))
-    return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
+    second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
+    return 1 if summary["documents_failed"] or summary["stopped_early"] or second_failed else 0
 
 
 def _resolve(_args: argparse.Namespace) -> int:
