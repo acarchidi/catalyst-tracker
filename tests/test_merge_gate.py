@@ -163,6 +163,7 @@ def test_command_line_prints_the_decision(tmp_path: Path) -> None:
         "pyproject.toml",
         "pipeline/catalyst/cli.py",
         "evals/extract_catalysts/scores.json",
+        "evals/verify_catalysts/scores.json",  # the owner-only floor protects it (ADR 0018, part 2)
     ],
 )
 def test_ordinary_paths_merge(path: str) -> None:

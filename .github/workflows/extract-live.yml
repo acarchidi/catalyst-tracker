@@ -8,7 +8,7 @@ name: Extract catalysts (live)
 #   (ADR 0014): the extractor's, or the verifier's second reading (ADR 0018, part 2). The
 #   scores go to the job summary for the coding session to commit.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
-# release, inside the extractor's daily cap (config/models.toml).
+# release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 
 on:
   workflow_dispatch:

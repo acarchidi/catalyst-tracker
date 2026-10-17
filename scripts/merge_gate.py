@@ -25,7 +25,7 @@ CHECK_APP = "github-actions"
 HOLD_LABEL = "hold"
 # Paths that change who or what decides a merge: the robot and the review, the rules the
 # reviewer judges by (it reads them from the pull request), settings that make a required
-# check weaker, the spending caps, and the extractor's score floor. The robot never merges these;
+# check weaker, the spending caps, and the score floors. The robot never merges these;
 # the owner does.
 OWNER_PATHS = (
     ".github/workflows/",
