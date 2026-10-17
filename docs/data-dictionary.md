@@ -263,7 +263,7 @@ Links a catalyst to one drug it concerns, tested alone or in combination (ADR 00
 | `id` | identifier | yes | Internal identifier. |
 | `catalyst_id` | link to `catalyst` | yes | The catalyst. |
 | `drug_id` | link to `drug` | yes | A drug the catalyst concerns. |
-| `role` | one of: `alone`, `in_combination` | yes | Whether the drug is tested alone or in combination. |
+| `role` | one of: `alone`, `in_combination` | yes | Whether the drug is tested alone or in combination; a combination product itself (for example SPY120) is linked as in_combination. |
 | `claim_id` | link to `claim` | yes | The claim whose quote states this link. |
 
 Rules:

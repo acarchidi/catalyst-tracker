@@ -264,7 +264,10 @@ class CatalystDrug(Entity):
 
     catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst.")
     drug_id: Annotated[UUID, References("drug")] = Field(description="A drug the catalyst concerns.")
-    role: DrugRole = Field(description="Whether the drug is tested alone or in combination.")
+    role: DrugRole = Field(
+        description="Whether the drug is tested alone or in combination; a combination product itself "
+        "(for example SPY120) is linked as in_combination."
+    )
     claim_id: Annotated[UUID, References("claim")] = Field(
         description="The claim whose quote states this link."
     )

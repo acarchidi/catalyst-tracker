@@ -53,7 +53,10 @@ def upgrade() -> None:
             "role",
             sa.String(length=14),
             nullable=False,
-            comment="Whether the drug is tested alone or in combination.",
+            comment=(
+                "Whether the drug is tested alone or in combination; a combination product itself "
+                "(for example SPY120) is linked as in_combination."
+            ),
         ),
         sa.Column("claim_id", sa.Uuid(), nullable=False, comment="The claim whose quote states this link."),
         sa.CheckConstraint(

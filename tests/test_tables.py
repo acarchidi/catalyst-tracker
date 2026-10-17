@@ -359,6 +359,21 @@ def test_every_table_is_closed_to_supabase_public_api_roles(engine: Engine) -> N
 # --- Several drugs per catalyst (owner ruling 2026-10-17, rule 3; ADR 0016) ---
 
 
+def _drugs_claim(engine: Engine, chain: dict[str, UUID]) -> UUID:
+    """Store a claim stating the catalyst's drugs, beside the fixture's window claim."""
+    with engine.connect() as connection:
+        row = dict(
+            connection.execute(text("SELECT * FROM claim WHERE id = :c"), {"c": chain["claim"]})
+            .mappings()
+            .one()
+        )
+    row |= {"id": uuid4(), "field": "drugs", "value": ["povetacicept"], "quote": "povetacicept"}
+    row |= {"quote_start": 120, "quote_end": 132}
+    with engine.begin() as connection:
+        connection.execute(insert(TABLES[Claim]).values(**row))
+    return row["id"]
+
+
 def _second_drug(engine: Engine, chain: dict[str, UUID], name: str) -> UUID:
     drug = Drug(company_id=chain["company"], preferred_name=name)
     return _insert(engine, drug, TABLES[Drug])
@@ -367,6 +382,7 @@ def _second_drug(engine: Engine, chain: dict[str, UUID], name: str) -> UUID:
 def test_one_catalyst_links_several_drugs_alone_and_in_combination(
     chain: dict[str, UUID], engine: Engine
 ) -> None:
+    claim = _drugs_claim(engine, chain)
     other = _second_drug(engine, chain, "SPY002")
     combo = _second_drug(engine, chain, "SPY120")
     links = [
@@ -376,9 +392,7 @@ def test_one_catalyst_links_several_drugs_alone_and_in_combination(
         (combo, DrugRole.IN_COMBINATION),
     ]
     for drug_id, role in links:
-        link = CatalystDrug(
-            catalyst_id=chain["catalyst"], drug_id=drug_id, role=role, claim_id=chain["claim"]
-        )
+        link = CatalystDrug(catalyst_id=chain["catalyst"], drug_id=drug_id, role=role, claim_id=claim)
         _insert(engine, link, TABLES[CatalystDrug])
     with engine.connect() as connection:
         count = connection.execute(
@@ -388,11 +402,12 @@ def test_one_catalyst_links_several_drugs_alone_and_in_combination(
 
 
 def test_the_same_drug_link_cannot_be_stored_twice(chain: dict[str, UUID], engine: Engine) -> None:
+    claim = _drugs_claim(engine, chain)
     link = {
         "catalyst_id": chain["catalyst"],
         "drug_id": chain["drug"],
         "role": "alone",
-        "claim_id": chain["claim"],
+        "claim_id": claim,
     }
     _raw_insert(engine, TABLES[CatalystDrug], link)
     with pytest.raises(IntegrityError, match="uq_catalyst_drug"):
@@ -413,15 +428,16 @@ def test_a_drug_link_needs_a_stored_claim(chain: dict[str, UUID], engine: Engine
 
 
 def test_a_combination_lists_its_parts_but_never_itself(chain: dict[str, UUID], engine: Engine) -> None:
+    claim = _drugs_claim(engine, chain)
     part = _second_drug(engine, chain, "SPY002")
     combo = _second_drug(engine, chain, "SPY120")
-    part_link = DrugComponent(combination_id=combo, component_id=part, claim_id=chain["claim"])
+    part_link = DrugComponent(combination_id=combo, component_id=part, claim_id=claim)
     _insert(engine, part_link, TABLES[DrugComponent])
     with pytest.raises(IntegrityError, match="not_itself"):
         _raw_insert(
             engine,
             TABLES[DrugComponent],
-            {"combination_id": combo, "component_id": combo, "claim_id": chain["claim"]},
+            {"combination_id": combo, "component_id": combo, "claim_id": claim},
         )
 
 
