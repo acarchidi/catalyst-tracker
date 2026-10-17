@@ -6,6 +6,7 @@ the filled tables.
 """
 
 import json
+import logging
 from datetime import UTC, date, datetime
 from functools import partial
 from pathlib import Path
@@ -13,10 +14,10 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from catalyst.collectors.run import build_clients, collect_all
+from catalyst.collectors.run import Collector, PilotCompany, build_clients, collect_all
 from catalyst.collectors.sources import ctgov
 from catalyst.db.repository import link_company_document, save_source_document, upsert_company
 from catalyst.db.tables import TABLES
@@ -30,7 +31,19 @@ from catalyst.references import (
     trial_from_study,
 )
 from catalyst.resolve import Status
-from catalyst.schemas import CompanyName, CompanyTicker, DocumentMatch, SourceDocument, Trial, TrialPhase
+from catalyst.schemas import (
+    CompanyName,
+    CompanyTicker,
+    DocumentMatch,
+    Drug,
+    DrugName,
+    DrugNameKind,
+    SourceDocument,
+    SourceTier,
+    Trial,
+    TrialPhase,
+)
+from catalyst.snapshots import LocalSnapshotStore
 from conftest import FIXTURES, RecordedServer
 
 TODAY = date(2026, 10, 17)
@@ -174,9 +187,6 @@ def test_a_trial_is_stored_once_and_follows_registry_updates(session_factory: se
 def test_trials_are_recorded_as_registry_records_are_collected(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
-    from catalyst.collectors.run import Collector
-    from catalyst.snapshots import LocalSnapshotStore
-
     server = RecordedServer("ctgov-insmed")
     clients = build_clients("data@example.org", server.transport, rate_limits=False)
     insmed = _company(session_factory, 1104506, "INSMED Inc")
@@ -204,9 +214,6 @@ def test_trials_are_recorded_as_registry_records_are_collected(
 def test_the_collection_run_records_names_and_tickers(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
-    from catalyst.collectors.run import PilotCompany
-    from catalyst.snapshots import LocalSnapshotStore
-
     server = RecordedServer("sec/875320")
     clients = build_clients("data@example.org", server.transport, rate_limits=False)
     collect_all(
@@ -248,8 +255,6 @@ def test_loading_reads_names_tickers_trials_and_their_sponsors(
 
 
 def _registry_document(nct_id: str) -> SourceDocument:
-    from catalyst.schemas import SourceTier
-
     return SourceDocument(
         source_key=f"ctgov:{nct_id}:2026-10-01",
         url=f"https://clinicaltrials.gov/study/{nct_id}",
@@ -265,23 +270,69 @@ def _registry_document(nct_id: str) -> SourceDocument:
 
 
 def test_loaded_code_names_still_count_only_for_their_company(session_factory: sessionmaker[Session]) -> None:
-    from catalyst.schemas import Drug, DrugName, DrugNameKind
-
     spyre = _company(session_factory, 1636282, "Spyre Therapeutics, Inc.")
     other = _company(session_factory, 1000003, "Other Bio Inc")
     drug = Drug(company_id=spyre, preferred_name="SPY001")
     with session_factory.begin() as session:
-        session.execute(insert_row(Drug, drug))
-        session.execute(
-            insert_row(DrugName, DrugName(drug_id=drug.id, name="SPY001", kind=DrugNameKind.CODE))
-        )
+        session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
+        name = DrugName(drug_id=drug.id, name="SPY001", kind=DrugNameKind.CODE)
+        session.execute(insert(TABLES[DrugName]).values(**name.model_dump()))
     with session_factory() as session:
         references = load_reference_data(session)
     assert references.resolve_drug("SPY-001", company_id=spyre).id == drug.id
     assert references.resolve_drug("SPY-001", company_id=other).status is Status.UNKNOWN
 
 
-def insert_row(model: type, record: Any) -> Any:  # type: ignore[type-arg]
-    from sqlalchemy import insert
+# Bad outside data never stops a run
 
-    return insert(TABLES[model]).values(**record.model_dump())
+
+def test_names_and_tickers_that_break_the_rules_are_skipped(
+    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    company = _company(session_factory, 1000004, "Odd Records Inc")
+    identity = CompanyIdentity(
+        name="Odd Records Inc",
+        former_names=(
+            ("Backwards Dates Inc", date(2020, 1, 2), date(2019, 1, 1)),
+            ("Fine Old Name Inc", None, None),
+        ),
+        tickers=(("BAD/TICKER", "Nasdaq"), ("GOOD", "An exchange name far longer than twenty characters")),
+    )
+    _record(session_factory, company, identity, TODAY)
+    assert sorted(n["name"] for n in _rows(session_factory, CompanyName)) == [
+        "Fine Old Name Inc",
+        "Odd Records Inc",
+    ]
+    assert [(t["ticker"], t["exchange"]) for t in _rows(session_factory, CompanyTicker)] == [("GOOD", None)]
+    assert sum(r.getMessage() == "reference_skipped" for r in caplog.records) == 2
+
+
+def test_a_failure_recording_names_alerts_and_the_run_goes_on(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import catalyst.collectors.run as run
+
+    def broken(*_: object) -> None:
+        raise RuntimeError("names table unavailable")
+
+    monkeypatch.setattr(run, "record_company_identity", broken)
+    server = RecordedServer("sec/875320", "wires-prnewswire")
+    clients = build_clients("data@example.org", server.transport, rate_limits=False)
+    stats = collect_all(
+        [PilotCompany(ticker="VRTX", cik=875320)],
+        clients,
+        LocalSnapshotStore(tmp_path),
+        session_factory,
+        date(2026, 8, 1),
+        now=lambda: TODAY_TIME,
+        sec_forms=frozenset({"8-K"}),
+    )
+    by_source = {s.source: s for s in stats}
+    assert by_source["names:VRTX"].error == "RuntimeError: names table unavailable"
+    assert by_source["sec:VRTX"].created == 1
+    assert by_source["wire:prnewswire"].created == 20
+    assert any(r.getMessage() == "collector_failed" for r in caplog.records)

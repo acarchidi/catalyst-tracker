@@ -117,6 +117,20 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
+def _record_names(
+    session_factory: sessionmaker[Session], company_id: UUID, submissions: bytes, today: date, ticker: str
+) -> CollectionStats | None:
+    """Record the company's names and tickers; on failure, alert and return the failed step."""
+    try:
+        with session_factory.begin() as session:
+            record_company_identity(session, company_id, company_identity(submissions), today)
+    except Exception as error:
+        stats = CollectionStats(f"names:{ticker}", error=f"{type(error).__name__}: {error}")
+        log_alert(_log, "collector_failed", source=stats.source, error=stats.error)
+        return stats
+    return None
+
+
 def collect_all(
     companies: list[PilotCompany],
     clients: Clients,
@@ -139,7 +153,9 @@ def collect_all(
         cik, name, sic = company_profile(submissions)
         with session_factory.begin() as session:
             company_id = upsert_company(session, cik, name, sic).id
-            record_company_identity(session, company_id, company_identity(submissions), now().date())
+        names_failed = _record_names(session_factory, company_id, submissions, now().date(), pilot.ticker)
+        if names_failed:
+            results.append(names_failed)
         results.append(
             collector.run(
                 f"sec:{pilot.ticker}",

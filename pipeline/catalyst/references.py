@@ -15,11 +15,12 @@ from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date, timedelta
+from functools import partial
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, Field
-from sqlalchemy import select, update
+from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -44,6 +45,7 @@ _log = logging.getLogger(__name__)
 _COMPANY_NAME = TABLES[CompanyName]
 _COMPANY_TICKER = TABLES[CompanyTicker]
 _TRIAL = TABLES[Trial]
+_EXCHANGE_CHARS = 20  # CompanyTicker.exchange limit
 
 
 @dataclass(frozen=True)
@@ -85,12 +87,12 @@ def company_identity(submissions_json: bytes) -> CompanyIdentity:
 
 def _close(session: Session, row_ids: list[UUID], today: date) -> None:
     """End each ticker period the day before `today`, or on `today` if it began then."""
-    for row_id in row_ids:
-        start = session.execute(
-            select(_COMPANY_TICKER.c.valid_from).where(_COMPANY_TICKER.c.id == row_id)
-        ).scalar_one()
-        end = max(start, today - timedelta(days=1))
-        session.execute(update(_COMPANY_TICKER).where(_COMPANY_TICKER.c.id == row_id).values(valid_to=end))
+    if row_ids:
+        session.execute(
+            update(_COMPANY_TICKER)
+            .where(_COMPANY_TICKER.c.id.in_(row_ids))
+            .values(valid_to=func.greatest(_COMPANY_TICKER.c.valid_from, today - timedelta(days=1)))
+        )
 
 
 def _current_tickers(session: Session) -> list[tuple[UUID, UUID, str]]:
@@ -100,6 +102,15 @@ def _current_tickers(session: Session) -> list[tuple[UUID, UUID, str]]:
     return [(row.id, row.company_id, row.ticker) for row in session.execute(query)]
 
 
+def _valid[Row: (CompanyName, CompanyTicker)](build: Callable[[], Row], what: str) -> Row | None:
+    """Build one row from outside data; skip it, with a log line, if it breaks a rule."""
+    try:
+        return build()
+    except ValidationError as error:
+        log_event(_log, "reference_skipped", what=what, error=str(error.errors()[0]["msg"]))
+        return None
+
+
 def record_company_identity(
     session: Session, company_id: UUID, identity: CompanyIdentity, today: date
 ) -> None:
@@ -107,19 +118,34 @@ def record_company_identity(
 
     A ticker the company no longer lists is closed the day before. A ticker another company still
     holds in our tables is closed for that company first, because SEC now lists it for this one.
+    A name or ticker that breaks a rule (a ticker with a slash, a former name whose dates run
+    backwards) is skipped and logged; an exchange name too long to store is left out.
     """
-    names = [CompanyName(company_id=company_id, name=identity.name)]
-    names += [
-        CompanyName(company_id=company_id, name=name, valid_from=start, valid_to=end)
-        for name, start, end in identity.former_names
+    candidates = [(identity.name, None, None), *identity.former_names]
+    names = [
+        _valid(partial(CompanyName, company_id=company_id, name=name, valid_from=start, valid_to=end), name)
+        for name, start, end in candidates
     ]
-    for name in names:
+    for name in filter(None, names):
         session.execute(
             insert(_COMPANY_NAME)
             .values(**name.model_dump())
             .on_conflict_do_nothing(index_elements=["company_id", "name"])
         )
-    listed = dict(identity.tickers)
+    rows = [
+        _valid(
+            partial(
+                CompanyTicker,
+                company_id=company_id,
+                ticker=ticker,
+                exchange=exchange if exchange and len(exchange) <= _EXCHANGE_CHARS else None,
+                valid_from=today,
+            ),
+            ticker,
+        )
+        for ticker, exchange in identity.tickers
+    ]
+    listed = {row.ticker: row for row in rows if row is not None}
     current = _current_tickers(session)
     held = {ticker for _, owner, ticker in current if owner == company_id}
     _close(
@@ -130,10 +156,9 @@ def record_company_identity(
     _close(
         session, [row for row, owner, ticker in current if owner != company_id and ticker in listed], today
     )
-    for ticker, exchange in listed.items():
+    for ticker, row in listed.items():
         if ticker in held:
             continue
-        row = CompanyTicker(company_id=company_id, ticker=ticker, exchange=exchange, valid_from=today)
         session.execute(
             insert(_COMPANY_TICKER)
             .values(**row.model_dump())
@@ -177,7 +202,11 @@ def record_trial(session: Session, trial: Trial) -> None:
 def recording_trials(
     session_factory: sessionmaker[Session], documents: Callable[[], Iterable[FetchedDocument]]
 ) -> Iterator[FetchedDocument]:
-    """Pass registry records through to the collector, recording each one's trial on the way."""
+    """Pass registry records through to the collector, recording each one's trial on the way.
+
+    The trial is written before the collector stores the record. If storing then fails, the
+    trial row stays without its record until the next run stores it; nothing is duplicated.
+    """
     for fetched in documents():
         with session_factory.begin() as session:
             record_trial(session, trial_from_study(json.loads(fetched.content)))
