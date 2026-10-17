@@ -1,0 +1,181 @@
+"""Read a date phrase such as "2H26", "mid-2027" or "by year-end" as a window (spec: Date precision).
+
+The phrase is the source's own words; the window is what code, not a model, makes of them.
+A phrase without a year takes the year of the document it came from. "By" phrases run from
+the document's date to the end of the period. Anything vague ("soon", "upon approval") gives
+no window. ADR 0012 records the conventions (for example, "mid-2027" is April to September).
+"""
+
+from __future__ import annotations
+
+import calendar
+import re
+from collections.abc import Callable
+from dataclasses import dataclass
+from datetime import date
+
+from catalyst.schemas.enums import DatePrecision
+
+
+@dataclass(frozen=True)
+class DateWindow:
+    """A catalyst's date window: first and last possible day, precision, and the words as written."""
+
+    start: date
+    end: date
+    precision: DatePrecision
+    raw_text: str
+
+
+_MONTHS = {
+    **{name.lower(): number for number, name in enumerate(calendar.month_name) if name},
+    **{name.lower(): number for number, name in enumerate(calendar.month_abbr) if name},
+    "sept": 9,
+}
+_MONTH = "(?P<month>" + "|".join(sorted(_MONTHS, key=len, reverse=True)) + r")\.?"
+_ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4}
+_YEAR = r"(?P<year>\d{4}|'?\d{2}|this year|next year|the year)"
+_PREFIX = re.compile(r"^(?:(?:in|during|around|the)\s+)+")
+
+_Period = tuple[date, date, DatePrecision]
+
+
+def _year(written: str | None, published: date) -> int:
+    if written is None or written in ("this year", "the year"):
+        return published.year
+    if written == "next year":
+        return published.year + 1
+    digits = written.lstrip("'")
+    return 2000 + int(digits) if len(digits) == 2 else int(digits)
+
+
+def _quarter(year: int, quarter: int) -> _Period:
+    end_month = 3 * quarter
+    return (
+        date(year, end_month - 2, 1),
+        date(year, end_month, calendar.monthrange(year, end_month)[1]),
+        DatePrecision.QUARTER,
+    )
+
+
+def _half(year: int, half: int) -> _Period:
+    if half == 1:
+        return date(year, 1, 1), date(year, 6, 30), DatePrecision.HALF
+    return date(year, 7, 1), date(year, 12, 31), DatePrecision.HALF
+
+
+def _number(found: dict[str, str | None]) -> int:
+    """Return the quarter or half number, written as a digit or as an ordinal word."""
+    digit, word = found.get("n"), found.get("ord")
+    return int(digit) if digit else _ORDINALS[word or ""]
+
+
+def _quarter_of(found: dict[str, str | None], year: int, published: date) -> _Period:
+    return _quarter(year, _number(found))
+
+
+def _this_quarter(found: dict[str, str | None], year: int, published: date) -> _Period:
+    return _quarter(published.year, (published.month - 1) // 3 + 1)
+
+
+def _half_of(found: dict[str, str | None], year: int, published: date) -> _Period:
+    return _half(year, _number(found))
+
+
+def _year_end(found: dict[str, str | None], year: int, published: date) -> _Period:
+    return _quarter(year, 4)
+
+
+def _day(found: dict[str, str | None], year: int, published: date) -> _Period:
+    day = date(year, _MONTHS[found["month"] or ""], int(found["day"] or ""))
+    return day, day, DatePrecision.DAY
+
+
+def _month(found: dict[str, str | None], year: int, published: date) -> _Period:
+    month = _MONTHS[found["month"] or ""]
+    last = calendar.monthrange(year, month)[1]
+    return date(year, month, 1), date(year, month, last), DatePrecision.MONTH
+
+
+def _part_of_year(found: dict[str, str | None], year: int, published: date) -> _Period:
+    if found["part"] == "mid":
+        return date(year, 4, 1), date(year, 9, 30), DatePrecision.HALF
+    return _half(year, 1 if found["part"] == "early" else 2)
+
+
+def _whole_year(found: dict[str, str | None], year: int, published: date) -> _Period:
+    return date(year, 1, 1), date(year, 12, 31), DatePrecision.YEAR
+
+
+_Builder = Callable[[dict[str, str | None], int, date], _Period]
+_OPTIONAL_YEAR = "(?: " + _YEAR + ")?"
+_PATTERNS: list[tuple[re.Pattern[str], _Builder]] = [
+    (re.compile(_MONTH + r" (?P<day>\d{1,2}), (?P<year>\d{4})"), _day),
+    (re.compile(_MONTH + r" (?:of )?" + _YEAR), _month),
+    (re.compile(r"q(?P<n>[1-4]) ?" + _YEAR), _quarter_of),
+    (re.compile(r"(?P<n>[1-4])q ?" + _YEAR), _quarter_of),
+    (re.compile(r"(?P<ord>first|second|third|fourth) quarter(?: of)?" + _OPTIONAL_YEAR), _quarter_of),
+    (re.compile(r"this quarter"), _this_quarter),
+    (re.compile(r"(?P<n>[12])h ?" + _YEAR), _half_of),
+    (re.compile(r"h(?P<n>[12]) ?" + _YEAR), _half_of),
+    (re.compile(r"(?P<ord>first|second) half(?: of)?" + _OPTIONAL_YEAR), _half_of),
+    (re.compile(r"(?P<part>early|mid|late)[- ]" + _YEAR), _part_of_year),
+    (re.compile(r"(?:year[- ]end|(?:the )?end of(?: the)? year)" + _OPTIONAL_YEAR), _year_end),
+    (re.compile(r"(?:the )?end of " + _YEAR), _year_end),
+    (re.compile(_YEAR), _whole_year),
+]
+
+
+def _period(phrase: str, published: date) -> _Period | None:
+    """Return the calendar period a phrase names, or None."""
+    phrase = _PREFIX.sub("", phrase)
+    for pattern, build in _PATTERNS:
+        match = pattern.fullmatch(phrase)
+        if match is not None:
+            found = match.groupdict()
+            return build(found, _year(found.get("year"), published), published)
+    return None
+
+
+_BY = re.compile(r"^by (?:(?:the )?end of )?(?P<rest>.+)$")
+_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?year|year)(?: (?P<year>\d{4}|'?\d{2}))?$")
+
+
+def _deadline(phrase: str, published: date) -> _Period | None:
+    """Return the window for "by ..." and "later this year", or None if the phrase is neither."""
+    if phrase == "later this year":
+        end, precision = date(published.year, 12, 31), DatePrecision.YEAR
+    else:
+        match = _BY.match(phrase)
+        if match is None:
+            return None
+        rest = match.group("rest")
+        year_end = _YEAR_END.match(rest)
+        if year_end:
+            year = _year(year_end.group("year"), published)
+            end, precision = date(year, 12, 31), DatePrecision.YEAR
+        else:
+            period = _period(rest, published)
+            if period is None:
+                return None
+            _, end, precision = period
+    if end < published:
+        return None
+    if end == published:
+        return end, end, DatePrecision.DAY
+    return published, end, precision
+
+
+def parse_window(text: str, published: date) -> DateWindow | None:
+    """Return the window `text` names, reading it as of `published`, or None if it names none."""
+    phrase = re.sub(r"\s+", " ", text.lower().replace("\u2019", "'")).strip().rstrip(".")
+    try:
+        found = _deadline(phrase, published) if phrase.startswith(("by ", "later ")) else None
+        if found is None and not phrase.startswith("by "):
+            found = _period(phrase, published)
+    except ValueError:  # a day or year that does not exist, such as February 30
+        return None
+    if found is None:
+        return None
+    start, end, precision = found
+    return DateWindow(start, end, precision, text)
