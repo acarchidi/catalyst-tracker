@@ -307,6 +307,24 @@ Rules:
 - Unique: `claim_id`, `entity_type`, `name`
 - Database check `resolved_has_record`: `(status = 'resolved') = (matched_id IS NOT NULL)`
 
+## `claim_check`
+
+One verification check's outcome for one claim (spec: Verification; ADR 0018). A later run replaces the outcome, so the table always holds each claim's latest result.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `claim_id` | link to `claim` | yes | The claim checked. |
+| `check` | text, up to 100 characters | yes | Which check, for example 'window_not_past'. |
+| `outcome` | one of: `pass`, `fail`, `not_applicable` | yes | Pass, fail, or not applicable. |
+| `reason` | text, up to 300 characters | no | Why it failed or did not apply, in plain words. |
+| `checked_at` | date and time (with time zone) | yes | When the check last ran. |
+
+Rules:
+
+- Unique: `claim_id`, `check`
+- Database check `fail_has_reason`: `outcome <> 'fail' OR reason IS NOT NULL`
+
 ## `catalyst_change`
 
 One change to a catalyst field (spec: Change history). Append-only: rows are added, never edited or deleted. The database enforces this.

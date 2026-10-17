@@ -98,6 +98,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("drug_component", "component_id", "drug"),
     ("drug_component", "claim_id", "claim"),
     ("entity_match", "claim_id", "claim"),
+    ("claim_check", "claim_id", "claim"),
 }
 
 

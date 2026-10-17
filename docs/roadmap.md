@@ -83,6 +83,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0018: verification stores each check's latest outcome per claim (pass, fail with reason, not applicable); built in five parts: rule checks, second extraction, cross-source and change checks, the planted-error test, and the publish gate |
 | 2026-10-17 | ADR 0015 (part 4): each name in an extracted claim gets a stored match (resolved, ambiguous with candidates, or unknown); only a company's own quoted code name creates a drug; study names match only in capitals; roadmap item ticked |
 | 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
 | 2026-10-17 | Gate 2 raised to an error rate under 1% at 95% confidence on a random sample of published records (owner target: 99% to start, 99.9% later); the extractor's score floor (`baseline.json`) and its retired exemption (`unscored.json`) are merged by the owner only; a stronger Claude model checks the weekly random sample and the owner settles only disagreements; alerts only when something needs the owner, plus a weekly summary, replace the daily report |

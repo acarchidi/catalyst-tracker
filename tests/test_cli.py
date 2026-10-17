@@ -19,6 +19,7 @@ from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
+from catalyst.verify.run import CheckReport
 
 
 def test_missing_sec_contact_email_exits_with_setup_step(
@@ -208,12 +209,14 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", fake_extract)
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "found.json"
     assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
     assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
     printed = json.loads(capsys.readouterr().out)
     assert printed["claims_stored"] == 2
     assert printed["matches"]["claims"] == 2  # names in new claims are matched right after extraction
+    assert printed["checks"]["claims_passing"] == 1  # and then checked
     (written,) = json.loads(out.read_text())
     assert written["company"] == "Acme Bio"
     assert written["published"] == "2026-10-14"
@@ -284,3 +287,12 @@ def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
     monkeypatch.setattr(cli, "resolve_claims", broken)
     assert main(["extract-catalysts"]) == 0
     assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]
+
+
+def test_verify_claims_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=4, claims_passing=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["verify-claims"]) == 0
+    assert json.loads(capsys.readouterr().out) == {"claims": 4, "claims_passing": 3, "outcomes": {}}

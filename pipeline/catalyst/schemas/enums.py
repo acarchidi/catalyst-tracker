@@ -176,6 +176,14 @@ class MatchStatus(StrEnum):
     UNKNOWN = "unknown"
 
 
+class CheckOutcome(StrEnum):
+    """What a verification check concluded about a claim (ADR 0018)."""
+
+    PASS = "pass"  # noqa: S105 - a check outcome, not a password
+    FAIL = "fail"
+    NOT_APPLICABLE = "not_applicable"
+
+
 class MatchedEntity(StrEnum):
     """Which kind of record a name in a claim was matched to."""
 

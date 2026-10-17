@@ -42,6 +42,7 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.verify.run import run_checks
 
 NEW_YORK = ZoneInfo("America/New_York")
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
@@ -105,6 +106,9 @@ def _parser() -> argparse.ArgumentParser:
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
     _store_arguments(extract)
     commands.add_parser(
+        "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
+    )
+    commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
     evaluate = commands.add_parser(
@@ -148,6 +152,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "extract-catalysts": _extract,
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
+        "verify-claims": _verify_claims,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -247,14 +252,16 @@ def _extract(args: argparse.Namespace) -> int:
         report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
         try:
             matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now).summary()
-        except SQLAlchemyError as error:  # the extraction stands; matching re-runs next time
+            checks: dict[str, Any] = run_checks(sessionmaker(engine), _utc_now).summary()
+        except SQLAlchemyError as error:  # the extraction stands; matching and checks re-run next time
             matches = {"error": f"{type(error).__name__}: matching did not finish"}
+            checks = {"error": "checks did not run"}
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary() | {"matches": matches}
+    summary = report.summary() | {"matches": matches, "checks": checks}
     print(json.dumps(summary, indent=2))
     return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
 
@@ -268,6 +275,21 @@ def _resolve(_args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         report = resolve_claims(sessionmaker(engine), _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
+    return 0
+
+
+def _verify_claims(_args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = run_checks(sessionmaker(engine), _utc_now)
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
