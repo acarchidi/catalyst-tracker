@@ -40,6 +40,6 @@ AGENTS.md: "Any prompt or model change re-runs the gold-set evaluation; CI block
 ## Consequences
 
 - Changing the prompt or the extractor's model now takes one paid evaluation run and a committed `scores.json`, or CI stays red.
-- `baseline.json` and `unscored.json` are the floor and the exemption. Changing them by hand would weaken the gate. It should become an owner-merged path in `scripts/merge_gate.py`, which is itself an owner-merged change. Until then, the reviewer is asked to flag any change to it.
+- `baseline.json` and `unscored.json` are the floor and the exemption. Changing them by hand would weaken the gate. Since 2026-10-17, `baseline.json` is an owner-merged path in `scripts/merge_gate.py`. `unscored.json` is retired.
 - Twelve releases give coarse scores: one event is 5% of recall. The 200-catalyst set replaces them.
 - Conference dates written as ranges ("November 16-19, 2026") get no window yet (ADR 0012), so a gold event with one scores its window only when the proposal also has none.

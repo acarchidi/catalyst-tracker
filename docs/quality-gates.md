@@ -20,7 +20,7 @@ Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 000
 | Gate 1 | End of Phase 0 | 50 companies end to end; random 10 records for the owner to click | **Opus** + `/ultrareview` | Every record has a working deep link; coverage thresholds met |
 | CAL1 Extractor calibration | First week of Phase 1 | Review sheet: 20 documents, extracted fields beside the source sentence | Reviewer subagent | Owner agrees on at least 18 of 20; prompts adjusted before scaling |
 | CP4 Publish gate | Before anything auto-publishes | List of every check and what it blocks, in plain English | **Opus** + adversarial tests (prompt-injection fixtures) | No test in the gate can be skipped; injected text cannot change a stored value |
-| Gate 2 | End of Phase 1 | Weekly sample results; error rate with its confidence bound | **Opus** + `/ultrareview` | Under 2% errors on the sample; 100% deep links |
+| Gate 2 | End of Phase 1 | Weekly sample results; error rate with its confidence bound | **Opus** + `/ultrareview` | Error rate under 1% at 95% confidence, measured on records checked independently of the pipeline (gold set and weekly sample): about 300 checked records with no errors, or about 475 with one; 100% deep links |
 | CP5 Site preview | Before the free launch | Vercel preview URL to click through on phone and laptop | Accessibility and performance checks | WCAG 2.2 AA checks pass; pages load fast on mobile |
 | Gate 3 | End of Phase 2 | Business setup confirmed by the owner | None | Entity, terms, Stripe, sales tax done |
 | CP6 Billing | Before taking money | A full test-mode purchase, upgrade, and cancellation | **Opus** | Free users never see paid data; paid users always do |

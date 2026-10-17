@@ -126,6 +126,7 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         ".gitleaks.toml",
         ".pre-commit-config.yaml",
         "config/models.toml",
+        "evals/extract_catalysts/baseline.json",
     ],
 )
 def test_changes_to_the_rules_review_or_protected_settings_go_to_the_owner(path: str) -> None:
@@ -152,7 +153,14 @@ def test_command_line_prints_the_decision(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "path", ["docs/roadmap.md", "docs/adr/0008-x.md", "pyproject.toml", "pipeline/catalyst/cli.py"]
+    "path",
+    [
+        "docs/roadmap.md",
+        "docs/adr/0008-x.md",
+        "pyproject.toml",
+        "pipeline/catalyst/cli.py",
+        "evals/extract_catalysts/scores.json",
+    ],
 )
 def test_ordinary_paths_merge(path: str) -> None:
     assert action(pr(), green(), [path]) == "merge"
