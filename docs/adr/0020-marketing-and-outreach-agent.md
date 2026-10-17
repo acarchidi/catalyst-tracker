@@ -30,17 +30,27 @@ Penalties are set per email ([FTC compliance guide](https://www.ftc.gov/business
    - outreach notes to named people;
    - directory submissions and the text of public pages.
 
-   A plain-code sender sends or submits an item only when an approval row from the owner matches that item's exact text. A changed word needs a new approval. The agent cannot send, post, or submit anything itself.
+   A plain-code sender sends or submits an item only when an approval from the owner matches all three of these:
+   - the item's exact text;
+   - its exact list of recipients;
+   - its channel.
+
+   A changed word or a changed recipient needs a new approval. The approval screen shows each recipient and the page where the address was found. Only the owner's own signed-in action can create an approval; no agent or job can. At send time the sender checks every recipient against the opt-out list again. The agent cannot send, post, or submit anything itself.
 2. **Inputs are published, checked data.** Every fact in a draft comes from published catalysts and carries a source link. Drafts contain no advice, no buy or sell language, and no return claims. The newsletter keeps its fixed weekly schedule and is never sent early because of a market event.
 3. **Contacts come from public professional sources only.**
    - Plain-code collectors fetch the pages that list contacts, following robots.txt and rate limits. The agent reads the text with no tools, as every agent that reads web text does.
    - Each contact keeps only a name, outlet, public work address, and the source address where it was found.
+   - United States contacts only for now. Canada's and the EU's email rules are stricter than CAN-SPAM, so contacts there wait until those rules are checked.
+   - "Investor communities" means the organizers or editors of investor groups and forums, written to one at a time. The agent never posts to a group itself.
    - No bought lists, and no addresses taken from behind a login.
    - A contact is deleted on request.
 4. **Outreach limits:**
    - one note per person, plus at most one follow-up unless they reply;
-   - every note says who is writing, includes the postal address, and gives a working opt-out;
-   - an opt-out or "no thanks" stops all further mail to that address before the next send, well inside the 10-business-day limit.
+   - every note says who is writing and that it is a promotional message, includes the postal address, and gives a working opt-out;
+   - opting out takes only a reply or one web page, with no fee and no other information asked;
+   - an opt-out or "no thanks" stops all further mail to that address before the next send, well inside the 10-business-day limit;
+   - an opted-out address is never sold or passed on;
+   - the business stays responsible for what the email-sending service sends in its name. The FTC guide lists fines of up to $53,088 per email.
 5. **The newsletter goes only to people who signed up.** Every issue carries:
    - the postal address;
    - a one-click unsubscribe;
@@ -55,7 +65,13 @@ Penalties are set per email ([FTC compliance guide](https://www.ftc.gov/business
 
 ## Consequences
 
-- The owner needs a physical postal address before the first commercial email. A registered PO box or private mailbox is enough. This joins the business-setup step, so all setup happens in one sitting.
-- An email-sending service needs an account. It is chosen when this item is built, and it is gathered with the other Phase 2 accounts.
+- **The sender stays switched off until business setup is done.** The drafting can be built first. Sending needs:
+  - a physical postal address (a registered PO box or private mailbox is enough);
+  - an email-sending service account;
+  - a sending domain with its email-authentication records (SPF, DKIM, DMARC);
+  - a newsletter sign-up form and a subscriber list.
+
+  These are gathered with the business setup, so all setup happens in one sitting. The new email setting gets a name in `AGENTS.md` and a line in `scripts/check_setup.py` when this is built.
+- Before the first newsletter or note goes out, checkpoint CP7 runs (`docs/quality-gates.md`).
 - The approval step uses the review-queue screen (Phase 1), so the owner approves drafts in the same place as records.
 - The owner's time, not the agent, sets the outreach pace. The agent keeps a short queue of drafts, so nothing waits on it.
