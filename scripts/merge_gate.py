@@ -39,6 +39,7 @@ OWNER_PATHS = (
     ".pre-commit-config.yaml",
     "config/models.toml",
     "evals/extract_catalysts/baseline.json",  # the floor CI holds every prompt to (ADR 0014)
+    "evals/extract_catalysts/unscored.json",  # the retired exemption from that floor
 )
 # Instruction files the reviewer loads, wherever they sit in the repository.
 OWNER_FILE_NAMES = ("AGENTS.md", "CLAUDE.md", ".mcp.json")
