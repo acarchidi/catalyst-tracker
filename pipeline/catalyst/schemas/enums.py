@@ -48,6 +48,13 @@ class DrugNameKind(StrEnum):
     BRAND = "brand"
 
 
+class DrugRole(StrEnum):
+    """How a drug is tested in the trial a catalyst concerns (owner ruling 2026-10-17, rule 3)."""
+
+    ALONE = "alone"
+    IN_COMBINATION = "in_combination"
+
+
 class LineOfTherapy(StrEnum):
     """Treatment line an indication refers to."""
 
@@ -139,7 +146,7 @@ class CatalystField(StrEnum):
 
     CATALYST_TYPE = "catalyst_type"
     COMPANY_ID = "company_id"
-    DRUG_ID = "drug_id"
+    DRUGS = "drugs"
     INDICATION_ID = "indication_id"
     TITLE = "title"
     WINDOW_START = "window_start"
