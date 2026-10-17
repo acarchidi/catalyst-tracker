@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
 
-def _alembic_config(url: str) -> Config:
+def alembic_config(url: str) -> Config:
     config = Config(str(REPO_ROOT / "alembic.ini"))
     config.attributes["database_url"] = url
     config.attributes["configure_logger"] = False
@@ -43,7 +43,7 @@ def database_url() -> str:
 @pytest.fixture(scope="session")
 def engine(database_url: str) -> Iterator[Engine]:
     """Engine on a freshly migrated test database: downgrade to empty, then upgrade to the latest."""
-    config = _alembic_config(database_url)
+    config = alembic_config(database_url)
     command.downgrade(config, "base")
     command.upgrade(config, "head")
     engine = create_engine(database_url)
