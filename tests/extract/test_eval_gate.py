@@ -138,16 +138,13 @@ def test_a_baseline_must_name_every_score(tmp_path: Path) -> None:
     assert "drug" in problem
 
 
-def test_the_second_reading_has_no_scores_yet_so_it_may_not_run() -> None:
-    """ADR 0018, part 2: the verifier runs live only once its own scores are committed."""
+def test_the_second_readings_committed_scores_match_its_prompt_and_meet_its_floor() -> None:
+    """ADR 0018, part 2: the verifier runs live only with its own matching scores (no exemption)."""
     from catalyst.extract.evaluate import VERIFY_EVALS
     from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 
     role = load_config().roles[VERIFIER_ROLE]
-    problems = gate_problems(load_prompt(*VERIFIER_PROMPT), role, VERIFY_EVALS, allow_unscored=False)
-    assert problems == [
-        "verify_catalysts has no scores.json: run `catalyst eval-extractor --prompt verify_catalysts`"
-    ]
+    assert gate_problems(load_prompt(*VERIFIER_PROMPT), role, VERIFY_EVALS, allow_unscored=False) == []
 
 
 def test_the_second_reading_may_not_skip_its_scores_with_an_exemption(tmp_path: Path) -> None:
