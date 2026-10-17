@@ -4,10 +4,11 @@ name: Extract catalysts (live)
 # - extract: on the newest press releases in the live database. Safe to re-run: documents
 #   already extracted with the same prompt version are skipped. Results are claims, never
 #   published catalysts.
-# - evaluate: on the 12 recorded releases of the gold set, to earn the prompt's scores
-#   (ADR 0014). The scores go to the job summary for the coding session to commit.
+# - evaluate: on the 12 recorded releases of the gold set, to earn a prompt's scores
+#   (ADR 0014): the extractor's, or the verifier's second reading (ADR 0018, part 2). The
+#   scores go to the job summary for the coding session to commit.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
-# release, inside the extractor's daily cap (config/models.toml).
+# release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 
 on:
   workflow_dispatch:
@@ -22,6 +23,11 @@ on:
         type: number
         required: true
         default: 50
+      prompt:
+        description: "evaluate only: which reader to score"
+        type: choice
+        options: [extract_catalysts, verify_catalysts]
+        default: extract_catalysts
 
 permissions:
   contents: read
@@ -70,16 +76,17 @@ jobs:
           fi
           exit "$status"
 
-      - name: Score the extractor on the gold set
+      - name: Score a reader on the gold set
         if: ${{ inputs.mode == 'evaluate' }}
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+          PROMPT: ${{ inputs.prompt }}
         run: |
           set +e
-          uv run catalyst eval-extractor --out "$RUNNER_TEMP/scores.json" > /dev/null
+          uv run catalyst eval-extractor --prompt "$PROMPT" --out "$RUNNER_TEMP/scores.json" > /dev/null
           status=$?
-          { echo "## Extractor scores"; echo '```json'; cat "$RUNNER_TEMP/scores.json" 2>/dev/null; echo '```'; } \
+          { echo "## Scores: $PROMPT"; echo '```json'; cat "$RUNNER_TEMP/scores.json" 2>/dev/null; echo '```'; } \
             | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"

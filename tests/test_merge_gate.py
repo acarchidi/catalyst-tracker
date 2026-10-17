@@ -128,6 +128,8 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         "config/models.toml",
         "evals/extract_catalysts/baseline.json",
         "evals/extract_catalysts/unscored.json",
+        "evals/verify_catalysts/baseline.json",
+        "evals/verify_catalysts/unscored.json",
     ],
 )
 def test_changes_to_the_rules_review_or_protected_settings_go_to_the_owner(path: str) -> None:
@@ -161,6 +163,7 @@ def test_command_line_prints_the_decision(tmp_path: Path) -> None:
         "pyproject.toml",
         "pipeline/catalyst/cli.py",
         "evals/extract_catalysts/scores.json",
+        "evals/verify_catalysts/scores.json",  # the owner-only floor protects it (ADR 0018, part 2)
     ],
 )
 def test_ordinary_paths_merge(path: str) -> None:
