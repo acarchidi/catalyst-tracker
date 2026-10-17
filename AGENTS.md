@@ -26,6 +26,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 - Tick roadmap items in the pull request that finishes them.
 - Branch from the latest main for each item; do not stack pull requests.
 - Open each pull request as a draft. Mark it ready for review only when its work is done and the local checks pass. Marking it ready starts the Claude review (ADR 0006).
+- The build overseer (ADR 0019) checks every pull request against the roadmap and these rules. Treat a blocking overseer finding like a blocking review comment: fix it, or answer on the pull request why not. Never remove a `hold` label you did not place.
 - The merge robot (ADR 0007) merges a ready pull request from a `claude/` branch into main once CI and the Claude review both succeed on its latest commit. Wait for the merge before starting the next item.
 - Never approve or merge a pull request yourself, never push to main, and never weaken the review workflow, the merge robot, `scripts/review_verdict.py`, or `scripts/merge_gate.py` to get a merge through.
 - The robot leaves for the owner pull requests that change the merge rules, the review, the rule documents, check settings, or spending caps (the list is in `scripts/merge_gate.py`). Keep such changes in their own small pull requests. For those and for Dependabot pull requests, run a separate reviewer subagent, then tell the owner in plain words what the change does and what the reviewer found.
