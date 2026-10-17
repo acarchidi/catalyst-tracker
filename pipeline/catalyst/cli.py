@@ -5,14 +5,15 @@ import json
 import sys
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
 from defusedxml.ElementTree import ParseError
 from sqlalchemy import create_engine
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
@@ -32,6 +33,7 @@ from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
+from catalyst.resolve_claims import resolve_claims
 from catalyst.snapshots import (
     LocalSnapshotStore,
     SnapshotStore,
@@ -102,6 +104,9 @@ def _parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
     _store_arguments(extract)
+    commands.add_parser(
+        "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
+    )
     evaluate = commands.add_parser(
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
@@ -142,6 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "check-links": _gate1_checks,
         "extract-catalysts": _extract,
         "eval-extractor": _evaluate,
+        "resolve-claims": _resolve,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -239,14 +245,37 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         client = ModelClient(load_config(), {adapter.name: adapter}, DatabaseLedger(engine))
         report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
+        try:
+            matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now).summary()
+        except SQLAlchemyError as error:  # the extraction stands; matching re-runs next time
+            matches = {"error": f"{type(error).__name__}: matching did not finish"}
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary()
+    summary = report.summary() | {"matches": matches}
     print(json.dumps(summary, indent=2))
     return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
+
+
+def _resolve(_args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = resolve_claims(sessionmaker(engine), _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
+    return 0
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _evaluate(args: argparse.Namespace) -> int:

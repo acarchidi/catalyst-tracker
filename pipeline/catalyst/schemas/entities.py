@@ -22,6 +22,8 @@ from catalyst.schemas.enums import (
     DrugNameKind,
     DrugRole,
     LineOfTherapy,
+    MatchedEntity,
+    MatchStatus,
     Modality,
     ModelCallStatus,
     OutcomeResult,
@@ -355,6 +357,37 @@ class Claim(Entity):
             raise ValueError("the quote span must be as long as the quote")
         if self.value is None:
             raise ValueError("a claim must carry a value")
+        return self
+
+
+class EntityMatch(Entity):
+    """How one name in a claim was matched to a company, drug, or trial (ADR 0015, part 4).
+
+    Resolved matches name their record. Ambiguous and unknown ones wait for review, with every
+    candidate. A later run updates the row as the reference tables grow.
+    """
+
+    __tablename__ = "entity_match"
+    __unique__ = (("claim_id", "entity_type", "name"),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "resolved_has_record": "(status = 'resolved') = (matched_id IS NOT NULL)",
+    }
+
+    claim_id: Annotated[UUID, References("claim")] = Field(description="The claim the name comes from.")
+    entity_type: MatchedEntity = Field(description="Company, drug, or trial.")
+    name: Name = Field(description="The name as the claim gives it, or the source link for a company.")
+    status: MatchStatus = Field(description="Resolved (one record), ambiguous (several), or unknown (none).")
+    matched_id: UUID | None = Field(default=None, description="The record, when resolved.")
+    candidates: JsonValue = Field(description="Every candidate record's id, as a list; empty when unknown.")
+    matched_by: ShortText | None = Field(
+        default=None, description="Which rule found the candidates, for example 'cik' or 'code_name'."
+    )
+    resolved_at: AwareDatetime = Field(description="When this match was last made.")
+
+    @model_validator(mode="after")
+    def _record(self) -> Self:
+        if (self.status is MatchStatus.RESOLVED) != (self.matched_id is not None):
+            raise ValueError("a resolved match names its record, and only a resolved match does")
         return self
 
 
