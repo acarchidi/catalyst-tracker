@@ -26,6 +26,8 @@ Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 000
 | CP6 Billing | Before taking money | A full test-mode purchase, upgrade, and cancellation | **Opus** | Free users never see paid data; paid users always do |
 | Gate 4 | End of Phase 3 | 4 weeks of alert delivery logs | `/ultrareview` | Alerts delivered for every run in the 4 weeks |
 | CAL2 Benchmark calibration | Start of Phase 4 | 20 benchmark drafts | Owner (domain expert) | Owner approves at least 18 of 20 |
+| CP7 First send | Before the first newsletter issue or outreach note goes out | One test issue and one test note sent to the owner's own address, and the approval screen with its recipient list | **Opus** | Tests show the sender refuses anything without a matching approval (text, recipients, channel) and never sends to an opted-out address; every message carries the postal address and a working opt-out |
+| CP8 Oversight | Before the build overseer becomes a required check, and before the orchestrator's controls switch on | A dry run: the overseer's findings on the last 10 merged pull requests, and the orchestrator's actions replayed on recorded runs | **Opus** + adversarial tests (injected text in a diff, a filing, and a run log) | Injected text cannot place or lift a hold or trigger an action; every action can only delay, never publish or send |
 | CAL3 Scenario calibration | Before catalyst scenarios publish | 20 scenario drafts with every input, plus the backtest on past catalysts | **Opus** review of the math + owner (domain expert) | Owner approves at least 18 of 20; backtest interval score beats the naive baseline |
 
 ## Quality bars enforced in CI
