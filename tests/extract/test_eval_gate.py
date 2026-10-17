@@ -118,7 +118,9 @@ def test_scores_without_a_baseline_are_blocked(tmp_path: Path) -> None:
 
 def test_the_gate_reads_the_real_evals_folder() -> None:
     assert EVALS.name == "extract_catalysts"
-    assert (EVALS / "unscored.json").exists()
+    # Before the first paid run the exemption file exists; after it, the scores and their floor do.
+    assert (EVALS / "scores.json").exists() or (EVALS / "unscored.json").exists()
+    assert (EVALS / "scores.json").exists() == (EVALS / "baseline.json").exists()
 
 
 def test_other_effort_or_token_limit_needs_new_scores(tmp_path: Path) -> None:

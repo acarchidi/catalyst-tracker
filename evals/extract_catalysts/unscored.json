@@ -1,9 +1,0 @@
-{
-  "prompt_id": "extract_catalysts",
-  "prompt_version": "1.0.0",
-  "prompt_sha256": "852dc031959b318be0ff5c6c0ac43be3850e7215c5d67c8121cd51feeedee362",
-  "model": "claude-sonnet-5-5",
-  "effort": "medium",
-  "max_tokens": 16000,
-  "note": "The first prompt version ships unscored (ADR 0014). Its first paid evaluation run replaces this file with scores.json and baseline.json."
-}

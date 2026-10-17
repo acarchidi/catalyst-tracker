@@ -1,0 +1,18 @@
+{
+  "prompt_id": "extract_catalysts",
+  "prompt_version": "1.0.0",
+  "prompt_sha256": "852dc031959b318be0ff5c6c0ac43be3850e7215c5d67c8121cd51feeedee362",
+  "model": "claude-sonnet-5-5",
+  "effort": "medium",
+  "max_tokens": 16000,
+  "gold_sha256": "587e943233a7e74b5c8525731b84db2e0e21ae022789d7f7f8b8ff4fae837aa3",
+  "documents": 12,
+  "scores": {
+    "recall": 0.9,
+    "precision": 0.9,
+    "catalyst_type": 0.944,
+    "window": 0.889,
+    "drug": 0.833,
+    "quote_found": 0.95
+  }
+}
