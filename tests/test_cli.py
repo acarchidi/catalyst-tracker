@@ -17,6 +17,7 @@ from catalyst.collectors.sec.press_release import NoPressReleaseError
 from catalyst.extract.evaluate import Scores
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
+from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 
 
@@ -206,10 +207,13 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", fake_extract)
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "found.json"
     assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
     assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
-    assert json.loads(capsys.readouterr().out)["claims_stored"] == 2
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["claims_stored"] == 2
+    assert printed["matches"]["claims"] == 2  # names in new claims are matched right after extraction
     (written,) = json.loads(out.read_text())
     assert written["company"] == "Acme Bio"
     assert written["published"] == "2026-10-14"
@@ -248,3 +252,35 @@ def test_eval_extractor_without_a_database_setting_says_so_plainly(
     monkeypatch.delenv("SUPABASE_DB_PASSWORD", raising=False)
     assert main(["eval-extractor", "--out", str(tmp_path / "s.json")]) == 2
     assert "SUPABASE_DB_PASSWORD" in capsys.readouterr().err
+
+
+def test_resolve_claims_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    report = MatchReport(claims=3, drugs_created=1)
+    report.statuses["drug:resolved"] = 3
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: report)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["resolve-claims"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "claims": 3,
+        "drugs_created": 1,
+        "failed": 0,
+        "matches": {"drug:resolved": 3},
+    }
+
+
+def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    def broken(*_args: object) -> MatchReport:
+        raise OperationalError("select", {}, Exception("database went away"))
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", broken)
+    assert main(["extract-catalysts"]) == 0
+    assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]
