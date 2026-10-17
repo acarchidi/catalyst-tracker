@@ -29,7 +29,7 @@ The repository `catalyst-tracker` exists. If the Claude GitHub App is set to "On
 4. Copy into your note:
    - **Project URL**: shown on the project's home page, like `https://xxxx.supabase.co`
    - **Secret key**: **API Keys** at the bottom of the home page (or gear icon, then **API Keys**); copy the key that starts with `sb_secret_`. If none is listed, click the button to create one
-   - **Session pooler string**: green **Connect** button, then **Session pooler**; copy it exactly, with `[YOUR-PASSWORD]` left in
+   - **Session pooler string**: green **Connect** button, then **Session pooler**; copy it exactly, with `[YOUR-PASSWORD]` left in. The password itself goes in its own secret, without square brackets
 
 ## Part 4 — Not needed
 
@@ -46,7 +46,7 @@ Live jobs run on GitHub's machines (ADR 0011), so the keys go only into GitHub's
 | `SUPABASE_SECRET_KEY` | `sb_secret_` key (Part 3) |
 | `SUPABASE_DB_PASSWORD` | Database password (Part 3) |
 | `SUPABASE_DB_URL` | Session pooler string, with `[YOUR-PASSWORD]` left in (Part 3) |
-| `SEC_CONTACT_EMAIL` | The project's SEC contact address |
+| `SEC_CONTACT_EMAIL` | The project's SEC contact address: a new address made for this project, not a personal one; the SEC requires one on every automated request |
 | `CATALYST_ANTHROPIC_API_KEY` | Anthropic key (Part 2), when Phase 1 needs it |
 
 3. Delete your note with the keys.

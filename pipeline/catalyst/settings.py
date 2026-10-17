@@ -4,6 +4,7 @@ Error messages name the setting and the setup step, never the value.
 """
 
 import os
+import re
 from urllib.parse import quote
 
 DEFAULT_DATABASE_URL = "postgresql+psycopg://postgres:postgres@localhost:5432/catalyst"
@@ -35,7 +36,7 @@ def database_url() -> str:
         )
     password = _required("SUPABASE_DB_PASSWORD", "Part 3, then Part 5")
     filled = pooler.replace(PASSWORD_PLACEHOLDER, quote(password, safe=""))
-    return filled.replace("postgresql://", "postgresql+psycopg://", 1)
+    return re.sub(r"^postgres(?:ql)?://", "postgresql+psycopg://", filled)
 
 
 def sec_contact_email() -> str:

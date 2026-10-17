@@ -3,7 +3,7 @@ name: Gate 1 live run
 # Runs Gate 1 against the live Supabase database (docs/gate1.md, ADR 0010, ADR 0011):
 # migrate, collect the 50 Gate 1 companies, check every stored copy and link, and print the
 # 10-record sample. Started by hand from the Actions tab; safe to re-run (every job is
-# idempotent). Secrets come from the repository's Actions secrets (docs/setup.md Part 5).
+# idempotent). Each step gets only the secrets it needs (docs/setup.md Part 5).
 
 on:
   workflow_dispatch:
@@ -20,12 +20,6 @@ jobs:
     name: Gate 1 live run
     runs-on: ubuntu-latest
     timeout-minutes: 150
-    env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
-      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-      SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -35,9 +29,18 @@ jobs:
         run: uv sync --locked
 
       - name: Bring the live database up to date
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: uv run alembic upgrade head
 
       - name: Collect the 50 Gate 1 companies
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
         run: |
           set +e
           uv run catalyst collect --companies config/gate1_companies.toml --since 2026-07-01 \
@@ -49,6 +52,11 @@ jobs:
 
       - name: Check every stored copy against its fingerprint
         if: ${{ !cancelled() }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
         run: |
           set +e
           uv run catalyst snapshots-verify --snapshot-store supabase > "$RUNNER_TEMP/verify.json"
@@ -59,6 +67,10 @@ jobs:
 
       - name: Check every source link
         if: ${{ !cancelled() }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
         run: |
           set +e
           uv run catalyst check-links > "$RUNNER_TEMP/links.md"
@@ -68,6 +80,9 @@ jobs:
 
       - name: Ten records for the owner to click
         if: ${{ !cancelled() }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
         run: |
           set +e
           uv run catalyst sample-records > "$RUNNER_TEMP/sample.md"

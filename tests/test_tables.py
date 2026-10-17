@@ -340,8 +340,7 @@ def test_every_table_is_closed_to_supabase_public_api_roles(engine: Engine) -> N
             connection.execute(
                 text(
                     "SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
-                    "WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity "
-                    "AND c.relname <> 'alembic_version'"
+                    "WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity"
                 )
             )
             .scalars()

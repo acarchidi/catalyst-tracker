@@ -8,4 +8,6 @@ Gate 1 (docs/quality-gates.md): 50 companies flow from source to the live databa
 4. Check every link: `uv run catalyst check-links`
 5. Make the owner's preview: `uv run catalyst sample-records`
 
+**Live run.** On GitHub: **Actions** tab, **Gate 1 live run** on the left, **Run workflow**, then the green **Run workflow** button (Claude Code usually starts it). It takes about an hour; the run's page shows each step's results. A red step names its source in the summary: one source failing (for example a site refusing for a minute) turns the run red without spoiling the others, and a re-run fills the gap.
+
 Steps 2 to 5 read `CATALYST_DATABASE_URL` and the Supabase settings (setup Part 3, then Part 5); live runs use `.github/workflows/gate1-live.yml` (ADR 0011). Without them, the same commands run against a local database and local copies, which is how the dress rehearsal in docs/gate1-rehearsal.md was made.

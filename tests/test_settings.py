@@ -77,3 +77,10 @@ def test_a_pooler_string_with_the_password_already_in_it_is_refused(monkeypatch:
     with pytest.raises(settings.MissingSettingError, match=r"\[YOUR-PASSWORD\]") as raised:
         settings.database_url()
     assert "typed-in" not in str(raised.value)
+
+
+def test_the_older_postgres_scheme_is_accepted_too(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CATALYST_DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_DB_URL", POOLER.replace("postgresql://", "postgres://"))
+    monkeypatch.setenv("SUPABASE_DB_PASSWORD", "secret")
+    assert settings.database_url().startswith("postgresql+psycopg://postgres.abcdefghijkl:secret@")

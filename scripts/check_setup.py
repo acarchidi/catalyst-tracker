@@ -22,6 +22,7 @@ import sys
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from pathlib import Path
 
 
 @dataclass(frozen=True)
@@ -117,6 +118,16 @@ def github_secret_names() -> set[str] | None:
         return None
 
 
+def readme_pending() -> list[str]:
+    """Return the unticked items of the README's owner checklist."""
+    readme = Path(__file__).resolve().parent.parent / "README.md"
+    try:
+        lines = readme.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return []
+    return [line.removeprefix("- [ ] ").strip() for line in lines if line.startswith("- [ ] ")]
+
+
 def main() -> int:
     """Print the setup report and return 1 if a required setting is missing."""
     parser = argparse.ArgumentParser(description=(__doc__ or "Setup check").splitlines()[0])
@@ -131,6 +142,10 @@ def main() -> int:
     if secrets is None:
         print("  [unknown] cannot be listed from a coding session; a live job names any missing one")
         missing: list[Requirement] = []
+        if pending := readme_pending():
+            print("\nStill to do, from the README checklist:")
+            for item in pending:
+                print(f"  [ ] {item}")
     else:
         missing = [req for req in REQUIREMENTS if req.name not in secrets]
         for req in REQUIREMENTS:
@@ -150,6 +165,9 @@ def main() -> int:
         first = missing[0]
         print(f"\nNEXT STEP FOR THE OWNER: {first.step} in docs/setup.md (provides {first.name}).")
         return 1
+    if readme_pending():
+        print("\nThe items under 'Still to do' wait for the owner; Claude Code says when each is needed.")
+        return 0
     print("\nNothing for the owner to do here.")
     return 0
 
