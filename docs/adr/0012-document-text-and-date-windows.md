@@ -30,7 +30,7 @@ A claim stores a verbatim quote and its character offsets "in the stored copy's 
 | by year-end, later this year | the document's date to December 31 | year |
 | no year given (the fourth quarter, this quarter, next year) | the document's year, or the next year for "next" | as above |
 
-   A two-digit year needs an apostrophe ("April '27", "'27"), except in compact forms (2H26, 1Q27, Q1 27, H2 26). Alone, "April 27" is a day and "26" is a number, never a year. This rule came from the review of the first version, which read "November 12" as November 2012.
+   A two-digit year needs an apostrophe ("April '27", "'27"), except in compact forms (2H26, 1Q27, Q1 27, H2 26); "by year-end '27" needs it too. Alone, "April 27" is a day and "26" is a number, never a year. This rule came from the review of the first version, which read "November 12" as November 2012.
 
    A "by" deadline already past on the document's date gives no window, and a "by" window that is one day long has day precision (the `catalyst` table requires that). Vague phrases ("soon", "in the coming months", "upon approval") and impossible dates (February 30) give no window: the claim goes to review rather than get an invented date.
 

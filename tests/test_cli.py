@@ -236,3 +236,15 @@ def test_eval_extractor_writes_a_scores_record(
     assert record["prompt_id"] == "extract_catalysts"
     assert record["scores"]["recall"] == 0.9
     assert json.loads(capsys.readouterr().out) == record
+
+
+def test_eval_extractor_without_a_database_setting_says_so_plainly(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    """Review of PR #17: a missing setting gives the plain message and exit code 2, not a traceback."""
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.delenv("CATALYST_DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_DB_URL", "postgresql://postgres:[YOUR-PASSWORD]@h:5432/postgres")
+    monkeypatch.delenv("SUPABASE_DB_PASSWORD", raising=False)
+    assert main(["eval-extractor", "--out", str(tmp_path / "s.json")]) == 2
+    assert "SUPABASE_DB_PASSWORD" in capsys.readouterr().err

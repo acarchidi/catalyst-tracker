@@ -25,11 +25,11 @@ AGENTS.md: "Any prompt or model change re-runs the gold-set evaluation; CI block
    - quote_found: proposals whose quote is in the source.
 3. **Earning a score.** `catalyst eval-extractor --out scores.json` runs the extractor on the 12 releases with the product key, in GitHub Actions; about 12 model calls. The record names the prompt, its version, a SHA-256 fingerprint of the prompt's words and schema (what the model is sent), the model, and the SHA-256 of `gold.jsonl`. The coding session commits it as `evals/extract_catalysts/scores.json`, with the first scores also as `baseline.json`.
 4. **The gate** (a test in CI, `tests/extract/test_eval_gate.py`) fails when:
-   - `scores.json` names another prompt version, other prompt words, another model, or another gold set;
-   - `scores.json` exists without `baseline.json`, or any score is below `baseline.json`;
+   - `scores.json` names another prompt version, other prompt words, another model, another effort or token limit for the extractor role, or another gold set;
+   - `scores.json` exists without `baseline.json`, `baseline.json` leaves out any score, or any score is below it;
    - there are no scores and the prompt is past version 1.0.0;
-   - there are no scores and the prompt words or the model differ from those recorded in `unscored.json`.
-   Version 1.0.0 may ship unscored only as recorded there: with these exact words and `claude-sonnet-5-5`. These last two rules come from the review of PR #17, which found that a model change or an edit to the prompt's words without a new version would otherwise pass.
+   - there are no scores and the prompt words or the role's model, effort, or token limit differ from those recorded in `unscored.json`.
+   Version 1.0.0 may ship unscored only as recorded there: with these exact words and `claude-sonnet-5-5`. The effort, token limit, and complete-baseline rules came from the second review of PR #17. The last two rules come from its first review, which found that a model change or an edit to the prompt's words without a new version would otherwise pass.
 
 ## Alternatives
 

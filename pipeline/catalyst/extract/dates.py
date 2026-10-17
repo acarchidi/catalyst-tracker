@@ -151,7 +151,7 @@ def _period(phrase: str, published: date) -> _Period | None:
 
 
 _BY = re.compile(r"^by (?:(?:the )?end of )?(?P<rest>.+)$")
-_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?year|year)(?: (?P<year>\d{4}|'?\d{2}))?$")
+_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?year|year)(?: (?P<year>\d{4}|'\d{2}))?$")
 
 
 def _deadline(phrase: str, published: date) -> _Period | None:

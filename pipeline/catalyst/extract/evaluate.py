@@ -20,6 +20,7 @@ from catalyst.extract.agent import ExtractedCatalyst, extract_catalysts
 from catalyst.extract.dates import DateWindow, parse_window
 from catalyst.extract.text import QuoteSpan, document_text, find_quote
 from catalyst.llm.client import ModelClient
+from catalyst.llm.config import RoleConfig
 from catalyst.llm.prompts import Prompt
 from catalyst.schemas.enums import CatalystType
 
@@ -194,28 +195,31 @@ def prompt_fingerprint(prompt: Prompt) -> str:
     return hashlib.sha256(content.encode()).hexdigest()
 
 
-def _identity(prompt: Prompt, model: str) -> dict[str, str]:
+def _identity(prompt: Prompt, role: RoleConfig) -> dict[str, object]:
+    """Return what earned a score: the prompt and every role setting that changes answers."""
     return {
         "prompt_id": prompt.id,
         "prompt_version": prompt.version,
         "prompt_sha256": prompt_fingerprint(prompt),
-        "model": model,
+        "model": role.model,
+        "effort": role.effort,
+        "max_tokens": role.max_tokens,
     }
 
 
 def scores_record(
-    scores: Scores, prompt: Prompt, model: str, gold_path: Path, documents: int
+    scores: Scores, prompt: Prompt, role: RoleConfig, gold_path: Path, documents: int
 ) -> dict[str, Any]:
     """Return what `scores.json` holds: the scores and exactly what earned them."""
     return {
-        **_identity(prompt, model),
+        **_identity(prompt, role),
         "gold_sha256": gold_fingerprint(gold_path),
         "documents": documents,
         "scores": asdict(scores),
     }
 
 
-def _mismatches(name: str, record: dict[str, Any], expected: dict[str, str]) -> list[str]:
+def _mismatches(name: str, record: dict[str, Any], expected: dict[str, object]) -> list[str]:
     return [
         f"{name} names {key} {record.get(key)!r}, not the current {value!r}"
         for key, value in expected.items()
@@ -223,16 +227,17 @@ def _mismatches(name: str, record: dict[str, Any], expected: dict[str, str]) -> 
     ]
 
 
-def gate_problems(prompt: Prompt, model: str, evals: Path = EVALS) -> list[str]:
+def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list[str]:
     """Return why the current prompt and model may not ship; empty when they may.
 
     Scored: `scores.json` must name exactly this prompt (id, version, and the fingerprint of its
-    words), this model, and this gold set, and no score may be below `baseline.json`, which
-    must exist. Unscored: allowed only for the first prompt version, and only for the exact
-    prompt words and model recorded in `unscored.json`. So a new version, edited words, another
+    words), this model with its effort and token limit, and this gold set. No score may be
+    below `baseline.json`, which must exist and name every score. Unscored: allowed only for
+    the first prompt version, and only for the exact prompt words and role settings recorded
+    in `unscored.json`. So a new version, edited words, another
     model, or another gold set all fail until new scores are committed (ADR 0014).
     """
-    expected = _identity(prompt, model)
+    expected = _identity(prompt, role)
     scores_path = evals / "scores.json"
     if not scores_path.exists():
         if prompt.version != FIRST_VERSION:
@@ -248,6 +253,9 @@ def gate_problems(prompt: Prompt, model: str, evals: Path = EVALS) -> list[str]:
     if not baseline_path.exists():
         return [*problems, "scores.json exists but baseline.json does not: there is no floor to check"]
     floor: dict[str, float] = json.loads(baseline_path.read_text(encoding="utf-8"))
+    missing = sorted(set(Scores.__dataclass_fields__) - set(floor))
+    if missing:
+        problems.append(f"baseline.json names no floor for {', '.join(missing)}")
     for name, minimum in floor.items():
         earned = float(record["scores"].get(name, 0.0))
         if earned < minimum:

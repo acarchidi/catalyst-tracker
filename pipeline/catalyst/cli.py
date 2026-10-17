@@ -252,19 +252,20 @@ def _extract(args: argparse.Namespace) -> int:
 def _evaluate(args: argparse.Namespace) -> int:
     try:
         adapter = anthropic_adapter.from_settings()
+        database = settings.database_url()
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     config = load_config()
-    engine = create_engine(settings.database_url())
+    engine = create_engine(database)
     try:
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
         gold = load_gold(EVALS / "gold.jsonl")
         scores, _ = evaluate(client, gold, EVALS / "documents")
     finally:
         engine.dispose()
-    model = config.roles[ROLE].model
-    record = scores_record(scores, load_prompt(*EXTRACTOR_PROMPT), model, EVALS / "gold.jsonl", len(gold))
+    role = config.roles[ROLE]
+    record = scores_record(scores, load_prompt(*EXTRACTOR_PROMPT), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
     return 0
