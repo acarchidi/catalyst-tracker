@@ -24,7 +24,7 @@ from catalyst.extract.agent import ROLE
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.schemas import Claim, ClaimCheck, EntityMatch, SourceDocument, Trial, TrialPhase
-from catalyst.verify.rules import ClaimFacts, Match, Outcome, rule_checks
+from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
 
 _log = logging.getLogger(__name__)
 _CHECK = TABLES[ClaimCheck]
@@ -86,6 +86,20 @@ def _facts(session: Session) -> list[ClaimFacts]:
     ]
 
 
+def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datetime) -> None:
+    """Keep one check's latest outcome for one claim, replacing any earlier one."""
+    row = ClaimCheck(
+        claim_id=claim_id,
+        check_name=result.check,
+        outcome=result.outcome,
+        reason=result.reason[:300] if result.reason else None,
+        checked_at=at,
+    ).model_dump()
+    changes = {k: row[k] for k in ("outcome", "reason", "checked_at")}
+    statement = insert(_CHECK).values(**row)
+    session.execute(statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes))
+
+
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
     """Run every rule check on every extractor claim; store one outcome per claim and check.
 
@@ -99,18 +113,7 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
             report.claims += 1
             results = rule_checks(facts, today)
             for result in results:
-                row = ClaimCheck(
-                    claim_id=facts.id,
-                    check_name=result.check,
-                    outcome=result.outcome,
-                    reason=result.reason[:300] if result.reason else None,
-                    checked_at=at,
-                ).model_dump()
-                changes = {k: row[k] for k in ("outcome", "reason", "checked_at")}
-                statement = insert(_CHECK).values(**row)
-                session.execute(
-                    statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes)
-                )
+                store_check(session, facts.id, result, at)
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
             if all(result.outcome is not Outcome.FAIL for result in results):
                 report.claims_passing += 1

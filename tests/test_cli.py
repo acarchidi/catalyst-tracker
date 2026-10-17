@@ -20,6 +20,7 @@ from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 from catalyst.verify.run import CheckReport
+from catalyst.verify.second_run import SecondReadingReport
 
 
 def test_missing_sec_contact_email_exits_with_setup_step(
@@ -210,6 +211,7 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     monkeypatch.setattr(cli, "extract_documents", fake_extract)
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "found.json"
     assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
     assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
@@ -220,6 +222,77 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     (written,) = json.loads(out.read_text())
     assert written["company"] == "Acme Bio"
     assert written["published"] == "2026-10-14"
+
+
+def test_extract_catalysts_runs_the_second_reading_last_with_the_verifier_config(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0018, part 2: the second reading runs after matching and the rule checks."""
+    order: list[str] = []
+    asked: dict[str, Any] = {}
+
+    def second(*args: object, **options: Any) -> SecondReadingReport:
+        order.append("second")
+        asked.update(options, config=args[3])
+        return SecondReadingReport(skipped=["no scores yet"])
+
+    def checks(*_args: object) -> CheckReport:
+        order.append("checks")
+        return CheckReport()
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", second)
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=0))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", checks)
+    assert main(["extract-catalysts", "--limit", "4"]) == 0  # skipped is not a failure
+    assert order == ["checks", "second"]
+    assert asked["limit"] == 4
+    assert asked["config"].roles["verifier"].model == "claude-sonnet-5-5"
+    assert json.loads(capsys.readouterr().out)["second_reading"]["skipped"] == ["no scores yet"]
+
+
+@pytest.mark.parametrize(
+    ("second", "expected"),
+    [
+        ({"documents_failed": 1}, 1),
+        ({"stopped": "verifier at its daily cap"}, 1),
+        ({}, 0),
+    ],
+    ids=["a failed release", "the spending cap", "a clean run"],
+)
+def test_the_second_readings_failures_fail_the_command(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], second: dict[str, Any], expected: int
+) -> None:
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport(**second))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=0))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == expected
+    capsys.readouterr()
+
+
+def test_a_bad_scores_file_stops_only_the_second_reading(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Review of PR #34: matching and the rule checks still run and print; the command fails."""
+
+    def broken(*_args: object, **_options: object) -> SecondReadingReport:
+        raise json.JSONDecodeError("Expecting value", "", 0)
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", broken)
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == 1
+    summary = json.loads(capsys.readouterr().out)
+    assert (summary["matches"]["claims"], summary["checks"]["claims"]) == (3, 3)
+    assert summary["second_reading"] == {"error": "JSONDecodeError: the second reading did not finish"}
 
 
 def test_eval_extractor_needs_the_product_key(
@@ -306,6 +379,7 @@ def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", broken)
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 0
     assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]
 
@@ -323,6 +397,7 @@ def test_extract_catalysts_keeps_the_match_counts_when_only_the_checks_fail(
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", broken)
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["matches"]["claims"] == 2

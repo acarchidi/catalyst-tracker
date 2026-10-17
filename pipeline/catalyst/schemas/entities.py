@@ -409,6 +409,27 @@ class ClaimCheck(Entity):
     checked_at: AwareDatetime = Field(description="When the check last ran.")
 
 
+class DocumentReading(Entity):
+    """One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2).
+
+    A re-run skips a document this reader has already read with the same prompt and model.
+    """
+
+    __tablename__ = "document_reading"
+    __unique__ = (("source_document_id", "agent", "prompt_id", "prompt_version", "model"),)
+    __checks__: ClassVar[dict[str, str]] = {"catalysts_not_negative": "catalysts >= 0"}
+
+    source_document_id: Annotated[UUID, References("source_document")] = Field(
+        description="The document read."
+    )
+    agent: ShortText = Field(description="Which reader, for example 'verifier'.")
+    prompt_id: ShortText = Field(description="Prompt used.")
+    prompt_version: ShortText = Field(description="Version of that prompt.")
+    model: ShortText = Field(description="Model that answered.")
+    catalysts: Annotated[int, Field(ge=0)] = Field(description="How many catalysts the reader proposed.")
+    read_at: AwareDatetime = Field(description="When the document was read.")
+
+
 class CatalystChange(Entity):
     """One change to a catalyst field (spec: Change history).
 
