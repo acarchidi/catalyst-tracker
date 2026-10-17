@@ -127,6 +127,12 @@ def test_a_date_that_is_not_in_the_quote_is_caught() -> None:
     assert catalyst.window is None
 
 
+def test_date_words_must_be_whole_words_in_the_quote() -> None:
+    quote = "Topline data from the Phase 3 RAINIER trial of zentocel in MASH are expected in the second"
+    (catalyst,) = _run(_item(date_text="the sec", quote=quote))[1]
+    assert catalyst.problems == (Problem.DATE_NOT_IN_QUOTE,)
+
+
 def test_a_vague_date_gets_no_window() -> None:
     quote = "Topline data from the Phase 3 RAINIER trial of zentocel in MASH are expected"
     (catalyst,) = _run(_item(date_text="expected", quote=quote))[1]
@@ -161,7 +167,7 @@ def test_claims_are_made_only_for_catalysts_whose_quote_was_found() -> None:
     (claim,) = claims
     assert claim.source_document_id == document_id
     assert claim.subject_type is ClaimSubject.CATALYST
-    assert claim.field == "catalyst"
+    assert claim.field.startswith("catalyst:")
     assert claim.agent == "extractor"
     assert (claim.prompt_id, claim.prompt_version) == EXTRACTOR_PROMPT
     assert (claim.provider, claim.model) == ("fake", "claude-sonnet-5-5")

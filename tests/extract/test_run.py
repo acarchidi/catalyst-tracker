@@ -26,7 +26,7 @@ RELEASE = (
     b"<p>Topline data from the Phase 3 RAINIER trial are expected in the second half of 2027.</p>"
     b"</body></html>"
 )
-ANSWER = {
+ANSWER: dict[str, list[dict[str, str | None]]] = {
     "catalysts": [
         {
             "catalyst_type": "topline_readout",
@@ -51,12 +51,15 @@ def _config(cap: str = "5") -> ModelConfig:
 class _Fake:
     name: str = "fake"
     calls: list[str] = field(default_factory=list[str])
+    answer: dict[str, list[dict[str, str | None]]] = field(default_factory=lambda: ANSWER)
 
     def complete(
         self, *, model: str, prompt: Prompt, document: str, max_tokens: int, effort: str | None
     ) -> Completion:
         self.calls.append(document)
-        return Completion(json.dumps(ANSWER), model, "req", "end_turn", TokenUsage(input=500, output=100))
+        return Completion(
+            json.dumps(self.answer), model, "req", "end_turn", TokenUsage(input=500, output=100)
+        )
 
 
 def _document(store: LocalSnapshotStore, factory: sessionmaker[Session], key: str, kind: str) -> None:
@@ -147,3 +150,18 @@ def test_documents_before_since_are_left_alone(
     fake = _Fake()
     client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
     assert extract_documents(session_factory, store, client, limit=10, since=since).documents == []
+
+
+def test_two_events_in_one_sentence_are_both_kept(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """Review of PR #16: claims sharing one quote must not collide on the claim table's unique key."""
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1")
+    shared = ANSWER["catalysts"][0]
+    second = shared | {"catalyst_type": "regulatory_submission", "title": "NDA submission"}
+    fake = _Fake(answer={"catalysts": [shared, second]})
+    client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
+    report = extract_documents(session_factory, store, client, limit=10, now=lambda: NOW)
+    assert report.summary()["claims_stored"] == 2
+    assert _claims(session_factory) == 2

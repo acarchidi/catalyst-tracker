@@ -16,7 +16,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import exists, select
+from sqlalchemy import exists, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -104,7 +104,14 @@ def _candidates(
         query = query.where(
             documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK)
         )
-    skipped = len(session.execute(query.where(done)).all())
+    finished = (
+        select(func.count()).select_from(documents).where(documents.c.document_type.in_(document_types), done)
+    )
+    if since is not None:
+        finished = finished.where(
+            documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK)
+        )
+    skipped = session.execute(finished).scalar_one()
     rows = session.execute(query.where(~done).order_by(documents.c.published_at.desc()).limit(limit)).all()
     return list(rows), skipped
 

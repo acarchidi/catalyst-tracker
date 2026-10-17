@@ -8,6 +8,9 @@ turns the phrase into a window. A proposal that fails a check keeps the reason, 
 
 from __future__ import annotations
 
+import hashlib
+import json
+import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from enum import StrEnum
@@ -67,6 +70,26 @@ def model_input(text: str, published: date) -> str:
     return f"Publication date: {published.isoformat()}\n\n{text}"
 
 
+def _has_words(quote: str, words: str) -> bool:
+    """Return whether `words` appear in `quote` as whole words, in order; only spacing may differ."""
+    parts = words.split()
+    if not parts:
+        return False
+    return re.search(r"(?<!\w)" + r"\s+".join(map(re.escape, parts)) + r"(?!\w)", quote) is not None
+
+
+def claim_field(value: dict[str, Any]) -> str:
+    """Return the claim's field: "catalyst:" plus a short fingerprint of the proposed event.
+
+    Two events stated in one sentence share a quote, so the field tells their claims apart on
+    the claim table's unique key (review of PR #16). The same proposal always gets the same
+    field, so a re-run still stores it once.
+    """
+    event = {key: value[key] for key in ("catalyst_type", "title", "drug", "indication", "date_text")}
+    digest = hashlib.sha256(json.dumps(event, sort_keys=True).encode()).hexdigest()[:16]
+    return f"catalyst:{digest}"
+
+
 def _checked(item: dict[str, Any], text: str, published: date) -> ExtractedCatalyst:
     catalyst_type = CatalystType(item["catalyst_type"])
     date_text = str(item["date_text"])
@@ -75,7 +98,7 @@ def _checked(item: dict[str, Any], text: str, published: date) -> ExtractedCatal
     span = find_quote(text, str(item["quote"]))
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)
-    elif find_quote(span.quote, date_text) is None:
+    elif not _has_words(span.quote, date_text):
         problems.append(Problem.DATE_NOT_IN_QUOTE)
     else:
         window = parse_window(date_text, published)
@@ -139,7 +162,7 @@ def catalyst_claims(extraction: Extraction, source_document_id: UUID, extracted_
             Claim(
                 source_document_id=source_document_id,
                 subject_type=ClaimSubject.CATALYST,
-                field="catalyst",
+                field=claim_field(value),
                 value=value,
                 quote=catalyst.quote.quote,
                 quote_start=catalyst.quote.start,
