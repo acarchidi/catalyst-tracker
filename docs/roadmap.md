@@ -23,6 +23,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [x] Extractor agents and prompt evaluation sets
 - [x] Entity resolver and reference tables. Includes trials of several drugs: every drug and combination is listed, each from a quoted source sentence, marked as tested alone or in combination (owner ruling, 2026-10-17; `evals/extract_catalysts/README.md`, rule 3)
 - [ ] Verification checks and publish gate
+- [ ] Build overseer: a GitHub Actions job on every pull-request event and once a day that checks each pull request against the roadmap and `AGENTS.md`, comments, holds the merge on a blocking finding, re-runs a failed CI job once, escalates owner decisions, and keeps a pinned "Build status" issue. The model only answers in JSON; `scripts/overseer_verdict.py` acts and touches only its own `overseer-hold` label. The workflow lands first; then "Overseer" becomes a required check, the robot also respects `overseer-hold`, and the Overseer workflow wakes the robot. The verdict script joins `OWNER_PATHS`; checkpoint CP8 (owner request 2026-10-17; ADR 0019)
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
 - [ ] Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary (owner decision 2026-10-17)
@@ -44,7 +45,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Show or hide any field: every table and record view lets the viewer hide fields they do not want; the choice is remembered on their device, and for signed-in users once accounts exist (owner request, 2026-10-17)
 - [ ] Catalyst timeline: each catalyst drawn as a bar across its date window on a time axis, so a quarter-wide window looks wider than a fixed date; rows by company or drug, side by side for comparison; past windows faded; each bar links to its record and source (owner request, 2026-10-17)
 - [ ] Read-only MCP server and directory listings
-- [ ] Weekly email and marketing-agent drafts (owner approves each)
+- [ ] Marketing and outreach agent: weekly newsletter, notes to named people, directory listings, and search-friendly page text, all drafted from published data; the owner approves every item (text, recipients, and channel), and a plain-code sender acts only on what was approved; CAN-SPAM rules built in; US contacts only for now; the sender stays off until business setup gives a postal address, a sending service, and a sending domain; checkpoint CP7 (owner decision 2026-10-17; ADR 0020)
 - [ ] Business setup: entity, terms, privacy policy, Stripe, sales tax (owner)
 
 **Gate 3:** business set up (entity, terms, Stripe, sales tax).
