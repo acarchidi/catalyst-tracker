@@ -41,6 +41,8 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 ## Phase 2 — Free launch (weeks 9–12)
 
+- [ ] Product name and domain (owner picks the name and buys the domain; Claude Code gives the exact DNS steps and checks them). The spec lists this as an open decision; it is needed before the public site, the sending domain, and Stripe's business details (owner request 2026-10-17)
+- [ ] Hosting: the web app on Vercel, with a preview for every pull request; the live database and storage settings checked for public traffic; error tracking (Sentry). Vercel's free plan is for non-commercial use only, so the public site needs Vercel Pro ($20 a month, including $20 of usage) from launch. The owner creates the Vercel and Sentry accounts in one sitting with the other Phase 2 accounts (owner request 2026-10-17)
 - [ ] Public site, catalyst calendar, public pages
 - [ ] Basic search and filters. A search for one drug finds the trials of combinations that contain it and shows that drug first; a long drug list expands on request and never takes over the page (owner ruling, 2026-10-17)
 - [ ] Show or hide any field: every table and record view lets the viewer hide fields they do not want; the choice is remembered on their device, and for signed-in users once accounts exist (owner request, 2026-10-17)
@@ -53,7 +55,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 ## Phase 3 — Paid tier, $15/month (weeks 13–16)
 
-- [ ] Accounts and $15 subscription
+- [ ] Accounts and $15 subscription: sign-in with Supabase Auth; Stripe Checkout for $15 a month (and an annual plan); Stripe's customer portal to change a card or cancel; Stripe webhooks that switch paid access on and off, tested to be idempotent; sales tax through Stripe Tax; the whole flow tested in Stripe's test mode at checkpoint CP6 before any real charge (owner request 2026-10-17)
 - [ ] Watchlists, alerts (email, push, Slack), interest feeds
 - [ ] All filters, saved searches, full history, CSV export
 - [ ] Full MCP tools and research assistant
@@ -106,6 +108,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | Spending lowered (owner decisions): the product's daily model caps total $6 (from $13.50); the Claude review no longer runs on pull requests the owner merges by hand, since a separate reviewer checks those in the coding session; roadmap gains the product name and domain, hosting (Vercel Pro once public, because the free plan is non-commercial), and the payment steps of the $15 subscription |
 | 2026-10-17 | ADR 0021: foreign company catalysts in two stages: foreign companies listed in the US (already on the coverage list) through the EDGAR forms each actually files (6-K, 20-F, 40-F, F-1, F-3, F-10, or the domestic forms) in Phase 1 before the gold set grows, then companies listed only outside the US, market by market, in a new Phase 5 (owner request) |
 | 2026-10-17 | ADR 0020: a marketing and outreach agent drafts the newsletter, notes to named people, directory listings, and page text from published data; the owner approves every item and a plain-code sender acts only on approved text; no social posts for now (owner decisions) |
 | 2026-10-17 | ADR 0019: oversight in two parts, both able to stop, hold, and re-run but not change data or prompts: a pipeline orchestrator whose actions plain-code rules choose, and a build overseer that checks every pull request against the roadmap and `AGENTS.md` and is a required check for the merge robot (owner decisions) |

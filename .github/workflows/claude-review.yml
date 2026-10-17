@@ -2,7 +2,9 @@ name: Claude review
 
 # A fresh Claude reviews every pull request that is ready for review. Its pass or fail is
 # the "Claude review" check, which the merge robot (merge-robot.yml) requires (ADR 0006,
-# ADR 0007).
+# ADR 0007). A pull request the owner merges by hand (it changes an owner path, by main's
+# scripts/merge_gate.py) is not reviewed here: a separate reviewer already checks it in the
+# coding session, and each review costs API credits (owner decision 2026-10-17).
 
 on:
   pull_request:
@@ -39,9 +41,30 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Pull requests the owner merges are not reviewed here
+        id: owner
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The rule comes from the base commit, never from the pull request being reviewed.
+          git show "$BASE_SHA:scripts/merge_gate.py" > "$RUNNER_TEMP/merge_gate.py"
+          git diff --name-only --no-renames "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/files.txt"
+          python3 -I - "$RUNNER_TEMP/merge_gate.py" "$RUNNER_TEMP/files.txt" >> "$GITHUB_OUTPUT" <<'PY'
+          import importlib.util, sys
+          from pathlib import Path
+          spec = importlib.util.spec_from_file_location("merge_gate", sys.argv[1])
+          gate = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(gate)
+          files = [f for f in Path(sys.argv[2]).read_text().splitlines() if f]
+          owned = [f for f in files if f.startswith(gate.OWNER_PATHS) or Path(f).name in gate.OWNER_FILE_NAMES]
+          print(f"owner={'true' if owned else 'false'}")
+          print(f"files={', '.join(sorted(owned))[:500]}")
+          PY
+
       - name: Review
         id: review
-        if: ${{ env.REVIEW_KEY_PRESENT == 'true' }}
+        if: ${{ env.REVIEW_KEY_PRESENT == 'true' && steps.owner.outputs.owner != 'true' }}
         uses: anthropics/claude-code-action@374f254f5efaf968abfe15d399fd90972e8138b9 # v1.0.251
         with:
           anthropic_api_key: ${{ secrets.CATALYST_REVIEW_API_KEY }}
@@ -89,10 +112,18 @@ jobs:
         if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' }}
         env:
           REVIEW_RESULT: ${{ steps.review.outputs.structured_output }}
+          OWNER_MERGES: ${{ steps.owner.outputs.owner }}
+          OWNER_FILES: ${{ steps.owner.outputs.files }}
         run: |
           set +e
-          python3 -I scripts/review_verdict.py "$RUNNER_TEMP/review.md"
-          status=$?
+          if [ "$OWNER_MERGES" = "true" ]; then
+            # The robot never merges these, so this pass cannot lead to a merge.
+            printf '## Claude review: not run, the owner merges this\n\nIt changes %s. A separate reviewer checked it in the coding session.\n' "$OWNER_FILES" > "$RUNNER_TEMP/review.md"
+            status=0
+          else
+            python3 -I scripts/review_verdict.py "$RUNNER_TEMP/review.md"
+            status=$?
+          fi
           cat "$RUNNER_TEMP/review.md" >> "$GITHUB_STEP_SUMMARY"
           delimiter="REPORT_$(openssl rand -hex 16)"
           { echo "report<<$delimiter"; cat "$RUNNER_TEMP/review.md"; echo; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
