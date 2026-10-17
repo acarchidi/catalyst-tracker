@@ -62,6 +62,12 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Public API tier (about $50/month)
 - [ ] Second model provider for verification
 - [ ] EMA, PMDA, NMPA sources; conference abstracts at scale; Slack and Teams apps
+- [ ] Estimated results-reporting window for each trial (owner request, 2026-10-17). A trial's primary completion date is when the last measurement is due, not when results come out. Show a second window for when results are likely to be reported, chosen in this order:
+  1. The company's own guidance ("topline data in 1H27"), whenever it exists.
+  2. Otherwise, the company's own history: for its past trials, the gap between primary completion (ClinicalTrials.gov) and the press release or filing that reported the results.
+  3. Otherwise, a base rate for similar trials (phase, and later therapeutic area), for companies with no reporting history yet.
+
+  The estimate carries the "inferred" date label and a tooltip saying which of the three it used, how many past trials it rests on, and the spread of their gaps. Guidance always replaces an estimate. Known limits to state in the tooltip: completion dates in the registry are often revised, and companies may take longer to report bad results, so historical gaps can run short.
 
 ## Decision log
 
@@ -69,6 +75,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | Roadmap: added an estimated results-reporting window per trial (company guidance first, then the company's own completion-to-results history, then a base rate by phase), with a tooltip naming its basis (owner request) |
 | 2026-10-17 | ADR 0014: the extractor's first evaluation set is 12 recorded press releases with 20 agent-labeled events (owner confirmation pending); scores are earned in GitHub Actions with the product key and committed; a CI test blocks an unscored prompt change, a score earned on another prompt, model or gold set, and any drop below the baseline |
 | 2026-10-17 | ADR 0013: the extractor proposes catalysts with a date phrase and a quote; code checks the quote, reads the window, and labels PDUFA and advisory dates regulator-scheduled; results are stored as claims, never catalysts; documents already extracted with the same prompt version are skipped |
 | 2026-10-17 | ADR 0012: quotes are found in a versioned plain text of each stored copy, word for word with only spacing free; date phrases become windows in code ("mid-2027" is April to September; "by" runs from the document's date); vague phrases get no window |
