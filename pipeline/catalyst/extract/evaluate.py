@@ -193,6 +193,7 @@ def evaluate(
 EVALS = Path(__file__).resolve().parents[3] / "evals" / "extract_catalysts"
 # The verifier's second reading is scored on the same gold set; its scores sit in their own folder.
 VERIFY_EVALS = EVALS.parent / "verify_catalysts"
+REPOSITORY = EVALS.parents[1]
 FIRST_VERSION = "1.0.0"
 
 
@@ -238,7 +239,12 @@ def _mismatches(name: str, record: dict[str, Any], expected: dict[str, object]) 
 
 
 def gate_problems(
-    prompt: Prompt, role: RoleConfig, evals: Path = EVALS, gold: Path | None = None
+    prompt: Prompt,
+    role: RoleConfig,
+    evals: Path = EVALS,
+    gold: Path | None = None,
+    *,
+    allow_unscored: bool = True,
 ) -> list[str]:
     """Return why the current prompt and model may not ship; empty when they may.
 
@@ -248,9 +254,15 @@ def gate_problems(
     the first prompt version, and only for the exact prompt words and role settings recorded
     in `unscored.json`. So a new version, edited words, another
     model, or another gold set all fail until new scores are committed (ADR 0014).
+
+    The verifier passes `allow_unscored=False`: its second reading never runs without scores
+    (review of PR #31). The gold set is `evals/gold.jsonl` if that folder has one, otherwise the
+    set the prompt file names.
     """
     expected = _identity(prompt, role)
     scores_path = evals / "scores.json"
+    if not scores_path.exists() and not allow_unscored:
+        return [f"{prompt.id} has no scores.json: run `catalyst eval-extractor --prompt {prompt.id}`"]
     if not scores_path.exists():
         if prompt.version != FIRST_VERSION:
             return [f"prompt version {prompt.version} has no scores; run `catalyst eval-extractor`"]
@@ -259,7 +271,9 @@ def gate_problems(
             return ["no scores.json and no unscored.json: the prompt has never been checked"]
         return _mismatches("unscored.json", json.loads(unscored_path.read_text(encoding="utf-8")), expected)
     record: dict[str, Any] = json.loads(scores_path.read_text(encoding="utf-8"))
-    expected["gold_sha256"] = gold_fingerprint(gold or evals / "gold.jsonl")
+    if gold is None:
+        gold = evals / "gold.jsonl" if (evals / "gold.jsonl").exists() else REPOSITORY / prompt.eval_set
+    expected["gold_sha256"] = gold_fingerprint(gold)
     problems = _mismatches("scores.json", record, expected)
     baseline_path = evals / "baseline.json"
     if not baseline_path.exists():

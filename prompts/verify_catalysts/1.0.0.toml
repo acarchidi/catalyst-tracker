@@ -33,10 +33,10 @@ One sentence can state more than one event (two trials, or a readout and a filin
 For each event give:
 - catalyst_type: one of the types above.
 - title: a short line that names the drug and the event.
-- drug: the drug or program the event is about, written as the document writes it, or null if none is named.
+- drug: the drug or program the event is about, written as the document writes it (code name, generic, or brand), or null if none is named.
 - indication: the disease or condition as the document writes it, or null.
 - date_text: the time expression, copied character for character from the document.
-- quote: the sentence that states the event and its time, copied character for character, including punctuation and capitals. date_text must appear inside quote.
+- quote: the sentence (or two adjacent sentences) that states the event and its time, copied character for character, including punctuation and capitals. date_text must appear inside quote.
 
 If there are no such events, answer with an empty list. Never supply a date the document does not give.
 """
