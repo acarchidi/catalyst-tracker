@@ -1,0 +1,57 @@
+name: Extract catalysts (live)
+
+# Runs the catalyst extractor on the newest press releases in the live database (ADR 0013).
+# Started by hand from the Actions tab or by the coding session; costs a few cents per
+# release, inside the extractor's daily cap (config/models.toml). Safe to re-run: documents
+# already extracted with the same prompt version are skipped. Results are claims, never
+# published catalysts.
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Most press releases to read in this run"
+        required: true
+        default: "50"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    name: Extract catalysts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Extract catalysts from the newest press releases
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set +e
+          uv run catalyst extract-catalysts --limit "$LIMIT" --snapshot-store supabase \
+            --out "$RUNNER_TEMP/catalysts.json" > "$RUNNER_TEMP/summary.json"
+          status=$?
+          { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/summary.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          # The full results (proposals with their quotes) go to the run log, which only people
+          # with access to this private repository can read.
+          echo "::group::Full results (JSON)"
+          cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
+          echo "::endgroup::"
+          exit "$status"
