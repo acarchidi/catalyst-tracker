@@ -1,0 +1,84 @@
+name: Extract catalysts (live)
+
+# Runs the catalyst extractor (ADR 0013), in one of two modes:
+# - extract: on the newest press releases in the live database. Safe to re-run: documents
+#   already extracted with the same prompt version are skipped. Results are claims, never
+#   published catalysts.
+# - evaluate: on the 12 recorded releases of the gold set, to earn the prompt's scores
+#   (ADR 0014). The scores go to the job summary for the coding session to commit.
+# Started by hand from the Actions tab or by the coding session; costs a few cents per
+# release, inside the extractor's daily cap (config/models.toml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "extract (newest press releases) or evaluate (score on the gold set)"
+        type: choice
+        options: [extract, evaluate]
+        default: extract
+      limit:
+        description: "Most press releases to read in this run"
+        type: number
+        required: true
+        default: 50
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  extract:
+    name: Extract catalysts
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Extract catalysts from the newest press releases
+        if: ${{ inputs.mode == 'extract' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+          LIMIT: ${{ inputs.limit }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set +e
+          uv run catalyst extract-catalysts --limit "$LIMIT" --snapshot-store supabase \
+            --out "$RUNNER_TEMP/catalysts.json" > "$RUNNER_TEMP/summary.json"
+          status=$?
+          { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/summary.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          # The full results (unchecked proposals with their quotes) go to the run log only while
+          # the repository is private: a public log would publish them (AGENTS.md).
+          if [ "$REPOSITORY_PRIVATE" = "true" ]; then
+            echo "::group::Full results (JSON)"
+            cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
+            echo "::endgroup::"
+          fi
+          exit "$status"
+
+      - name: Score the extractor on the gold set
+        if: ${{ inputs.mode == 'evaluate' }}
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+        run: |
+          set +e
+          uv run catalyst eval-extractor --out "$RUNNER_TEMP/scores.json" > /dev/null
+          status=$?
+          { echo "## Extractor scores"; echo '```json'; cat "$RUNNER_TEMP/scores.json" 2>/dev/null; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
