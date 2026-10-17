@@ -3,6 +3,7 @@
 # Each overseer run spends on the review key (CATALYST_REVIEW_API_KEY), about as much as one
 # Claude review. The workflow reads this file from main, never from the pull request it checks,
 # counts the runs it has made since midnight UTC, and does not call the model past this limit.
-# 0 switches the overseer off.
+# 0 switches the overseer off. 8 runs cost about $2 a day at the median review cost ($0.27),
+# at most about $3 (owner budget, ADR 0022). Owner-merged (scripts/merge_gate.py OWNER_PATHS).
 
-daily_run_limit = 30
+daily_run_limit = 8

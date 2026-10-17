@@ -34,6 +34,7 @@ OWNER_PATHS = (
     "scripts/merge_gate.py",
     "scripts/review_verdict.py",
     "scripts/overseer_verdict.py",  # the build overseer's actor: what it may do (ADR 0019 Part B)
+    "config/overseer.toml",  # the overseer's daily run limit, which spends on the review key
     "docs/spec.md",
     "docs/quality-gates.md",
     ".gitleaks.toml",

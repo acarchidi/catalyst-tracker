@@ -125,7 +125,7 @@ jobs:
         run: |
           set -euo pipefail
           # The limit comes from main, never from the pull request being checked. Before this
-          # file reaches main, the script's default (30) applies.
+          # file reaches main, the script's default (8) applies.
           git show "origin/main:config/overseer.toml" > "$RUNNER_TEMP/overseer.toml" 2>/dev/null \
             || rm -f "$RUNNER_TEMP/overseer.toml"
           gh api -X GET "repos/$REPO/actions/workflows/overseer.yml/runs" \

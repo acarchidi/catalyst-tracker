@@ -315,11 +315,11 @@ def test_the_current_run_skipped_runs_and_dependabot_runs_do_not_count() -> None
     assert ov.runs_used(today, current_run_id=50) == 1
 
 
-def test_a_missing_limit_file_uses_the_default_of_30() -> None:
-    allowed, message = ov.budget(None, runs(*["success"] * 29), current_run_id=99)
+def test_a_missing_limit_file_uses_the_default_of_8() -> None:
+    allowed, message = ov.budget(None, runs(*["success"] * 7), current_run_id=99)
     assert allowed
-    assert "29 of 30" in message
-    allowed, _ = ov.budget(None, runs(*["success"] * 30), current_run_id=99)
+    assert "7 of 8" in message
+    allowed, _ = ov.budget(None, runs(*["success"] * 8), current_run_id=99)
     assert not allowed
 
 
@@ -338,9 +338,9 @@ def test_a_limit_of_zero_switches_the_overseer_off() -> None:
     assert not allowed
 
 
-def test_the_shipped_limit_is_30() -> None:
+def test_the_shipped_limit_is_8() -> None:
     text = (ROOT / "config" / "overseer.toml").read_text(encoding="utf-8")
-    assert ov.load_limit(text) == 30
+    assert ov.load_limit(text) == 8
 
 
 # --- Actions on a pull-request run ---------------------------------------------------------------

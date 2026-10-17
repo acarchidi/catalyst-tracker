@@ -51,7 +51,7 @@ STATUS_TITLE = "Build status"
 STATUS_MARKER = "<!-- overseer:build-status -->"
 DECISION_MARKER = "<!-- overseer:decision:{key} -->"
 DEPENDABOT = "dependabot[bot]"
-DEFAULT_DAILY_RUN_LIMIT = 30
+DEFAULT_DAILY_RUN_LIMIT = 8
 LIMIT_FILE = "config/overseer.toml"
 MODES = ("pr", "sweep")
 
