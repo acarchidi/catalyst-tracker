@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
 from catalyst.api.http import create_app
+from catalyst.api.mcp_server import build_server
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
@@ -119,6 +120,7 @@ def _parser() -> argparse.ArgumentParser:
         "api", help="Serve the read-only data API on this computer only, at http://127.0.0.1:<port>/v1."
     )
     api.add_argument("--port", type=int, default=8000, help="Port on this computer (default 8000).")
+    commands.add_parser("mcp", help="Run the read-only MCP server over standard input and output.")
     evaluate = commands.add_parser(
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
@@ -168,6 +170,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
         "api": _serve,
+        "mcp": _serve,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -326,7 +329,7 @@ def _verify_claims(_args: argparse.Namespace) -> int:
 
 
 def _serve(args: argparse.Namespace) -> int:
-    """Serve published data read-only through the HTTP API, on this computer only (ADR 0025)."""
+    """Serve published data read-only: the HTTP API on localhost, or MCP over stdio (ADR 0025)."""
     try:
         database = settings.database_url()
     except settings.MissingSettingError as error:
@@ -334,7 +337,10 @@ def _serve(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        uvicorn.run(create_app(sessionmaker(engine)), host="127.0.0.1", port=args.port, log_config=None)
+        if args.command == "api":
+            uvicorn.run(create_app(sessionmaker(engine)), host="127.0.0.1", port=args.port, log_config=None)
+        else:
+            build_server(sessionmaker(engine)).run("stdio")
     finally:
         engine.dispose()
     return 0

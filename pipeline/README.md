@@ -21,7 +21,7 @@
 | `catalyst.collectors.report` | CP3 preview: latest document per company and source | Database | Markdown |
 | `catalyst.logs` | JSON log lines | Events | Standard error |
 | `catalyst.llm` | `ModelClient`, provider adapters, prices, daily spend caps, prompt files | Role, prompt, document | Validated JSON plus cost; a `model_call` row per call |
-| `catalyst.api` | Read-only data API (`catalyst api`, localhost, `/v1`) over published data only; free versus paid shaping (ADR 0025) | Published catalysts, their change rows and drug links | JSON with sources and the not-financial-advice notice |
+| `catalyst.api` | Read-only data API (`catalyst api`, localhost, `/v1`) and MCP server (`catalyst mcp`, stdio) over published data only; free versus paid shaping (ADR 0025) | Published catalysts, their change rows and drug links | JSON with sources and the not-financial-advice notice |
 | `catalyst.cli` | `uv run catalyst ...` commands | Arguments | JSON on standard output |
 
 **Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`). Every collector: `uv run catalyst collect --since 2026-07-01`, then `uv run catalyst report`. Check every stored copy against its hash: `uv run catalyst snapshots-verify` (add `--snapshot-store supabase` for the live bucket; ADR 0008).
