@@ -33,6 +33,7 @@ class MatchedBy(StrEnum):
     BRAND = "brand"
     NCT_ID = "nct_id"
     STUDY_NAME = "study_name"
+    DOCUMENT_LINK = "document_link"  # a company linked to the document by registry or FDA sponsor
     NEW_CODE_NAME = "new_code_name"  # the company's own code name, first seen in its release
 
 
@@ -47,18 +48,19 @@ _KIND_RULE = {
 class Resolution:
     """The candidates a rule found, and that rule; `id` is set only when there is exactly one.
 
-    `several_named` marks a text that names more than one record, such as two registry numbers,
-    even when only one of them is on file: that is ambiguous, never resolved to the known one.
+    `needs_review` marks a result that must not resolve even with one candidate: a text that
+    names two registry numbers when only one is on file, or a code name that belongs to another
+    company.
     """
 
     candidates: tuple[UUID, ...] = ()
     matched_by: MatchedBy | None = None
-    several_named: bool = False
+    needs_review: bool = False
 
     @property
     def status(self) -> Status:
         """Resolved for one candidate, ambiguous for several (or several named), unknown for none."""
-        if self.several_named or len(self.candidates) > 1:
+        if self.needs_review or len(self.candidates) > 1:
             return Status.AMBIGUOUS
         return Status.RESOLVED if self.candidates else Status.UNKNOWN
 
@@ -119,8 +121,8 @@ def _letters(text: str) -> str:
     return "".join(ch for ch in text if ch.isalpha())
 
 
-def _study_pattern(study_name: str) -> re.Pattern[str]:
-    """Match the study name as a whole word, allowing any spacing or dash between its parts."""
+def whole_word_pattern(study_name: str) -> re.Pattern[str]:
+    """Match a name as a whole word, allowing any spacing or dash between its parts."""
     parts = re.findall(r"[^\W_]+", study_name)
     body = r"[\s\-\u2010-\u2015]*".join(re.escape(part) for part in parts)
     return re.compile(rf"(?<![^\W_]){body}(?![^\W_])", re.IGNORECASE) if parts else re.compile(r"(?!)")
@@ -155,6 +157,7 @@ class ReferenceData:
                 if key := name_key(name):
                     self._drug_names[key].append((drug, kind))
         self._trials = list(trials)
+        self._study_patterns = {t.id: whole_word_pattern(t.study_name) for t in self._trials if t.study_name}
         self._by_nct: defaultdict[str, list[UUID]] = defaultdict(list)
         for trial in self._trials:
             self._by_nct[trial.nct_id.upper()].append(trial.id)
@@ -208,18 +211,20 @@ class ReferenceData:
     def trials_mentioned(self, text: str, company_id: UUID | None = None) -> list[tuple[str, Resolution]]:
         """Find every trial a longer text names: registry numbers, and study names in capitals.
 
-        A study name counts only as a whole word written with the same capital letters as the
-        registry has it, so "ARISE" is a trial and "questions may arise" is not. Each name found is
-        reported once, with its own resolution; an unknown registry number is reported as unknown.
+        A study name counts only within the given company's trials (none when no company is
+        given), and only as a whole word written with the same capital letters as the registry
+        has it, so "ARISE" is a trial and "questions may arise" is not. Each name found is reported
+        once, with its own resolution: two registry numbers in one text are two names here, while
+        `resolve_trial` treats the same text as one ambiguous mention.
         """
         found: list[tuple[str, Resolution]] = []
         for number in dict.fromkeys(n.upper() for n in _NCT.findall(text)):
             found.append((number, _found(self._by_nct.get(number, []), MatchedBy.NCT_ID)))
         by_key: dict[str, tuple[str, list[UUID]]] = {}
         for trial in self._trials:
-            if not trial.study_name or (company_id is not None and company_id not in trial.company_ids):
+            if not trial.study_name or company_id is None or company_id not in trial.company_ids:
                 continue
-            for match in _study_pattern(trial.study_name).finditer(text):
+            for match in self._study_patterns[trial.id].finditer(text):
                 written = match.group(0)
                 if _letters(written) == _letters(trial.study_name):
                     by_key.setdefault(name_key(written), (written, []))[1].append(trial.id)
@@ -236,7 +241,7 @@ class ReferenceData:
             found = _found((i for n in sorted(numbers) for i in self._by_nct.get(n, [])), MatchedBy.NCT_ID)
             if len(numbers) == 1:
                 return found
-            return Resolution(found.candidates, MatchedBy.NCT_ID, several_named=True)
+            return Resolution(found.candidates, MatchedBy.NCT_ID, needs_review=True)
         key = name_key(text)
         if not key:
             return _UNKNOWN

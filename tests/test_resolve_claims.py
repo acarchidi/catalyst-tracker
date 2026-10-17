@@ -7,7 +7,7 @@ names wait for review. Re-running updates matches as the reference tables grow.
 
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from sqlalchemy import func, insert, select
@@ -27,7 +27,6 @@ from catalyst.schemas import (
     DrugNameKind,
     EntityMatch,
     MatchedEntity,
-    MatchStatus,
     SourceDocument,
     SourceTier,
     Trial,
@@ -222,10 +221,122 @@ def test_a_resolved_match_must_name_its_record(
         "candidates": [],
     }
     row |= {"matched_id": None, "matched_by": "code_name", "resolved_at": NOW}
-    from uuid import uuid4
-
     with pytest.raises(IntegrityError, match="resolved_has_record"), session_factory.begin() as session:
         session.execute(insert(TABLES[EntityMatch]).values(id=uuid4(), **row))
     with session_factory() as session:
         assert session.execute(select(func.count()).select_from(TABLES[EntityMatch])).scalar_one() == 0
-    assert MatchStatus.RESOLVED.value == "resolved"
+
+
+# From the Opus review of PR #28: each case once produced a wrong match or a stuck run.
+
+
+def test_a_release_linked_to_no_company_matches_no_study_name(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        wire = _document(session, "wire:other-bio-c")
+        _claim(session, wire, "Other Bio expects AZURE-1 results in 2026.", None, 1)
+    resolve_claims(session_factory, lambda: NOW)
+    assert MatchedEntity.TRIAL.value not in {r["entity_type"] for r in _matches(session_factory)}
+
+
+def test_another_company_s_code_name_is_ambiguous_not_a_new_drug(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], "SPY-001 data are expected in 2027.", "SPY-001", 1)
+        partner = upsert_company(session, 1000005, "Partner Pharma Inc", "2834").id
+        release = _document(session, "sec:partner-release-d")
+        link_company_document(session, partner, release, DocumentMatch.SEC_CIK)
+        _claim(session, release, "Our partner's SPY-001 reads out in 2027.", "SPY-001", 2)
+    report = resolve_claims(session_factory, lambda: NOW)
+    rows = [r for r in _matches(session_factory) if r["entity_type"] == "drug"]
+    assert sorted(r["status"] for r in rows) == ["ambiguous", "resolved"]
+    assert report.drugs_created == 1
+
+
+@pytest.mark.parametrize(
+    ("drug", "quote"),
+    [
+        ("AB-12", "LAB-123 data are expected in 2027."),
+        ("COVID-19", "COVID-19 booster data are expected in 2027."),
+        ("IL-23", "IL-23 program data are expected in 2027."),
+        ("FY2026", "FY2026 guidance is unchanged."),
+    ],
+    ids=["inside a longer code", "a disease", "a target", "a fiscal year"],
+)
+def test_names_that_only_look_like_code_names_create_nothing(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID], drug: str, quote: str
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], quote, drug, 1)
+    assert resolve_claims(session_factory, lambda: NOW).drugs_created == 0
+
+
+def test_an_over_long_name_is_stored_shortened_as_unknown(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], "Data are expected in 2027.", "X" * 301, 1)
+    report = resolve_claims(session_factory, lambda: NOW)
+    (drug,) = [r for r in _matches(session_factory) if r["entity_type"] == "drug"]
+    assert (len(drug["name"]), drug["status"], report.failed) == (300, "unknown", 0)
+
+
+def test_one_failing_claim_is_skipped_and_the_rest_are_matched(
+    session_factory: sessionmaker[Session],
+    spyre: dict[str, UUID],
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import catalyst.resolve_claims as job
+
+    with session_factory.begin() as session:
+        broken = _claim(session, spyre["release"], "Data are expected in 2027.", "povetacicept", 1)
+        _claim(session, spyre["release"], "Maralixibat data are expected in 2027.", "maralixibat", 2)
+    original = job._store  # pyright: ignore[reportPrivateUsage]
+
+    def store(session: Session, claim_id: UUID, *rest: Any) -> None:
+        if claim_id == broken:
+            raise IntegrityError("insert", {}, Exception("forced"))
+        original(session, claim_id, *rest)
+
+    monkeypatch.setattr(job, "_store", store)
+    report = resolve_claims(session_factory, lambda: NOW)
+    assert report.failed == 1
+    assert broken not in {r["claim_id"] for r in _matches(session_factory)}
+    assert _by(_matches(session_factory), MatchedEntity.DRUG)["maralixibat"]["status"] == "resolved"
+    assert any(r.getMessage() == "claim_resolution_failed" for r in caplog.records)
+
+
+def test_the_new_code_name_marker_survives_a_re_run(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], "SPY-001 data are expected in 2027.", "SPY-001", 1)
+    resolve_claims(session_factory, lambda: NOW)
+    resolve_claims(session_factory, lambda: NOW)
+    assert _by(_matches(session_factory), MatchedEntity.DRUG)["SPY-001"]["matched_by"] == "new_code_name"
+
+
+def test_a_name_no_longer_found_loses_its_old_match(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], "AZURE-1 results are expected in 2026.", None, 1)
+    resolve_claims(session_factory, lambda: NOW)
+    with session_factory.begin() as session:
+        session.execute(TABLES[Trial].update().values(study_name="AZURE-ONE"))
+    resolve_claims(session_factory, lambda: NOW)
+    assert MatchedEntity.TRIAL.value not in {r["entity_type"] for r in _matches(session_factory)}
+
+
+def test_a_company_found_through_a_registry_link_says_so(session_factory: sessionmaker[Session]) -> None:
+    with session_factory.begin() as session:
+        company = upsert_company(session, 1000006, "Registry Bio Inc", "2834").id
+        record = _document(session, "ctgov:NCT07777777:2026-10-01e")
+        link_company_document(session, company, record, DocumentMatch.CTGOV_LEAD_SPONSOR)
+        _claim(session, record, "Topline data are expected in 2027.", None, 1)
+    resolve_claims(session_factory, lambda: NOW)
+    (company_match,) = [r for r in _matches(session_factory) if r["entity_type"] == "company"]
+    assert (company_match["status"], company_match["matched_by"]) == ("resolved", "document_link")

@@ -265,5 +265,22 @@ def test_resolve_claims_prints_the_counts(
     assert json.loads(capsys.readouterr().out) == {
         "claims": 3,
         "drugs_created": 1,
+        "failed": 0,
         "matches": {"drug:resolved": 3},
     }
+
+
+def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from sqlalchemy.exc import OperationalError
+
+    def broken(*_args: object) -> MatchReport:
+        raise OperationalError("select", {}, Exception("database went away"))
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", broken)
+    assert main(["extract-catalysts"]) == 0
+    assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]

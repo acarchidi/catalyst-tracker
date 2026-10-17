@@ -21,22 +21,38 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from pydantic import ValidationError
+from sqlalchemy import and_, case, delete, select, tuple_
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
-from catalyst.logs import log_event
+from catalyst.logs import log_alert, log_event
 from catalyst.references import load_reference_data
-from catalyst.resolve import DrugRef, MatchedBy, ReferenceData, Resolution, Status, name_key
-from catalyst.schemas import Claim, CompanyDocument, Drug, DrugName, DrugNameKind, EntityMatch, MatchedEntity
+from catalyst.resolve import DrugRef, MatchedBy, ReferenceData, Resolution, Status, whole_word_pattern
+from catalyst.schemas import (
+    Claim,
+    CompanyDocument,
+    DocumentMatch,
+    Drug,
+    DrugName,
+    DrugNameKind,
+    EntityMatch,
+    MatchedEntity,
+)
 
 _log = logging.getLogger(__name__)
 _MATCH = TABLES[EntityMatch]
 _COMPANY_LINK = "source document"
 # A code name: letters, an optional dash or space, then digits, as in SPY001, VX-548, INS 1007.
-_CODE_NAME = re.compile(r"^[A-Z]{1,6}[\s\-\u2010-\u2015]?\d{2,6}[A-Z]?$")
+_CODE_NAME = re.compile(r"^(?P<prefix>[A-Z]{1,6})[\s\-\u2010-\u2015]?\d{2,6}[A-Z]?$")
+# Prefixes of things shaped like code names that are not drugs: diseases, targets, years, quarters.
+_NOT_DRUG_PREFIXES = frozenset(
+    {"COVID", "SARS", "IL", "CD", "FY", "CY", "Q", "H", "NCT", "ICD", "GLP", "HER", "PD"}
+)
+_NAME_CHARS = 300  # EntityMatch.name limit
 
 
 @dataclass
@@ -45,11 +61,13 @@ class MatchReport:
 
     claims: int = 0
     drugs_created: int = 0
+    failed: int = 0
     statuses: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON."""
-        return {"claims": self.claims, "drugs_created": self.drugs_created, "matches": dict(self.statuses)}
+        counts = {"claims": self.claims, "drugs_created": self.drugs_created, "failed": self.failed}
+        return counts | {"matches": dict(self.statuses)}
 
 
 @dataclass(frozen=True)
@@ -76,16 +94,31 @@ def _claims(session: Session) -> list[_Claim]:
     ]
 
 
-def _company_links(session: Session) -> dict[UUID, list[UUID]]:
+def _company_links(session: Session) -> dict[UUID, list[tuple[UUID, str]]]:
     link = TABLES[CompanyDocument]
-    links: dict[UUID, list[UUID]] = {}
-    for row in session.execute(select(link.c.source_document_id, link.c.company_id)):
-        links.setdefault(row.source_document_id, []).append(row.company_id)
+    links: dict[UUID, list[tuple[UUID, str]]] = {}
+    for row in session.execute(select(link.c.source_document_id, link.c.company_id, link.c.matched_by)):
+        links.setdefault(row.source_document_id, []).append((row.company_id, row.matched_by))
     return links
 
 
+def _company(links: list[tuple[UUID, str]]) -> Resolution:
+    """Return the company a document is linked to; 'cik' only when every link is the SEC filer's own."""
+    if not links:
+        return Resolution()
+    by_sec = all(how == DocumentMatch.SEC_CIK.value for _, how in links)
+    return Resolution(
+        tuple(dict.fromkeys(c for c, _ in links)), MatchedBy.CIK if by_sec else MatchedBy.DOCUMENT_LINK
+    )
+
+
 def _is_new_code_name(name: str, quote: str) -> bool:
-    return bool(_CODE_NAME.match(name.strip())) and name_key(name) in name_key(quote)
+    """Say whether the name is a code name (not a disease, target, or year) quoted as a whole word."""
+    shape = _CODE_NAME.match(name.strip())
+    if shape is None or shape.group("prefix") in _NOT_DRUG_PREFIXES:
+        return False
+    match = whole_word_pattern(name).search(quote)
+    return match is not None and match.group(0).upper() == match.group(0)
 
 
 def _create_drug(session: Session, references: ReferenceData, name: str, company_id: UUID) -> UUID:
@@ -98,18 +131,41 @@ def _create_drug(session: Session, references: ReferenceData, name: str, company
     return drug.id
 
 
+def _drug(
+    session: Session,
+    references: ReferenceData,
+    claim: _Claim,
+    name: str,
+    company: Resolution,
+    report: MatchReport,
+) -> Resolution:
+    """Match the drug name; create a drug only for the company's own new code name.
+
+    A code name that belongs to another company is ambiguous for review, never a second drug.
+    """
+    drug = references.resolve_drug(name, company.id)
+    if drug.status is not Status.UNKNOWN:
+        return drug
+    elsewhere = references.resolve_drug(name)
+    if elsewhere.candidates:
+        return Resolution(elsewhere.candidates, elsewhere.matched_by, needs_review=True)
+    if company.id and _is_new_code_name(name, claim.quote):
+        report.drugs_created += 1
+        return Resolution((_create_drug(session, references, name, company.id),), MatchedBy.NEW_CODE_NAME)
+    return drug
+
+
 def _matches(
-    session: Session, references: ReferenceData, claim: _Claim, companies: list[UUID], report: MatchReport
+    session: Session,
+    references: ReferenceData,
+    claim: _Claim,
+    links: list[tuple[UUID, str]],
+    report: MatchReport,
 ) -> Iterator[tuple[MatchedEntity, str, Resolution]]:
-    company = Resolution(tuple(dict.fromkeys(companies)), MatchedBy.CIK if companies else None)
+    company = _company(links)
     yield MatchedEntity.COMPANY, _COMPANY_LINK, company
     if claim.drug:
-        drug = references.resolve_drug(claim.drug, company.id)
-        if drug.status is Status.UNKNOWN and company.id and _is_new_code_name(claim.drug, claim.quote):
-            created = _create_drug(session, references, claim.drug, company.id)
-            report.drugs_created += 1
-            drug = Resolution((created,), MatchedBy.NEW_CODE_NAME)
-        yield MatchedEntity.DRUG, claim.drug, drug
+        yield MatchedEntity.DRUG, claim.drug, _drug(session, references, claim, claim.drug, company, report)
     for name, trial in references.trials_mentioned(claim.quote, company.id):
         yield MatchedEntity.TRIAL, name, trial
 
@@ -128,16 +184,45 @@ def _store(
         resolved_at=at,
     )
     values = row.model_dump()
-    changes = {k: values[k] for k in ("status", "matched_id", "candidates", "matched_by", "resolved_at")}
+    statement = insert(_MATCH).values(**values)
+    changes: dict[str, Any] = {k: values[k] for k in ("status", "matched_id", "candidates", "resolved_at")}
+    # A drug this job created stays marked as created while it is still the match.
+    keep = and_(
+        _MATCH.c.matched_by == MatchedBy.NEW_CODE_NAME.value,
+        _MATCH.c.matched_id == statement.excluded.matched_id,
+    )
+    changes["matched_by"] = case((keep, _MATCH.c.matched_by), else_=statement.excluded.matched_by)
     session.execute(
-        insert(_MATCH)
-        .values(**values)
-        .on_conflict_do_update(index_elements=["claim_id", "entity_type", "name"], set_=changes)
+        statement.on_conflict_do_update(index_elements=["claim_id", "entity_type", "name"], set_=changes)
     )
 
 
+def _resolve_one(
+    session: Session,
+    references: ReferenceData,
+    claim: _Claim,
+    links: list[tuple[UUID, str]],
+    at: datetime,
+    report: MatchReport,
+) -> None:
+    produced: list[tuple[str, str]] = []
+    for entity, name, result in _matches(session, references, claim, links, report):
+        shown = name[:_NAME_CHARS]
+        _store(session, claim.id, entity, shown, result, at)
+        produced.append((entity.value, shown))
+        report.statuses[f"{entity.value}:{result.status.value}"] += 1
+    # Names no longer found (for example after a study name is corrected) lose their old match.
+    stale = delete(_MATCH).where(_MATCH.c.claim_id == claim.id)
+    if produced:
+        stale = stale.where(tuple_(_MATCH.c.entity_type, _MATCH.c.name).not_in(produced))
+    session.execute(stale)
+
+
 def resolve_claims(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> MatchReport:
-    """Match every extractor claim's names; safe to re-run, and later runs pick up new names."""
+    """Match every extractor claim's names; safe to re-run, and later runs pick up new names.
+
+    A claim that fails (for example a malformed name) is logged and skipped; the rest still match.
+    """
     report = MatchReport()
     with session_factory.begin() as session:
         references = load_reference_data(session)
@@ -145,10 +230,18 @@ def resolve_claims(session_factory: sessionmaker[Session], now: Callable[[], dat
         at = now()
         for claim in _claims(session):
             report.claims += 1
-            for entity, name, result in _matches(
-                session, references, claim, links.get(claim.source_document_id, []), report
-            ):
-                _store(session, claim.id, entity, name, result, at)
-                report.statuses[f"{entity.value}:{result.status.value}"] += 1
+            try:
+                with session.begin_nested():
+                    _resolve_one(
+                        session, references, claim, links.get(claim.source_document_id, []), at, report
+                    )
+            except (ValidationError, SQLAlchemyError) as error:
+                report.failed += 1
+                log_alert(
+                    _log,
+                    "claim_resolution_failed",
+                    claim=str(claim.id),
+                    error=f"{type(error).__name__}"[:100],
+                )
     log_event(_log, "claims_resolved", **report.summary())
     return report
