@@ -149,7 +149,9 @@ class ReferenceData:
                 if key := name_key(name):
                     self._drug_names[key].append((drug, kind))
         self._trials = list(trials)
-        self._by_nct = {t.nct_id.upper(): t.id for t in self._trials}
+        self._by_nct: defaultdict[str, list[UUID]] = defaultdict(list)
+        for trial in self._trials:
+            self._by_nct[trial.nct_id.upper()].append(trial.id)
 
     def resolve_company(
         self,
@@ -176,7 +178,11 @@ class ReferenceData:
         return _found(self._by_name.get(key, []), MatchedBy.NAME) if key else _UNKNOWN
 
     def resolve_drug(self, name: str, company_id: UUID | None = None) -> Resolution:
-        """Match a drug name; a code name matches only the given company's drugs, if one is given."""
+        """Match a drug name; a code name matches only the given company's drugs, if one is given.
+
+        When the candidates were found through different kinds of name, `matched_by` names the
+        first kind in DrugNameKind order (code, generic, brand).
+        """
         hits = [
             (drug, kind)
             for drug, kind in self._drug_names.get(name_key(name), [])
@@ -194,7 +200,7 @@ class ReferenceData:
         """
         numbers = set(n.upper() for n in _NCT.findall(text))
         if numbers:
-            found = _found((self._by_nct[n] for n in sorted(numbers) if n in self._by_nct), MatchedBy.NCT_ID)
+            found = _found((i for n in sorted(numbers) for i in self._by_nct.get(n, [])), MatchedBy.NCT_ID)
             if len(numbers) == 1:
                 return found
             return Resolution(found.candidates, MatchedBy.NCT_ID, several_named=True)

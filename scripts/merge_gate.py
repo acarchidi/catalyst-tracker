@@ -25,7 +25,8 @@ CHECK_APP = "github-actions"
 HOLD_LABEL = "hold"
 # Paths that change who or what decides a merge: the robot and the review, the rules the
 # reviewer judges by (it reads them from the pull request), settings that make a required
-# check weaker, and the spending caps. The robot never merges these; the owner does.
+# check weaker, the spending caps, and the extractor's score floor. The robot never merges these;
+# the owner does.
 OWNER_PATHS = (
     ".github/workflows/",
     ".github/rulesets/",
@@ -37,6 +38,8 @@ OWNER_PATHS = (
     ".gitleaks.toml",
     ".pre-commit-config.yaml",
     "config/models.toml",
+    "evals/extract_catalysts/baseline.json",  # the floor CI holds every prompt to (ADR 0014)
+    "evals/extract_catalysts/unscored.json",  # the retired exemption from that floor
 )
 # Instruction files the reviewer loads, wherever they sit in the repository.
 OWNER_FILE_NAMES = ("AGENTS.md", "CLAUDE.md", ".mcp.json")

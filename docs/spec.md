@@ -21,7 +21,7 @@ The product rests on five openings found in the [competitor matrix](https://clau
 | Ingestion cadence | Twice daily: pre-market and post-close |
 | Advice | Never personalized investment advice |
 | Verification | Independent cross-checks; any model provider can be plugged in |
-| Human role | You review a flagged queue plus a weekly random sample |
+| Human role | You settle the records the weekly sample checker disagrees on, and the flagged queue (owner decision 2026-10-17) |
 | Deferred | Business setup (entity, terms, billing) and the distribution plan |
 
 **Not in v1:** seconds-level latency, institutional features (SSO, security audits, bulk feeds), and a native mobile app.
@@ -134,14 +134,14 @@ flowchart TD
   D --> O[Web app, API, MCP, assistant]
   D --> A[Auditor agent]
   A -- re-check findings --> V
-  X[Orchestrator: reads run results, daily report] -.-> C
+  X[Orchestrator: reads run results, alerts, weekly summary] -.-> C
 ```
 
 Collection and publishing are plain code; AI agents handle reading, judging, and drafting.
 
 | Agent | Job | Can access | Cannot |
 | --- | --- | --- | --- |
-| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and sends you a daily plain-English status report | Job queue, run logs | Read web text; write data |
+| Orchestrator | GitHub Actions runs the schedule; this agent reads run results, retries or escalates failures, and alerts you only when something needs you (a failed job, a spending cap reached, a decision that is yours), plus a plain-English weekly summary with the error rate (owner decision 2026-10-17) | Job queue, run logs | Read web text; write data |
 | Extractor | Turns one source document into structured claims with quotes | The document it is given | Browse, call tools, write to live data |
 | Entity resolver | Maps names to canonical company, drug, and trial IDs | Reference tables | Write to live data; ambiguous matches go to review |
 | Verifier | Re-extracts with a different prompt (later a different provider) and runs cross-checks | Staged claims, source copies | Publish |
@@ -180,7 +180,7 @@ A claim publishes automatically only when checks with independent evidence agree
 
 - **Review queue.** One screen shows the highlighted source sentence beside the extracted fields. Approve, correct, or reject in one action, with keyboard shortcuts. Each decision is added to the gold set.
 - **Gold set.** Start with 200 hand-verified catalysts. Agents prepare them; you confirm them.
-- **Weekly random sample.** You check 30 auto-published records each week. If all 30 are correct, the error rate is below about 10% at 95% confidence; 300 clean checks push that bound below 1%. This sample is the only real measure of the system's accuracy.
+- **Weekly random sample.** Each week 30 auto-published records are drawn at random and checked against their sources by a different, stronger Claude model than the ones that extracted and verified them; you settle only the records where it disagrees (owner decision 2026-10-17). If all 30 are correct, the error rate is below about 10% at 95% confidence; about 300 clean checks push that bound below 1%. This sample is the only real measure of the system's accuracy. Two models from one company can share blind spots, so the planted-error test (records with known, deliberately inserted errors) also runs and shows how many errors the checker catches; a second AI company can replace the checker later.
 - **Corrections.** A fixed error gets a change-log entry labeled "correction", alerts everyone watching that catalyst, and appears on a public corrections page.
 - **Dashboard metrics:** error rate from the sample, auto-publish rate, queue size, hours from source publication to our publication, and disagreement rate per field.
 
@@ -233,7 +233,7 @@ For an upcoming catalyst, a set of "what if" outcomes, each with a ballpark effe
   9. Result: estimated peak sales; risk-adjusted value (probability-weighted and discounted at a stated rate) of the program; and the company's value in that scenario as (program value + other programs + cash - debt), shown as a share of its market value.
 - **Price-move range.** For each scenario: (company value in that scenario ÷ current market value) - 1. The "before" is the market's own price, not our model's. The low and high ends come from running the low and high market-size cases. Shown as a range (for example "+5% to +100%"), never a single target, and checked against how share prices moved after similar past catalysts (Price-impact statistics), with any gap between the two shown.
 - **Readers.** Every page, alert, API response, and MCP tool description that carries scenarios shows "Estimate. Not financial advice." Nothing is tailored to a reader's holdings. Scenarios publish on a regular schedule (with each catalyst record and its weekly refresh), not as one-off pieces timed to a market event.
-- **Accuracy record.** After each catalyst resolves, the actual result is mapped to its scenario (a 15% result falls between the 10% and 20% cases), and the actual move is measured as abnormal return against XBI on day 0 and day +1, as in Price-impact statistics. Ranges are scored with an interval score, which penalizes width, so a very wide range cannot look right just by being wide; the score is published against a naive baseline (the typical range for that catalyst type and phase, at the same coverage). A backtest on past catalysts publishes at launch, and the record is free to view.
+- **Accuracy record.** After each catalyst resolves, the actual result is mapped to its scenario (a 15% result falls between the 10% and 20% cases), and the actual move is measured as abnormal return against XBI on day 0 and day +1, as in Price-impact statistics. Ranges are scored with an interval score, which penalizes width, so a very wide range cannot look right just by being wide; the score is published against a naive baseline (the typical range for that catalyst type and phase, at the same coverage). A backtest on past catalysts publishes at launch, and the record is free, on the site and through the API and MCP.
 - **Review.** In v1, an AI analyst drafts the inputs with sources and you approve them before they publish.
 - **Data.** Share counts come free from SEC filings. Market value needs share prices, so this feature waits for the price-data license (Open questions: Tiingo's written confirmation, or Redistribution).
 
@@ -323,7 +323,7 @@ One API sits under everything: the web app, the MCP server, and the research ass
 | `get_outcomes` | Resolved catalysts and results | Free (90 days), paid (all) |
 | `get_benchmark` | Readout benchmark table | Paid |
 | `get_market_size` | Market-size scenarios with inputs | Paid |
-| `get_catalyst_scenarios` | Outcome scenarios with every input, peak sales, value as a share of market value, and price-move ranges; never a single target or a price series | Paid |
+| `get_catalyst_scenarios` | Outcome scenarios with every input, peak sales, value as a share of market value, and price-move ranges; never a single target or a price series | Paid (the accuracy record is free) |
 | `get_price_impact_stats` | Event-window statistics and base rates | Free (base rates), paid (per event) |
 | `get_runway` | Cash, burn, runway, dilution flags | Paid |
 | `manage_watchlist` | Add or remove watched items | Paid |
@@ -387,7 +387,7 @@ The product stays an impersonal publication, which keeps it outside investment-a
 | Area | Rule |
 | --- | --- |
 | Advice | No buy/sell ratings or portfolio-specific answers; the assistant refuses these with a fixed message. Price-move ranges appear only in catalyst scenarios, never as a single target (owner decision 2026-10-17). |
-| Disclaimers | On every page, alert, API response terms, and MCP tool description. |
+| Disclaimers | On every page, alert, API response, the API terms, and every MCP tool description. |
 | Your positions | Written policy before launch: either no trading in covered stocks around publication, or disclosure of holdings. |
 | Motley Fool contract | Check outside-work, competition, and disclosure terms before launch. |
 | Source content | Store facts, links, and short verification quotes; never republish full press releases or abstracts; respect conference embargoes. |

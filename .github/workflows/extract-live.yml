@@ -65,6 +65,7 @@ jobs:
           if [ "$REPOSITORY_PRIVATE" = "true" ]; then
             echo "::group::Full results (JSON)"
             cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
+            echo  # the JSON has no final newline; without this, the marker below joins its last line
             echo "::endgroup::"
           fi
           exit "$status"
