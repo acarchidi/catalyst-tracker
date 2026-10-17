@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-17
-- **Changes:** ADR 0006 (the Claude review), ADR 0013 (the extractor's cap)
+- **Changes:** ADR 0004 (the caps), ADR 0006 (the Claude review), ADR 0013 (the extractor's cap)
 
 ## Context
 
@@ -44,5 +44,6 @@ Today's logs gave these numbers:
 ## Consequences
 
 - Owner-merged pull requests show a red "Claude review" check, on purpose. The robot no longer posts "waiting for the owner" on them.
+- `.github/rulesets/main.json` lists "Claude review" as a required check. The ruleset is not active on the free plan (ADR 0007). If it is ever imported (docs/setup.md, "Later, with a paid GitHub plan"), the owner merges owner-path pull requests with the ruleset's bypass.
 - At most about $180 a month in product model calls, plus reviews at about $0.27 each.
 - A large catch-up extraction stops at the $2 cap and resumes the next day.
