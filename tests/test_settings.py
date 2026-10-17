@@ -84,3 +84,24 @@ def test_the_older_postgres_scheme_is_accepted_too(monkeypatch: pytest.MonkeyPat
     monkeypatch.setenv("SUPABASE_DB_URL", POOLER.replace("postgresql://", "postgres://"))
     monkeypatch.setenv("SUPABASE_DB_PASSWORD", "secret")
     assert settings.database_url().startswith("postgresql+psycopg://postgres.abcdefghijkl:secret@")
+
+
+DIRECT = "postgresql://postgres:[YOUR-PASSWORD]@db.abcdefghijkl.supabase.co:5432/postgres"
+
+
+def test_the_direct_string_is_sent_through_the_session_pooler(monkeypatch: pytest.MonkeyPatch) -> None:
+    """GitHub's machines have no IPv6, and Supabase's Direct address is IPv6 only (ADR 0011)."""
+    monkeypatch.delenv("CATALYST_DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_DB_URL", DIRECT)
+    monkeypatch.setenv("SUPABASE_DB_PASSWORD", "p@ss")
+    assert settings.database_url() == (
+        f"postgresql+psycopg://postgres.abcdefghijkl:p%40ss@{settings.SESSION_POOLER_HOST}:5432/postgres"
+    )
+
+
+def test_a_direct_string_without_its_password_names_the_setup_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CATALYST_DATABASE_URL", raising=False)
+    monkeypatch.setenv("SUPABASE_DB_URL", DIRECT)
+    monkeypatch.delenv("SUPABASE_DB_PASSWORD", raising=False)
+    with pytest.raises(settings.MissingSettingError, match="SUPABASE_DB_PASSWORD"):
+        settings.database_url()
