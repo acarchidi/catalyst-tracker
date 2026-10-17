@@ -230,3 +230,11 @@ def test_two_records_with_one_sec_number_are_ambiguous() -> None:
     result = references.resolve_company(cik=875320)
     assert result.status is Status.AMBIGUOUS
     assert set(result.candidates) == {VERTEX, copy.id}
+
+
+def test_two_trial_records_with_one_registry_number_are_ambiguous() -> None:
+    copy = TrialRef(id=uuid4(), nct_id="NCT06111111", study_name=None, company_ids=frozenset())
+    references = ReferenceData(companies=[], drugs=[], trials=[*_trials(), copy])
+    result = references.resolve_trial("NCT06111111")
+    assert result.status is Status.AMBIGUOUS
+    assert set(result.candidates) == {AZURE1, copy.id}

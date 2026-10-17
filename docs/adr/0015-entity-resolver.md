@@ -39,9 +39,10 @@ On 2026-10-17 the owner ruled that a trial of several drugs names every drug and
      - a `catalyst_drug` table links each catalyst to each drug it concerns, marked alone or in combination;
      - a `drug_component` table names a combination's parts, only where a source states them;
      - each link is backed by a claim with a quote. Combination codes such as SPY120 are shown as the company wrote them, and their parts are never inferred from the code.
-   - **Fill the reference tables from stored source copies:**
-     - tickers and former names from SEC company records;
-     - trials, study names, and intervention names from ClinicalTrials.gov records.
+   - **Fill the reference tables during collection** (`catalyst.references`), from records the run already fetches:
+     - company names, former names with their dates, and tickers, from each SEC company record. SEC lists only current tickers, so a ticker's start date is the first day we saw it. A ticker SEC stops listing is closed the day before, and one that moves to another company is closed for its old holder first.
+     - trials, study names (the registry's acronym), and phases, from each ClinicalTrials.gov record. A trial's sponsors are the companies its registry records are linked to.
+     - Registry intervention lists are **not** imported as drugs. Insmed's records, for example, list comparators (azithromycin), placebos ("ELC (matching placebo for ALIS)"), and short forms ("ETH"), any of which would match the wrong drug. Drugs come from the company's own documents in the next part, and registry names may later become aliases of a drug already known.
    - **Resolve extracted claims.** Resolved names link the claim. Ambiguous and unknown names wait in the review queue with their candidates.
 
 ## Alternatives
