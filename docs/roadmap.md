@@ -75,6 +75,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
 | 2026-10-17 | ADR 0016: a catalyst links any number of drugs, each marked alone or in combination, and a combination lists its parts only where a source states them; every link names its claim; `catalyst.drug_id` is dropped by a migration that refuses to lose data |
 | 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |
 | 2026-10-17 | Gold-set counting rules from the owner: two trials or two diseases in one sentence are separate events; a multi-drug trial names every drug and combination, searchable by each; data with no named meeting is a readout; the dated event is the data, not a later approval |

@@ -25,6 +25,7 @@ from catalyst.collectors.sec.filings import DEFAULT_FORMS, collect_filings
 from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
 from catalyst.db.repository import known_source_keys, upsert_company
 from catalyst.logs import log_alert, log_event
+from catalyst.references import company_identity, record_company_identity, recording_trials
 from catalyst.schemas import DocumentMatch
 from catalyst.snapshots import SnapshotStore
 
@@ -138,6 +139,7 @@ def collect_all(
         cik, name, sic = company_profile(submissions)
         with session_factory.begin() as session:
             company_id = upsert_company(session, cik, name, sic).id
+            record_company_identity(session, company_id, company_identity(submissions), now().date())
         results.append(
             collector.run(
                 f"sec:{pilot.ticker}",
@@ -149,7 +151,11 @@ def collect_all(
             results.append(
                 collector.run(
                     f"ctgov:{pilot.ticker}",
-                    partial(ctgov.collect_sponsor_studies, clients.web, pilot.ctgov_sponsors),
+                    partial(
+                        recording_trials,
+                        session_factory,
+                        partial(ctgov.collect_sponsor_studies, clients.web, pilot.ctgov_sponsors),
+                    ),
                     (company_id, DocumentMatch.CTGOV_LEAD_SPONSOR),
                 )
             )
