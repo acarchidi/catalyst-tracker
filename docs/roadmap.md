@@ -20,7 +20,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 
 ## Phase 1 — Core data (weeks 4–8)
 
-- [ ] Extractor agents and prompt evaluation sets
+- [x] Extractor agents and prompt evaluation sets
 - [ ] Entity resolver and reference tables
 - [ ] Verification checks and publish gate
 - [ ] Review-queue screen
@@ -69,6 +69,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0014: the extractor's first evaluation set is 12 recorded press releases with 20 agent-labeled events (owner confirmation pending); scores are earned in GitHub Actions with the product key and committed; a CI test blocks an unscored prompt change, a score earned on another prompt, model or gold set, and any drop below the baseline |
 | 2026-10-17 | ADR 0013: the extractor proposes catalysts with a date phrase and a quote; code checks the quote, reads the window, and labels PDUFA and advisory dates regulator-scheduled; results are stored as claims, never catalysts; documents already extracted with the same prompt version are skipped |
 | 2026-10-17 | ADR 0012: quotes are found in a versioned plain text of each stored copy, word for word with only spacing free; date phrases become windows in code ("mid-2027" is April to September; "by" runs from the document's date); vague phrases get no window |
 | 2026-10-17 | ADR 0011: live jobs run in GitHub Actions with settings from Actions secrets; the live database is reached through Supabase's Session pooler; row-level security on every table; owner setup kept to one sitting at a time |

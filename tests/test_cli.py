@@ -14,6 +14,7 @@ from catalyst import cli
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
+from catalyst.extract.evaluate import Scores
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.snapshots import SnapshotStoreError
@@ -212,3 +213,26 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     (written,) = json.loads(out.read_text())
     assert written["company"] == "Acme Bio"
     assert written["published"] == "2026-10-14"
+
+
+def test_eval_extractor_needs_the_product_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    monkeypatch.delenv("CATALYST_ANTHROPIC_API_KEY", raising=False)
+    assert main(["eval-extractor", "--out", str(tmp_path / "s.json")]) == 2
+    assert "CATALYST_ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_eval_extractor_writes_a_scores_record(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    scores = Scores(recall=0.9, precision=0.8, catalyst_type=1.0, window=0.95, drug=1.0, quote_found=1.0)
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "evaluate", lambda *_args: (scores, []))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    out = tmp_path / "scores.json"
+    assert main(["eval-extractor", "--out", str(out)]) == 0
+    record = json.loads(out.read_text())
+    assert record["prompt_id"] == "extract_catalysts"
+    assert record["scores"]["recall"] == 0.9
+    assert json.loads(capsys.readouterr().out) == record

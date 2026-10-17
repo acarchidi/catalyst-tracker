@@ -134,6 +134,24 @@ def extract_catalysts(client: ModelClient, text: str, published: date) -> Extrac
     )
 
 
+def proposal_value(catalyst: ExtractedCatalyst) -> dict[str, Any]:
+    """Return a checked proposal as JSON: the claim's value, and what the job reports."""
+    window = catalyst.window
+    return {
+        "catalyst_type": catalyst.catalyst_type.value,
+        "title": catalyst.title,
+        "drug": catalyst.drug,
+        "indication": catalyst.indication,
+        "date_text": catalyst.date_text,
+        "window_start": window.start.isoformat() if window else None,
+        "window_end": window.end.isoformat() if window else None,
+        "window_precision": window.precision.value if window else None,
+        "date_confidence": catalyst.date_confidence.value,
+        # Stored claims keep short codes such as "quote_not_found" (format of PR #16).
+        "problems": [problem.name.lower() for problem in catalyst.problems],
+    }
+
+
 def catalyst_claims(extraction: Extraction, source_document_id: UUID, extracted_at: datetime) -> list[Claim]:
     """Return one claim per proposed catalyst whose quote was found in the source.
 
@@ -144,20 +162,7 @@ def catalyst_claims(extraction: Extraction, source_document_id: UUID, extracted_
     for catalyst in extraction.catalysts:
         if catalyst.quote is None:
             continue
-        window = catalyst.window
-        value: dict[str, Any] = {
-            "catalyst_type": catalyst.catalyst_type.value,
-            "title": catalyst.title,
-            "drug": catalyst.drug,
-            "indication": catalyst.indication,
-            "date_text": catalyst.date_text,
-            "window_start": window.start.isoformat() if window else None,
-            "window_end": window.end.isoformat() if window else None,
-            "window_precision": window.precision.value if window else None,
-            "date_confidence": catalyst.date_confidence.value,
-            "problems": [problem.name.lower() for problem in catalyst.problems],
-            "text_version": TEXT_VERSION,
-        }
+        value = proposal_value(catalyst) | {"text_version": TEXT_VERSION}
         claims.append(
             Claim(
                 source_document_id=source_document_id,

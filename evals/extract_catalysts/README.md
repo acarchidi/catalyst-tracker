@@ -1,5 +1,13 @@
 # Evaluation set: extract_catalysts
 
-`gold.jsonl` will hold hand-checked catalysts for recorded press releases, one document per line. The extractor's answers are scored against it field by field, and CI blocks a prompt or model change that lowers any field's score (AGENTS.md: Prompt evaluations as tests).
+The extractor's prompt is scored here (ADR 0014). AGENTS.md: a prompt or model change re-runs this evaluation, and CI blocks a drop in any score.
 
-It arrives in the third part of the roadmap item "Extractor agents and prompt evaluation sets". Agents prepare the entries; the owner confirms them (spec: Gold set).
+| File | What it is |
+| --- | --- |
+| `documents/<sha256>.htm` | 12 recorded press releases (SEC 8-K Exhibit 99.1) from the Gate 1 rehearsal |
+| `gold.jsonl` | One line per release: the events a person should find, each with its type, drug, date words and exact quote. 20 events in 6 releases; 6 releases have none. Prepared by an agent; `confirmed_by_owner` turns true as the owner confirms each one |
+| `scores.json` | The latest scores and exactly what earned them (prompt version, fingerprint of the prompt's words, model, gold set fingerprint). Absent until the first paid run |
+| `baseline.json` | The lowest score allowed for each measure. Absent until the first scores are accepted |
+| `unscored.json` | Until the first scores exist: the exact prompt words (as a fingerprint) and model allowed to ship unscored. Any other prompt words or model fails CI |
+
+To score the current prompt (about 12 model calls, a few dimes): `uv run catalyst eval-extractor --out evals/extract_catalysts/scores.json`, with `CATALYST_ANTHROPIC_API_KEY` set. This runs in GitHub Actions, never in a coding session.
