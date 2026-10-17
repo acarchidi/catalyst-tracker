@@ -69,6 +69,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0013: the extractor proposes catalysts with a date phrase and a quote; code checks the quote, reads the window, and labels PDUFA and advisory dates regulator-scheduled; results are stored as claims, never catalysts; documents already extracted with the same prompt version are skipped |
 | 2026-10-17 | ADR 0012: quotes are found in a versioned plain text of each stored copy, word for word with only spacing free; date phrases become windows in code ("mid-2027" is April to September; "by" runs from the document's date); vague phrases get no window |
 | 2026-10-17 | ADR 0011: live jobs run in GitHub Actions with settings from Actions secrets; the live database is reached through Supabase's Session pooler; row-level security on every table; owner setup kept to one sitting at a time |
 | 2026-10-16 | ADR 0010: Gate 1 uses the 10 pilot companies plus 40 drawn with seed 2026; 10 records sampled with the same seed; a link works only on HTTP 200 at its exact address; link checks obey robots.txt and source rate limits |

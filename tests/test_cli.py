@@ -2,6 +2,7 @@
 
 import json
 from collections import Counter
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from catalyst import cli
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
+from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.snapshots import SnapshotStoreError
 
@@ -175,3 +177,38 @@ def test_coverage_build_reports_an_unreadable_answer_plainly(
     assert "a source sent an answer that could not be read" in err
     assert "Traceback" not in err
     assert not out.exists()
+
+
+def test_extract_catalysts_needs_the_product_key_never_the_coding_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("CATALYST_ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "coding-session-key")
+    assert main(["extract-catalysts"]) == 2
+    err = capsys.readouterr().err
+    assert "CATALYST_ANTHROPIC_API_KEY" in err
+    assert "coding-session-key" not in err
+
+
+def test_extract_catalysts_writes_the_results_and_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    found = DocumentResult(
+        "sec:a", "https://www.sec.gov/a.htm", "Acme Bio", date(2026, 10, 14), claims_stored=2
+    )
+    calls: list[dict[str, Any]] = []
+
+    def fake_extract(*_args: object, **options: Any) -> ExtractionReport:
+        calls.append(options)
+        return ExtractionReport(documents=[found])
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", fake_extract)
+    out = tmp_path / "found.json"
+    assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
+    assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
+    assert json.loads(capsys.readouterr().out)["claims_stored"] == 2
+    (written,) = json.loads(out.read_text())
+    assert written["company"] == "Acme Bio"
+    assert written["published"] == "2026-10-14"
