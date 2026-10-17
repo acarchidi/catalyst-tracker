@@ -26,7 +26,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
 - [ ] Auditor agent, weekly link check, daily status report to the owner
-- [ ] Gold set of 200 verified catalysts
+- [ ] Gold set of 200 verified catalysts. Includes giving the Spyre SKYLINE Part B gold entry its full drug list once the drug field is a list (owner ruling, 2026-10-17, rule 3)
 
 **Gate 2 (the one that matters most):** weekly random sample under 2% errors; 100% of published records carry a deep source link.
 
@@ -75,6 +75,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |
 | 2026-10-17 | Gold-set counting rules from the owner: two trials or two diseases in one sentence are separate events; a multi-drug trial names every drug and combination, searchable by each; data with no named meeting is a readout; the dated event is the data, not a later approval |
 | 2026-10-17 | Roadmap: added an estimated results-reporting window per trial (company guidance first, then the company's own completion-to-results history, then a base rate by phase), with a tooltip naming its basis (owner request) |
 | 2026-10-17 | ADR 0014: the extractor's first evaluation set is 12 recorded press releases with 20 agent-labeled events (owner confirmation pending); scores are earned in GitHub Actions with the product key and committed; a CI test blocks an unscored prompt change, a score earned on another prompt, model or gold set, and any drop below the baseline |
