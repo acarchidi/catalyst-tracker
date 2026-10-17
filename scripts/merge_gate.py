@@ -33,6 +33,7 @@ OWNER_PATHS = (
     ".claude/",
     "scripts/merge_gate.py",
     "scripts/review_verdict.py",
+    "scripts/overseer_verdict.py",  # the build overseer's actor: what it may do (ADR 0019 Part B)
     "docs/spec.md",
     "docs/quality-gates.md",
     ".gitleaks.toml",

@@ -115,6 +115,7 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         ".github/rulesets/main.json",
         "scripts/merge_gate.py",
         "scripts/review_verdict.py",
+        "scripts/overseer_verdict.py",  # the build overseer's actor (ADR 0019 Part B)
         "AGENTS.md",
         "CLAUDE.md",
         "pipeline/catalyst/CLAUDE.md",

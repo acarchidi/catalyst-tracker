@@ -1,0 +1,8 @@
+# Limits for the build overseer (ADR 0019 Part B; .github/workflows/overseer.yml).
+#
+# Each overseer run spends on the review key (CATALYST_REVIEW_API_KEY), about as much as one
+# Claude review. The workflow reads this file from main, never from the pull request it checks,
+# counts the runs it has made since midnight UTC, and does not call the model past this limit.
+# 0 switches the overseer off.
+
+daily_run_limit = 30

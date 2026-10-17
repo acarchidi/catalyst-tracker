@@ -112,3 +112,16 @@ The two kinds of agent run in different places. The product agents run as GitHub
 - Before the overseer becomes a required check, and before the orchestrator's controls switch on, checkpoint CP8 runs. It is a dry run plus an Opus review with injected-text tests (`docs/quality-gates.md`).
 - The pipeline orchestrator's controls need the publish gate (for holds) and the alerts (for reports). They come after verification part 5 and the alerts item.
 - A false alarm costs a delay, never a wrong record. The record of each action and the plain-English report let the owner spot thresholds that fire too often. Changing a threshold is an owner-merged change.
+
+## Implementation notes
+
+**Build overseer, step 1 (2026-10-17).** Choices this ADR left open, made when `overseer.yml` landed:
+
+- **Two jobs.** The "Overseer" job has a read-only token. It runs the model, then `overseer_verdict.py judge`; its pass or fail is the "Overseer" check. The "Overseer actions" job runs no model and is the only job that can write. It checks the answer again, then acts.
+- **What the model can use.** A plain step saves the open pull requests, their CI checks, how far each branch is from main, and the last 14 days of merges as files in `.overseer/`. The model's tools are Read, Grep, Glob, `gh pr view`, `gh pr diff`, and `gh pr list`. It gets no `gh api`, because the tool pattern cannot limit that command to reads.
+- **Holds.** `overseer-hold` changes only on the daily sweep. On a pull-request run, the failed check is the hold (it holds merges once step 2 makes it required). The sweep's answer must list exactly the open pull requests, so each sweep sets or clears the label on every one of them.
+- **"Re-run once".** Only the latest CI run on the pull request's head commit is re-run, and only if it failed on its first attempt. The run's attempt number is the record, so the script keeps no state.
+- **Daily run limit.** `daily_run_limit` in `config/overseer.toml` (30), read from main, never from the pull request. The workflow counts its own runs since midnight UTC. Skipped runs (drafts), Dependabot's runs, and the current run do not count. Past the limit, the check fails with a plain message. This only delays work; it never lets anything merge. The limit moves into `config/orchestrator.toml` (Part A) once that file exists, and that file joins `OWNER_PATHS`.
+- **Issues.** A hidden marker finds each owner-decision issue again by its key. The overseer opens at most 3 a run, with no labels or assignees. The "Build status" issue is found by its own marker and pinned when it is first opened. If the workflow token may not pin it, the issue stays unpinned, and the job log says so.
+- **Model text.** Before posting, the script breaks @-mentions and HTML comments in the model's text. So a run cannot notify anyone or fake one of the script's markers.
+- **Dry run (checkpoint CP8).** Run the workflow by hand with "dry run" ticked (the default). The model runs; the script prints each action it would take and writes nothing. A pull request number, merged ones included, checks just that pull request.
