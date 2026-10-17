@@ -16,7 +16,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from catalyst.extract.agent import ExtractedCatalyst, extract_catalysts
+from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE, ExtractedCatalyst, extract_catalysts
 from catalyst.extract.dates import DateWindow, parse_window
 from catalyst.extract.text import QuoteSpan, document_text, find_quote
 from catalyst.llm.client import ModelClient
@@ -169,13 +169,21 @@ def gold_fingerprint(path: Path) -> str:
 
 
 def evaluate(
-    client: ModelClient, gold: list[GoldDocument], copies: Path
+    client: ModelClient,
+    gold: list[GoldDocument],
+    copies: Path,
+    *,
+    role: str = ROLE,
+    prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
 ) -> tuple[Scores, list[DocumentScore]]:
-    """Run the extractor on every gold document (copies in `copies/<sha256>.htm`) and score it."""
+    """Run a reader on every gold document (copies in `copies/<sha256>.htm`) and score it.
+
+    The extractor is the default; the verifier's prompt is scored the same way, on the same set.
+    """
     results: list[DocumentScore] = []
     for document in gold:
         text = document_text((copies / f"{document.sha256}.htm").read_bytes(), document.content_type)
-        extraction = extract_catalysts(client, text, document.published)
+        extraction = extract_catalysts(client, text, document.published, role=role, prompt_ref=prompt_ref)
         results.append(
             score_document(text, document.published, list(document.catalysts), list(extraction.catalysts))
         )
@@ -183,6 +191,9 @@ def evaluate(
 
 
 EVALS = Path(__file__).resolve().parents[3] / "evals" / "extract_catalysts"
+# The verifier's second reading is scored on the same gold set; its scores sit in their own folder.
+VERIFY_EVALS = EVALS.parent / "verify_catalysts"
+REPOSITORY = EVALS.parents[1]
 FIRST_VERSION = "1.0.0"
 
 
@@ -227,7 +238,14 @@ def _mismatches(name: str, record: dict[str, Any], expected: dict[str, object]) 
     ]
 
 
-def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list[str]:
+def gate_problems(
+    prompt: Prompt,
+    role: RoleConfig,
+    evals: Path = EVALS,
+    gold: Path | None = None,
+    *,
+    allow_unscored: bool = True,
+) -> list[str]:
     """Return why the current prompt and model may not ship; empty when they may.
 
     Scored: `scores.json` must name exactly this prompt (id, version, and the fingerprint of its
@@ -236,9 +254,15 @@ def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list
     the first prompt version, and only for the exact prompt words and role settings recorded
     in `unscored.json`. So a new version, edited words, another
     model, or another gold set all fail until new scores are committed (ADR 0014).
+
+    The verifier passes `allow_unscored=False`: its second reading never runs without scores
+    (review of PR #31). The gold set is `evals/gold.jsonl` if that folder has one, otherwise the
+    set the prompt file names.
     """
     expected = _identity(prompt, role)
     scores_path = evals / "scores.json"
+    if not scores_path.exists() and not allow_unscored:
+        return [f"{prompt.id} has no scores.json: run `catalyst eval-extractor --prompt {prompt.id}`"]
     if not scores_path.exists():
         if prompt.version != FIRST_VERSION:
             return [f"prompt version {prompt.version} has no scores; run `catalyst eval-extractor`"]
@@ -247,7 +271,9 @@ def gate_problems(prompt: Prompt, role: RoleConfig, evals: Path = EVALS) -> list
             return ["no scores.json and no unscored.json: the prompt has never been checked"]
         return _mismatches("unscored.json", json.loads(unscored_path.read_text(encoding="utf-8")), expected)
     record: dict[str, Any] = json.loads(scores_path.read_text(encoding="utf-8"))
-    expected["gold_sha256"] = gold_fingerprint(evals / "gold.jsonl")
+    if gold is None:
+        gold = evals / "gold.jsonl" if (evals / "gold.jsonl").exists() else REPOSITORY / prompt.eval_set
+    expected["gold_sha256"] = gold_fingerprint(gold)
     problems = _mismatches("scores.json", record, expected)
     baseline_path = evals / "baseline.json"
     if not baseline_path.exists():

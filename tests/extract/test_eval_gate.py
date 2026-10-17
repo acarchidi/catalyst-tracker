@@ -136,3 +136,36 @@ def test_a_baseline_must_name_every_score(tmp_path: Path) -> None:
     evals = _evals(tmp_path, scores=_scores(tmp_path, _prompt("1.1.0")), baseline=partial)
     (problem,) = gate_problems(_prompt("1.1.0"), ROLE_M, evals)
     assert "drug" in problem
+
+
+def test_the_second_reading_has_no_scores_yet_so_it_may_not_run() -> None:
+    """ADR 0018, part 2: the verifier runs live only once its own scores are committed."""
+    from catalyst.extract.evaluate import VERIFY_EVALS
+    from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
+
+    role = load_config().roles[VERIFIER_ROLE]
+    problems = gate_problems(load_prompt(*VERIFIER_PROMPT), role, VERIFY_EVALS, allow_unscored=False)
+    assert problems == [
+        "verify_catalysts has no scores.json: run `catalyst eval-extractor --prompt verify_catalysts`"
+    ]
+
+
+def test_the_second_reading_may_not_skip_its_scores_with_an_exemption(tmp_path: Path) -> None:
+    """Review of PR #31: an unscored.json must not switch the verifier on without scores."""
+    prompt = load_prompt(*EXTRACTOR_PROMPT)
+    (tmp_path / "unscored.json").write_text(json.dumps(_identity(prompt)))
+    problems = gate_problems(prompt, ROLE_M, tmp_path, allow_unscored=False)
+    assert problems == [
+        "extract_catalysts has no scores.json: run `catalyst eval-extractor --prompt extract_catalysts`"
+    ]
+
+
+def test_the_gold_set_comes_from_the_prompt_file_when_not_given(tmp_path: Path) -> None:
+    """Review of PR #31: a scores folder without its own gold set reads the one the prompt names."""
+    from catalyst.verify.second import VERIFIER_PROMPT
+
+    prompt = load_prompt(*VERIFIER_PROMPT)
+    record = _identity(prompt) | {"gold_sha256": gold_fingerprint(EVALS / "gold.jsonl"), "scores": ALL_SCORES}
+    (tmp_path / "scores.json").write_text(json.dumps(record))
+    (tmp_path / "baseline.json").write_text(json.dumps(ALL_SCORES))
+    assert gate_problems(prompt, ROLE_M, tmp_path, allow_unscored=False) == []
