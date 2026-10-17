@@ -7,7 +7,7 @@ Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 000
 1. **Automated checks pass** in CI: lint, strict types, tests, coverage thresholds, evaluation gate, secret scan.
 2. **Fresh-eyes review.** Run `/ultrareview` (or a reviewer subagent with no access to the writing session's reasoning) and fix what it finds. Checkpoints marked **Opus** are reviewed by a reviewer subagent on the Opus model.
 3. **Preview for the owner.** A plain-English summary with no jargon, plus the artifact named in the table (sample records with clickable links, a screenshot, a preview URL).
-4. **Post and continue.** Post the summary to the owner and continue with the next item. Pass criteria that need the owner's judgment (CAL1, CAL2) or the owner's own action (Gate 3) are recorded as waiting on the owner; work that does not depend on them continues.
+4. **Post and continue.** Post the summary to the owner and continue with the next item. Pass criteria that need the owner's judgment (CAL1, CAL2, CAL3) or the owner's own action (Gate 3) are recorded as waiting on the owner; work that does not depend on them continues.
 
 ## Checkpoints
 
@@ -26,6 +26,7 @@ Work does not stop at the checkpoints below (owner decision, 2026-10-16; ADR 000
 | CP6 Billing | Before taking money | A full test-mode purchase, upgrade, and cancellation | **Opus** | Free users never see paid data; paid users always do |
 | Gate 4 | End of Phase 3 | 4 weeks of alert delivery logs | `/ultrareview` | Alerts delivered for every run in the 4 weeks |
 | CAL2 Benchmark calibration | Start of Phase 4 | 20 benchmark drafts | Owner (domain expert) | Owner approves at least 18 of 20 |
+| CAL3 Scenario calibration | Before catalyst scenarios publish | 20 scenario drafts with every input, plus the backtest on past catalysts | **Opus** review of the math + owner (domain expert) | Owner approves at least 18 of 20; backtest interval score beats the naive baseline |
 
 ## Quality bars enforced in CI
 
