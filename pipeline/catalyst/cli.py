@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
+from dataclasses import asdict
 from datetime import date, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -20,8 +21,13 @@ from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
+from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
 from catalyst.links import check_links, link_client, links_markdown
+from catalyst.llm import anthropic_adapter
+from catalyst.llm.client import ModelClient
+from catalyst.llm.config import load_config
+from catalyst.llm.ledger import DatabaseLedger
 from catalyst.logs import configure_logging
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -83,6 +89,16 @@ def _parser() -> argparse.ArgumentParser:
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
     _store_arguments(verify)
+    extract = commands.add_parser(
+        "extract-catalysts",
+        help="Ask the extractor for the catalysts in stored press releases (costs money).",
+    )
+    extract.add_argument("--limit", type=int, default=50, help="Most documents to read in this run.")
+    extract.add_argument(
+        "--since", type=date.fromisoformat, default=None, help="Earliest publication date, YYYY-MM-DD."
+    )
+    extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
+    _store_arguments(extract)
     return parser
 
 
@@ -118,6 +134,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _gate1_select(args)
     if args.command in ("sample-records", "check-links"):
         return _gate1_checks(args)
+    if args.command == "extract-catalysts":
+        return _extract(args)
     if args.command == "report":
         engine = create_engine(settings.database_url())
         try:
@@ -199,6 +217,27 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         return 0 if report.ok else 1
     finally:
         engine.dispose()
+
+
+def _extract(args: argparse.Namespace) -> int:
+    try:
+        adapter = anthropic_adapter.from_settings()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(settings.database_url())
+    try:
+        client = ModelClient(load_config(), {adapter.name: adapter}, DatabaseLedger(engine))
+        report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
+    finally:
+        engine.dispose()
+    if args.out is not None:
+        documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
+        args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
+    summary = report.summary()
+    print(json.dumps(summary, indent=2))
+    return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
 
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
