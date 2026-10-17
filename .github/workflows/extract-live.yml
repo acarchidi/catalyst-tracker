@@ -11,8 +11,9 @@ on:
     inputs:
       limit:
         description: "Most press releases to read in this run"
+        type: number
         required: true
-        default: "50"
+        default: 50
 
 permissions:
   contents: read
@@ -42,6 +43,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
           LIMIT: ${{ inputs.limit }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
         run: |
           set +e
           uv run catalyst extract-catalysts --limit "$LIMIT" --snapshot-store supabase \
@@ -49,9 +51,11 @@ jobs:
           status=$?
           { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/summary.json"; echo '```'; } \
             | tee -a "$GITHUB_STEP_SUMMARY"
-          # The full results (proposals with their quotes) go to the run log, which only people
-          # with access to this private repository can read.
-          echo "::group::Full results (JSON)"
-          cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
-          echo "::endgroup::"
+          # The full results (unchecked proposals with their quotes) go to the run log only while
+          # the repository is private: a public log would publish them (AGENTS.md).
+          if [ "$REPOSITORY_PRIVATE" = "true" ]; then
+            echo "::group::Full results (JSON)"
+            cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
+            echo "::endgroup::"
+          fi
           exit "$status"
