@@ -23,7 +23,7 @@ Two rules from the spec still apply:
 
 ### Competitor research agent (weekly)
 
-1. **Sources are plain-code collectors.** A versioned list (`config/competitors.toml`) names each competitor's public pages:
+1. **Sources are plain-code collectors.** A versioned list (`config/competitors.toml`) names each competitor's public pages. Before a source is added, its robots.txt and terms are checked, as for every other source (spec: Sources). App-store pages often forbid automated collection, so they are added only where allowed. The pages:
    - pricing;
    - features or changelog;
    - blog and release notes;
@@ -31,7 +31,7 @@ Two rules from the spec still apply:
    - API or connector docs.
 
    The spec's competitor research is the starting list. The collectors follow robots.txt and site terms, and are rate-limited. They store a dated copy of each page, as the snapshot store does for sources.
-2. **New entrants come from public feeds,** for example launch sites' RSS feeds and news searches by keyword, read by plain code.
+2. **New entrants come from public feeds,** read by plain code: for example a launch site's RSS feed (a public list of new posts) or a news site's public search page, each checked for its terms first.
    - A web-search API would find more, but it needs an account and a key. That is the owner's decision when this is built.
    - A possible newcomer is only a candidate until the owner adds it to the list.
 3. **Changes, not pages.** Plain code compares each page with last week's copy. The agent, which has no tools, reads only the changed text and writes the report. Every claim in the report quotes the changed text and links the page, as records do.
@@ -43,18 +43,19 @@ Two rules from the spec still apply:
    - a short "why it fits".
 
    An idea becomes a roadmap item only when the owner approves it. A coding session then adds it through a pull request.
-5. **Delivery** is the same as alerts (ADR 0023): one GitHub issue a week, labelled `competitor-report`. The owner needs no new account.
+5. **Delivery:** plain code, not the agent, files one GitHub issue a week, labelled `competitor-report`. GitHub emails the owner about new issues, so the owner needs no new account. This is the same channel the planned alerts item uses.
 6. **Cost:**
    - It gets its own role, `researcher`, with a daily cap in `config/models.toml`, which the owner merges.
-   - It runs once a week. It reads the week's changed text, typically a few thousand words.
-   - Expected cost is a few dollars a month at Sonnet prices. This is an estimate, to be measured on the first runs.
+   - It runs once a week, and reads only the week's changed text.
+   - Estimate, to be measured on the first runs: a few dollars a month at Sonnet prices.
+   - Its cap adds to the current $6 daily total (ADR 0022). The owner merges that change.
 
 ### CFO agent (monthly, read-only, drafts)
 
-1. **Inputs, read-only:**
-   - **revenue from Stripe:** subscribers, MRR (monthly recurring revenue), new and cancelled subscriptions, refunds, and fees. This uses a **restricted read-only Stripe key**, made in the same sitting as the business's Stripe setup;
+1. **Inputs, read-only, as totals only.** The agent never sees a subscriber's name, email, or card.
+   - **revenue from Stripe:** subscriber counts, MRR (monthly recurring revenue), new and cancelled subscriptions, refunds, and fees. This uses a **restricted read-only Stripe key**, a key that can only read, never charge or refund. It is made in the same sitting as the business's Stripe setup;
    - **AI spend** from our own `model_call` table, by role;
-   - **other costs** from a versioned file the owner fills once a month (`config/costs.toml`): hosting, domain, data licence, email service, and so on;
+   - **other costs and a monthly budget** for each kind of cost, from a versioned file the owner fills once a month (`config/costs.toml`): hosting, domain, data licence, email service, and so on;
    - **cash on hand,** entered by the owner monthly in that file, because there is no bank connection.
 2. **Plain code computes every number:**
    - revenue;
@@ -62,9 +63,11 @@ Two rules from the spec still apply:
    - profit or loss;
    - cost per subscriber;
    - Stripe fees;
-   - churn;
-   - months of runway at the current rate;
+   - churn (the share of subscribers who cancel each month);
+   - our own runway: the months our cash lasts at the current rate. This is not the companies' cash runway that the product tracks;
    - budget against actual.
+
+   A test checks that every number in the AI's text appears in the computed table. Checkpoint CP10 runs this test on the first reports.
 
    The model only writes the plain-English explanation. It may not change a number, and every figure in its text must match the computed table.
 3. **Drafts, never actions.** It may propose:
@@ -76,7 +79,7 @@ Two rules from the spec still apply:
    Each proposal is one GitHub issue for the owner. It cannot pay, refund, change prices, change caps, or move money. Any change happens only through the owner, or through a pull request the owner merges.
 4. **Alerts** use the same issue channel, when spend runs above budget or a cost appears that is not in the file.
 5. **Not tax or legal advice.** It can remind the owner of dates the owner records, such as filing dates. It does not decide tax questions.
-6. **Cost:** its own role, `cfo`, with a small cap. One run a month on summary numbers costs cents.
+6. **Cost:** its own role, `cfo`, with a small cap added to the $6 daily total. Estimate: one run a month on summary numbers costs a few cents.
 
 ## Alternatives
 
