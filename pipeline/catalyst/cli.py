@@ -46,7 +46,8 @@ from catalyst.snapshots import (
 )
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
-from catalyst.verify.second_run import run_second_reading
+from catalyst.verify.second_run import run_second_reading, second_reading_problems
+from catalyst.weekly import build_weekly
 
 NEW_YORK = ZoneInfo("America/New_York")
 DEFAULT_SNAPSHOT_DIR = Path("var/snapshots")
@@ -143,7 +144,14 @@ def _issue_arguments(commands: Any) -> None:
     alerts.add_argument("--spend", action="store_true", help="Also check today's spend per role (database).")
     alerts.add_argument("--run-url", required=True, help="Link to this run's log, for the alert text.")
     alerts.add_argument("--out", type=Path, required=True, help="Write the plan (JSON) here.")
-    issues = commands.add_parser("post-issues", help="Post a plan from `alerts` to GitHub as issues.")
+    weekly = commands.add_parser("weekly-summary", help="Build the weekly summary from stored rows (free).")
+    weekly.add_argument(
+        "--open-alerts", type=Path, default=None, help="Open alert issues (JSON list of number, title, url)."
+    )
+    weekly.add_argument("--out", type=Path, required=True, help="Write the plan (JSON) here.")
+    issues = commands.add_parser(
+        "post-issues", help="Post a plan from `alerts` or `weekly-summary` to GitHub."
+    )
     issues.add_argument("--from", dest="plan", type=Path, required=True, help="The plan (JSON).")
 
 
@@ -183,6 +191,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
         "alerts": _alerts,
+        "weekly-summary": _weekly,
         "post-issues": _post_issues,
     }
     if args.command in standalone:
@@ -361,6 +370,21 @@ def _spend_today() -> dict[str, RoleSpend]:
         return spend_today(engine, load_config(), datetime.now(NEW_YORK).date())
     finally:
         engine.dispose()
+
+
+def _weekly(args: argparse.Namespace) -> int:
+    alerts: list[dict[str, Any]] = []
+    if args.open_alerts is not None:
+        alerts = json.loads(args.open_alerts.read_text(encoding="utf-8"))
+    config = load_config()
+    engine = create_engine(settings.database_url())
+    try:
+        plan = build_weekly(sessionmaker(engine), config, _utc_now(), alerts, second_reading_problems(config))
+    finally:
+        engine.dispose()
+    args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    print(plan_markdown(plan), end="")
+    return 0
 
 
 def _post_issues(args: argparse.Namespace) -> int:

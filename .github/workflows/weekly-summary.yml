@@ -1,0 +1,82 @@
+name: Weekly summary
+
+# Posts the owner's plain-English weekly summary as one GitHub issue labelled weekly-summary
+# (ADR 0023): documents collected, claims extracted and passing every check, checks failing,
+# spending by role against its cap, open alerts, and the error rate once a weekly sample exists.
+# Plain code over the live database, which it only reads; no model call, so it costs nothing.
+# GitHub emails the repository owner about each new issue. A re-run the same day updates that
+# day's issue instead of opening another; the previous week's issue is closed.
+
+on:
+  schedule:
+    # Saturdays at 22:00 UTC: 6pm in New York in summer (EDT), 5pm in winter (EST).
+    - cron: "0 22 * * 6"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Count the week
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      plan: ${{ steps.summary.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: List the open alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/issues?labels=alert&state=open&per_page=100" \
+            --jq '[.[] | select(.pull_request == null) | {number, title, url: .html_url}]' \
+            > "$RUNNER_TEMP/open-alerts.json"
+
+      - name: Build the weekly summary
+        id: summary
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -o pipefail
+          uv run catalyst weekly-summary --open-alerts "$RUNNER_TEMP/open-alerts.json" \
+            --out "$RUNNER_TEMP/weekly.json" | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/weekly.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  post:
+    name: Post the weekly summary
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open or update this week's issue
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.build.outputs.plan }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/weekly.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/weekly.json"
