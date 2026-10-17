@@ -83,6 +83,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0015 (part 3): collection fills company names, former names, tickers, and trials; registry intervention lists are not imported as drugs, because they mix comparators, placebos, and short forms |
 | 2026-10-17 | Roadmap: show/hide any field and a catalyst timeline (Phase 2); pipeline and competitive-landscape views and key peer-reviewed publications per catalyst (Phase 4); readout benchmarking scope confirmed by the owner (owner requests) |
 | 2026-10-17 | ADR 0016: a catalyst links any number of drugs, each marked alone or in combination, and a combination lists its parts only where a source states them; every link names its claim; `catalyst.drug_id` is dropped by a migration that refuses to lose data |
 | 2026-10-17 | ADR 0015: the entity resolver matches companies, drugs, and trials by exact rules in plain code (SEC number, ticker on the day, name; company-scoped code names; registry number, study name); several candidates are ambiguous and go to review; no fuzzy matching |
