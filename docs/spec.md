@@ -4,7 +4,7 @@
 
 ## Overview
 
-The platform tracks catalysts for US-listed biotech and biopharma companies, foreign ones included, and later for companies listed only abroad (ADR 0021), and links every record to its primary source. It adds analysis no retail tool offers: readout benchmarking, market sizing, and price-impact statistics. Launch targets retail investors and small institutions with one paid tier at $15 a month.
+The platform tracks catalysts for US-listed biotech and biopharma companies, foreign ones included, and later for companies listed only abroad (ADR 0021) and for the regulated medical device and medical robotics industries (ADR 0027), and links every record to its primary source. It adds analysis no retail tool offers: readout benchmarking, market sizing, and price-impact statistics. Launch targets retail investors and small institutions with one paid tier at $15 a month.
 
 The product rests on five openings found in the [competitor matrix](https://claude.ai/artifact/SX48JvRPdXX7iQFBwTt3WG):
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-The build runs in eight phases (0 to 7). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
+The build runs in nine phases (0 to 8). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
 
 Checkpoints inside each phase (where work stops for review) are listed in [quality-gates.md](quality-gates.md).
 
@@ -104,6 +104,14 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
   - later, once outcomes exist, a descriptive base rate with its sample size;
   - foreign companies' directors and officers from March 18, 2026, when their Form 4 filing began (check the SEC's exemption order first)
 
+## Phase 8 — Medical devices and medical robotics (owner request 2026-10-17; ADR 0027)
+
+- [ ] Products, not only drugs: device tables (names, FDA product codes, 510(k), PMA, or De Novo numbers, device class, a robotic-system flag), reversible migrations, Opus review
+- [ ] Device catalyst types with rule checks from FDA's published review goals: expected 510(k) clearance, PMA and De Novo decisions, device advisory panels, Breakthrough Device designation, IDE approval, CMS coverage decisions, CE mark under the EU device regulation
+- [ ] Device sources: openFDA device endpoints (decisions double as outcomes; recalls and adverse events as context), device panel notices, CMS's Medicare Coverage Database and FDA's De Novo database (terms and access checked first), device trials on ClinicalTrials.gov; coverage adds SEC industry codes 3841, 3842, 3845, 3851 plus an owner-reviewed list of robotics companies classed elsewhere
+- [ ] Both readers taught the device types: new prompt versions, device releases in the gold set, both scored again before any device catalyst publishes (checkpoint CP11)
+- [ ] Every feature takes the device case as it is built: search and filters (class, pathway, robotic), timelines and pipeline views, outcomes, benchmarking against predicate and competing devices, market size from procedure volumes, scenarios, insider purchases, foreign listings
+
 ## Later (unscheduled)
 
 - [ ] Public API tier (about $50/month)
@@ -122,6 +130,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-17 | ADR 0027: the whole platform to cover regulated medical devices and medical robotics (Phase 8): products are drugs or devices, device pathways become catalyst types with their own rule checks, openFDA and device sources added, both readers re-scored on device releases before any device catalyst publishes (owner request) |
 | 2026-10-17 | ADR 0026: insider purchases before known catalysts (Phase 7), read in plain code from SEC Form 4 filings with links, shown as facts with no signal labels; foreign companies' directors and officers covered from March 18, 2026 (owner request) |
 | 2026-10-17 | ADR 0024: two business agents after v1 (Phase 6): a weekly competitor-research agent that reads only changed public pages and proposes ranked feature ideas for the owner to approve, and a monthly read-only CFO agent whose numbers come from plain code (Stripe, model spend, owner-entered costs; no bank feed) and who only drafts proposals (owner decisions) |
 | 2026-10-17 | Spending lowered (owner decisions): the product's daily model caps total $6 (from $13.50); the Claude review no longer runs on pull requests the owner merges by hand, since a separate reviewer checks those in the coding session; roadmap gains the product name and domain, hosting (Vercel Pro once public, because the free plan is non-commercial), and the payment steps of the $15 subscription |
