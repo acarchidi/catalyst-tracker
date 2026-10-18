@@ -16,6 +16,7 @@ from pathlib import Path
 from uuid import UUID
 
 from catalyst.cli import main
+from catalyst.extract.dates import cut_short
 from catalyst.schemas import SourceTier
 from catalyst.verify.independent import independent_sources
 from catalyst.verify.planted import ERRORS, FOLDER, Corpus, Record, load_corpus, plant
@@ -215,10 +216,17 @@ def test_the_drug_check_is_run_and_flags_no_correct_claim() -> None:
     assert _results().disturbed == ()
 
 
-def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed() -> None:
+def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed_or_is_cut_short() -> None:
+    """Another date phrase of the quote passes the date rules, unless it is cut from a longer date.
+
+    "year-end 2026" taken from "year-end 2026/first quarter 2027" is cut short (CP4, B2), so
+    `date_words_in_quote` catches it; a whole phrase of its own still passes.
+    """
     for found in _results().planted:
         if found.error == "consistent_wrong_date":
-            assert "date_words_in_quote" not in found.failed
+            value = found.record.value
+            cut = cut_short(found.record.quote, value["date_text"], found.record.published)
+            assert ("date_words_in_quote" in found.failed) is (cut is not None)
             ended = date.fromisoformat(found.record.value["window_end"]) < found.record.published
             assert ("window_matches_words" in found.failed) is ended
 
