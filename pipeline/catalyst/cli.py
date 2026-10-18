@@ -36,6 +36,7 @@ from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
+from catalyst.publish.run import decide_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -45,6 +46,11 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.verify.advisory import check_advisory_meetings
+from catalyst.verify.planted import load_corpus
+from catalyst.verify.planted_report import render_report
+from catalyst.verify.planted_report import run as run_planted
+from catalyst.verify.planted_report import scores as planted_scores
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -110,9 +116,15 @@ def _parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
     _store_arguments(extract)
-    commands.add_parser(
+    verify_claims = commands.add_parser(
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
+    _store_arguments(verify_claims)
+    decide = commands.add_parser(
+        "decide-claims",
+        help="Decide, from the stored checks and copies, which extracted claims may publish (free).",
+    )
+    _store_arguments(decide)
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -131,6 +143,12 @@ def _parser() -> argparse.ArgumentParser:
         default=EXTRACTOR_PROMPT[0],
         help="Which reader to score: the extractor (default) or the verifier's second reading.",
     )
+    planted = commands.add_parser(
+        "planted-errors",
+        help="Plant known errors in gold-set claims and report what the checks catch (free).",
+    )
+    planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
+    planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     return parser
 
 
@@ -169,8 +187,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
+        "decide-claims": _decide_claims,
         "api": _serve,
         "mcp": _serve,
+        "planted-errors": _planted_errors,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -280,6 +300,16 @@ def _extract(args: argparse.Namespace) -> int:
                 checks = run_checks(sessionmaker(engine), _utc_now).summary()
             except SQLAlchemyError as error:
                 checks = {"error": f"{type(error).__name__}: checks did not finish"}
+            else:
+                # Its own step, so a problem in it keeps the rule checks' summary (Opus review of PR #49).
+                try:
+                    checks["advisory"] = check_advisory_meetings(
+                        sessionmaker(engine), store, _utc_now
+                    ).summary()
+                except (SQLAlchemyError, ValueError, OSError) as error:
+                    checks["advisory"] = {
+                        "error": f"{type(error).__name__}: the advisory check did not finish"
+                    }
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -287,15 +317,37 @@ def _extract(args: argparse.Namespace) -> int:
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
+        decisions = _decide_after(sessionmaker(engine), store, checks)
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary() | {"matches": matches, "checks": checks, "second_reading": second}
+    summary = report.summary() | {
+        "matches": matches,
+        "checks": checks,
+        "second_reading": second,
+        "decisions": decisions,
+    }
     print(json.dumps(summary, indent=2))
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
-    return 1 if summary["documents_failed"] or summary["stopped_early"] or second_failed else 0
+    failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or "error" in decisions
+    return 1 if failed else 0
+
+
+def _decide_after(
+    session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
+) -> dict[str, Any]:
+    """Decide every claim after every check; earlier steps stand if this fails.
+
+    Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
+    """
+    if "error" in checks or "error" in checks.get("advisory", {}):
+        return {"skipped": "the checks did not finish, so nothing was decided"}
+    try:
+        return decide_claims(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
 
 
 def _resolve(_args: argparse.Namespace) -> int:
@@ -313,15 +365,36 @@ def _resolve(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _verify_claims(_args: argparse.Namespace) -> int:
+def _verify_claims(args: argparse.Namespace) -> int:
     try:
         database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     engine = create_engine(database)
     try:
-        report = run_checks(sessionmaker(engine), _utc_now)
+        report = run_checks(sessionmaker(engine), _utc_now).summary()
+        try:
+            report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
+    finally:
+        engine.dispose()
+    print(json.dumps(report, indent=2))
+    return 0
+
+
+def _decide_claims(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = decide_claims(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
@@ -378,6 +451,17 @@ def _evaluate(args: argparse.Namespace) -> int:
     record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
+    return 0
+
+
+def _planted_errors(args: argparse.Namespace) -> int:
+    corpus = load_corpus()
+    results = run_planted(corpus)
+    args.out.write_text(render_report(results, corpus), encoding="utf-8")
+    counted = planted_scores(results)
+    if args.scores:
+        args.scores.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(counted["errors"], indent=2))
     return 0
 
 

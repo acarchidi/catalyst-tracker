@@ -298,11 +298,41 @@ def test_a_year_written_only_at_the_end_applies_to_the_first_part(
     assert _parsed(text, EARLY_2026) == expected
 
 
+# A year written only at the start applies to the last part too (Claude review of PR #40).
+EARLY_2027 = date(2027, 2, 1)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Q3 2026 to year-end", _window(date(2026, 7, 1), date(2026, 12, 31), DatePrecision.QUARTER)),
+        (
+            "first quarter of 2028 to second quarter",
+            _window(date(2028, 1, 1), date(2028, 6, 30), DatePrecision.QUARTER),
+        ),
+        ("November 2027 to December", _window(date(2027, 11, 1), date(2027, 12, 31), DatePrecision.MONTH)),
+    ],
+)
+def test_a_year_written_only_at_the_start_applies_to_the_last_part(
+    text: str, expected: tuple[date, date, DatePrecision]
+) -> None:
+    assert _parsed(text, EARLY_2027) == expected
+
+
+def test_a_last_part_that_runs_backwards_in_the_written_year_gives_no_window() -> None:
+    """Q4 2026 to "first quarter" read as Q1 2026 runs backwards; code does not guess 2027.
+
+    Before this rule the last part took the document's year (2027) and gave Oct 2026 to Mar 2027.
+    """
+    assert parse_window("Q4 2026 to first quarter", EARLY_2027) is None
+
+
 @pytest.mark.parametrize(
     "text",
     [
         "year-end or first quarter 2028",  # year-end of 2027 or 2028? Code does not guess.
         "year-end or first quarter next year",  # the same rule with the year in words
+        "Q4 2026 to Q1",  # "Q1" alone has no year in any form, so this never had a window
         "2027-2028",  # an unspaced ASCII hyphen joins only days, as in "November 16-19"
         "Q4 2026-Q1 2027",
     ],
