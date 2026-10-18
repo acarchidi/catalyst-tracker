@@ -68,6 +68,7 @@ from catalyst.schemas import (
 from catalyst.snapshots import LocalSnapshotStore
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
+from catalyst.verify.drug import check_drug_named
 from catalyst.verify.run import run_checks
 from catalyst.verify.second_run import run_second_reading
 from conftest import FIXTURES, REPO_ROOT, truncate_all
@@ -460,6 +461,7 @@ def run_pipeline(
     run_checks(factory, _now)
     check_advisory_meetings(factory, store, _now)
     check_company_named(factory, store, _now)
+    check_drug_named(factory, store, _now)
     check_safe_to_write(factory, _now)
     run_second_reading(factory, store, client, config, limit=10, now=_now, gate=_scored)
     decide_claims(factory, store, _now)
