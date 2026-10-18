@@ -38,7 +38,8 @@ class Reading:
     quote_end: int
 
 
-def _name(drug: str | None) -> str:
+def name_key(drug: str | None) -> str:
+    """Return a drug name with case, spaces, hyphens, and punctuation removed."""
     # Case, spaces, hyphens, and punctuation do not matter ("VX-548" is "vx 548"); every letter and
     # digit does, in any script (IFN-alpha written with the Greek letter is not IFN-beta).
     return re.sub(r"[\W_]", "", unicodedata.normalize("NFKC", drug or "").casefold())
@@ -57,7 +58,7 @@ def _overlap(a: Reading, b: Reading) -> int:
 
 
 def _drugs_agree(first: Reading, second: Reading, same_drug: Callable[[str, str], bool]) -> bool:
-    a, b = _name(first.drug), _name(second.drug)
+    a, b = name_key(first.drug), name_key(second.drug)
     if not a and not b:
         # A deal need not name a drug; any other event with no drug in either reading goes to review.
         return first.catalyst_type == second.catalyst_type == _NO_DRUG_TYPE
