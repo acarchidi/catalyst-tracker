@@ -11,21 +11,21 @@
     "wrong_trial": 1.0,
     "wrong_phase": 1.0,
     "quote_swap": 1.0,
-    "quote_same_date": 0.0
+    "quote_same_date": 0.8
   },
   "rule_catch_rate": {
     "wrong_window": 1.0,
     "consistent_wrong_date": 0.091,
     "past_window": 1.0,
     "pdufa_outside_review": 1.0,
-    "drug_in_release": 0.0,
-    "drug_elsewhere": 0.227,
+    "drug_in_release": 0.759,
+    "drug_elsewhere": 0.993,
     "wrong_type": 0.077,
     "wrong_company": 1.0,
     "wrong_trial": 1.0,
     "wrong_phase": 1.0,
     "quote_swap": 1.0,
-    "quote_same_date": 0.0
+    "quote_same_date": 0.8
   },
   "correct_rate": {
     "wrong_window": 1.0,

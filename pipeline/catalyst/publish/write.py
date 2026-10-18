@@ -9,6 +9,9 @@ Recomputed here, because they are plain code over stored rows and can go stale:
 - every rule check (`catalyst.verify.rules.RULES`), as of today in New York;
 - `independent_source`, which depends on other documents' claims;
 - `advisory_meeting_noticed`, since a notice may have been amended or cancelled;
+- `drug_named_near_quote` (part 3e), against the stored copy this job reads anyway, since new
+  drug records and the release's later claims can change it; when the copy cannot be read, its
+  stored row stands and the quote match holds the claim;
 - `safe_to_write` (`catalyst.publish.sanity`), against the catalysts as this run leaves them;
 - the quote match against the stored copy.
 
@@ -88,6 +91,7 @@ from catalyst.schemas import (
 from catalyst.snapshots import SnapshotStore
 from catalyst.verify import advisory, independent, second
 from catalyst.verify.advisory import advisory_results
+from catalyst.verify.drug import DrugFacts, load_drug_facts
 from catalyst.verify.rules import CheckResult
 from catalyst.verify.run import check_results, load_matches, store_check
 from catalyst.verify.second_run import current_reading
@@ -208,6 +212,7 @@ def _checks(
     reading counts only when its document has a current reading.
     """
     recomputed = {*gate.RULE_CHECKS, independent.CHECK, advisory.CHECK, gate.WRITER_CHECK}
+    recomputed |= {result.check for result in fresh}  # the drug check, when the copy could be read
     rows = [_row(claim_id, result, at) for result in fresh]
     rows.append(_row(claim_id, CheckResult(gate.WRITER_CHECK, CheckOutcome.PASS, _DECIDED_WHILE_WRITING), at))
     kept = [
@@ -241,6 +246,7 @@ def _recheck(
     stored = _stored(session, ids)
     read_now = _read_now(session, verifier_model)
     names_on_file = drug_names(session)
+    drugs = load_drug_facts(session)
     names = list(TABLES[Claim].c.keys())
     ready: list[_Ready] = []
     for _, group in groupby(rows, key=lambda row: row.source_document_id):
@@ -252,6 +258,7 @@ def _recheck(
             claim = Claim.model_validate({name: getattr(row, name) for name in names})
             key = claim_key(claim.value, matches.get(claim.id, []))
             results = [*fresh.get(claim.id, []), *([noticed[claim.id]] if claim.id in noticed else [])]
+            results += _drug_result(drugs, claim, copy)
             run.results[claim.id] = results
             checks = _checks(claim.id, results, stored[claim.id], claim.source_document_id in read_now, at)
             if live.is_live(claim.id, key):
@@ -274,6 +281,17 @@ def _recheck(
             ready.append(_Ready(claim, candidate, key))
         del copy
     return ready
+
+
+def _drug_result(drugs: DrugFacts, claim: Claim, copy: str | gate.UnreadableCopy) -> list[CheckResult]:
+    """Check again that the claim's drug is named in or just before its quote (part 3e).
+
+    Without a readable copy its stored row stands; the quote match holds the claim anyway.
+    """
+    if isinstance(copy, gate.UnreadableCopy):
+        return []
+    span = (claim.quote, claim.quote_start, claim.quote_end)
+    return [drugs.check(claim.id, claim.source_document_id, claim.value, span, copy)]
 
 
 def _hold(run: _Run, ready: _Ready, reason: str) -> None:

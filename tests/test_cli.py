@@ -25,6 +25,7 @@ from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 from catalyst.verify.advisory import AdvisoryReport
 from catalyst.verify.company import CompanyReport
+from catalyst.verify.drug import DrugReport
 from catalyst.verify.run import CheckReport
 from catalyst.verify.second_run import SecondReadingReport
 
@@ -95,6 +96,12 @@ def _advisory_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
 def _company_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for the company-named job, which needs a database; its own tests use one."""
     monkeypatch.setattr(cli, "check_company_named", lambda *_args: CompanyReport(claims=2, documents_read=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+
+
+@pytest.fixture(autouse=True)
+def _drug_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the drug-named job, which needs a database; its own tests use one."""
+    monkeypatch.setattr(cli, "check_drug_named", lambda *_args: DrugReport(claims=3, documents_read=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 @pytest.fixture(autouse=True)
@@ -367,7 +374,8 @@ def test_extract_catalysts_decides_last_and_a_failed_decision_fails_only_that_st
 
 
 @pytest.mark.parametrize(
-    "failing", ["resolve_claims", "run_checks", "check_advisory_meetings", "check_company_named"]
+    "failing",
+    ["resolve_claims", "run_checks", "check_advisory_meetings", "check_company_named", "check_drug_named"],
 )
 def test_extract_catalysts_decides_nothing_when_a_check_step_failed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failing: str
@@ -625,6 +633,7 @@ def test_verify_claims_prints_the_counts(
         "outcomes": {},
         "advisory": {"claims": 1, "outcomes": {}},
         "company": {"claims": 2, "documents_read": 1, "documents_unreadable": 0, "outcomes": {}},
+        "drug": {"claims": 3, "documents_read": 1, "documents_unreadable": 0, "outcomes": {}},
         "safe_to_write": {"claims": 1, "outcomes": {}},  # the writer's own check runs here too
     }
 
@@ -664,6 +673,42 @@ def test_extract_catalysts_runs_the_company_check_after_the_rule_checks(
     checks = json.loads(capsys.readouterr().out)["checks"]
     assert (checks["claims_passing"], checks["advisory"]["claims"]) == (1, 1)
     assert checks["company"] == {"error": "OperationalError: the company check did not finish"}
+
+
+def _drug_check_breaks(*_args: object) -> DrugReport:
+    raise OperationalError("select", {}, Exception("database went away"))
+
+
+def test_a_failed_drug_check_keeps_every_earlier_summary(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=4, claims_passing=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_drug_named", _drug_check_breaks)
+    assert main(["verify-claims"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert (printed["claims"], printed["advisory"]["claims"], printed["company"]["claims"]) == (4, 1, 2)
+    assert printed["drug"] == {"error": "OperationalError: the drug check did not finish"}
+
+
+def test_extract_catalysts_runs_the_drug_check_after_the_rule_checks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "publish_claims", lambda *_args, **_kw: PublishReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == 0
+    assert json.loads(capsys.readouterr().out)["checks"]["drug"]["claims"] == 3
+    monkeypatch.setattr(cli, "check_drug_named", _drug_check_breaks)
+    assert main(["extract-catalysts"]) == 0
+    checks = json.loads(capsys.readouterr().out)["checks"]
+    assert (checks["claims_passing"], checks["advisory"]["claims"], checks["company"]["claims"]) == (1, 1, 2)
+    assert checks["drug"] == {"error": "OperationalError: the drug check did not finish"}
 
 
 def test_prospects_check_prints_the_counts_of_the_committed_list(capsys: pytest.CaptureFixture[str]) -> None:

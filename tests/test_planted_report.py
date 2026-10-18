@@ -135,7 +135,7 @@ def test_a_drop_below_the_floor_or_more_wrongly_flagged_clean_records_is_refused
         "clean_neighbours_wrongly_flagged": 0,
     }
     problems = floor_problems(counted, floor)
-    assert "quote_same_date: catch_rate fell to 0.0, below the floor 1.0" in problems
+    assert "quote_same_date: catch_rate fell to 0.8, below the floor 1.0" in problems
     assert "2 clean records wrongly flagged, above the floor 0" in problems
     missing = floor_problems(counted, {})
     assert len(missing) == 3 * len(ERRORS) + 2
@@ -186,13 +186,33 @@ def test_the_seed_used_is_carried_into_the_scores() -> None:
     assert scores(run(_corpus(), seed=7))["seed"] == 7
 
 
-def test_a_quote_from_another_event_with_the_same_date_words_is_missed_and_listed() -> None:
-    # The honest finding of the Opus review of PR #51: no check asks whether the quote names the
-    # claim's drug, and the second reading pairs readings in different sentences.
+def test_a_quote_from_another_drugs_event_with_the_same_date_words_is_caught() -> None:
+    # The Opus review of PR #51 found these all missed: no check asked whether the quote names the
+    # claim's drug. drug_named_near_quote (part 3e) now does. The one copy still missed is the
+    # sister sub-study of the same drug: SPY072 is named just before its sentence, and its stored
+    # values (SPY072, topline, Q4 2026) are true of that sentence too.
     same = [p for p in _results().planted if p.error == "quote_same_date"]
-    assert same
-    assert not any(p.caught for p in same)
-    assert "Quote from another event with the same date words** (" in render_report(_results(), _corpus())
+    assert len(same) == 5
+    caught = [p for p in same if p.caught]
+    assert len(caught) == 4
+    assert all("drug_named_near_quote" in p.failed for p in caught)
+    (missed,) = [p for p in same if not p.caught]
+    assert (missed.original.value["drug"], missed.original.value["date_text"]) == (
+        "SPY072",
+        "fourth quarter of 2026",
+    )
+    assert missed.record.quote == "Topline proof-of-concept data are expected in the fourth quarter of 2026."
+    assert "Quote from another event with the same date words** (1 of 5 missed)" in render_report(
+        _results(), _corpus()
+    )
+
+
+def test_the_drug_check_is_run_and_flags_no_correct_claim() -> None:
+    assert "drug_named_near_quote" in _results().checks
+    assert all(
+        "drug_named_near_quote" not in reason for _, reasons in _results().flagged for reason in reasons
+    )
+    assert _results().disturbed == ()
 
 
 def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed() -> None:
@@ -225,3 +245,16 @@ def test_a_wrong_company_or_a_wrong_trial_is_caught_every_time() -> None:
         planted = [p for p in _results().planted if p.error == name]
         assert planted
         assert all(p.caught for p in planted), name
+
+
+def test_the_floor_holds_what_the_drug_check_now_catches() -> None:
+    # Raised with part 3e (Opus review of PR #61), so losing the drug check fails CI.
+    baseline = json.loads((FOLDER / "baseline.json").read_text(encoding="utf-8"))
+    assert baseline["catch_rate"]["quote_same_date"] == 0.8
+    assert baseline["rule_catch_rate"]["quote_same_date"] == 0.8
+    assert baseline["rule_catch_rate"]["drug_in_release"] == 0.759
+    assert baseline["rule_catch_rate"]["drug_elsewhere"] == 0.993
+    without = [check for check in CHECKS if check.__name__ != "_drug_named"]
+    assert len(without) == len(CHECKS) - 1
+    problems = floor_problems(scores(run(_corpus(), checks=without)), baseline)
+    assert "quote_same_date: catch_rate fell to 0.0, below the floor 0.8" in problems
