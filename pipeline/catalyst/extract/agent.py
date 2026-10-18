@@ -90,7 +90,8 @@ def claim_field(value: dict[str, Any]) -> str:
     return f"catalyst:{digest}"
 
 
-def _checked(item: dict[str, Any], text: str, published: date) -> ExtractedCatalyst:
+def check_proposal(item: dict[str, Any], text: str, published: date) -> ExtractedCatalyst:
+    """Check one proposal as the model gave it: find its quote, its date words, and its window."""
     catalyst_type = CatalystType(item["catalyst_type"])
     date_text = str(item["date_text"])
     problems: list[Problem] = []
@@ -136,7 +137,7 @@ def extract_catalysts(
     result = client.run(role, prompt, model_input(text, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
     return Extraction(
-        catalysts=tuple(_checked(item, text, published) for item in items),
+        catalysts=tuple(check_proposal(item, text, published) for item in items),
         provider=result.provider,
         model=result.model,
         prompt_id=result.prompt_id,

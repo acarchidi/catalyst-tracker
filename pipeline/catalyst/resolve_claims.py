@@ -131,6 +131,20 @@ def _create_drug(session: Session, references: ReferenceData, name: str, company
     return drug.id
 
 
+def known_drug(references: ReferenceData, name: str, company_id: UUID | None) -> Resolution:
+    """Match a drug name among the reference tables' drugs, as this job does before creating one.
+
+    A code name that belongs to another company is ambiguous for review, never this company's drug.
+    """
+    drug = references.resolve_drug(name, company_id)
+    if drug.status is not Status.UNKNOWN:
+        return drug
+    elsewhere = references.resolve_drug(name)
+    if elsewhere.candidates:
+        return Resolution(elsewhere.candidates, elsewhere.matched_by, needs_review=True)
+    return drug
+
+
 def _drug(
     session: Session,
     references: ReferenceData,
@@ -143,12 +157,9 @@ def _drug(
 
     A code name that belongs to another company is ambiguous for review, never a second drug.
     """
-    drug = references.resolve_drug(name, company.id)
+    drug = known_drug(references, name, company.id)
     if drug.status is not Status.UNKNOWN:
         return drug
-    elsewhere = references.resolve_drug(name)
-    if elsewhere.candidates:
-        return Resolution(elsewhere.candidates, elsewhere.matched_by, needs_review=True)
     if company.id and _is_new_code_name(name, claim.quote):
         report.drugs_created += 1
         return Resolution((_create_drug(session, references, name, company.id),), MatchedBy.NEW_CODE_NAME)

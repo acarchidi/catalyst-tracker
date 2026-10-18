@@ -114,16 +114,12 @@ def _best_first(candidate: _Candidate) -> tuple[object, ...]:
     return (tuple(-x for x in rank), tie)
 
 
-def compare(
+def pairs(
     first: Sequence[Reading],
     second: Sequence[Reading],
     same_drug: Callable[[str, str], bool] = _never,
-) -> dict[UUID, CheckResult]:
-    """Return each extracted catalyst's outcome against the verifier's catalysts from the same document.
-
-    `same_drug` says whether two different names are one drug in the reference tables. The best
-    possible pairs are taken first, so the order of either list never changes an outcome.
-    """
+) -> dict[UUID, Reading]:
+    """Return the verifier's catalyst paired with each extracted catalyst that has one, closest first."""
     candidates: list[_Candidate] = [
         (rank, a, b) for a in first for b in second if (rank := _closeness(a, b, same_drug)) is not None
     ]
@@ -134,6 +130,20 @@ def compare(
         if a.claim_id not in paired and b.claim_id not in used:
             paired[a.claim_id] = b
             used.add(b.claim_id)
+    return paired
+
+
+def compare(
+    first: Sequence[Reading],
+    second: Sequence[Reading],
+    same_drug: Callable[[str, str], bool] = _never,
+) -> dict[UUID, CheckResult]:
+    """Return each extracted catalyst's outcome against the verifier's catalysts from the same document.
+
+    `same_drug` says whether two different names are one drug in the reference tables. The best
+    possible pairs are taken first, so the order of either list never changes an outcome.
+    """
+    paired = pairs(first, second, same_drug)
     results: dict[UUID, CheckResult] = {}
     for reading in first:
         match = paired.get(reading.claim_id)
