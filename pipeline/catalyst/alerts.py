@@ -121,6 +121,8 @@ def _extract_problems(summary: dict[str, Any]) -> list[str]:
         ("error" in second, "The second reading did not finish."),
         (_count(second, "documents_failed"), "The second reading could not read {}."),
         (bool(second.get("stopped_early")), "The second reading stopped early."),
+        ("error" in _mapping(summary.get("decisions")), "The publish decisions did not finish."),
+        ("error" in _mapping(summary.get("published")), "Writing the published catalysts did not finish."),
     ]
     return [text.format(_plural(int(n), "document")) for n, text in found if n]
 

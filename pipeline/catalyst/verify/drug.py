@@ -26,7 +26,7 @@ import logging
 import re
 import unicodedata
 from collections import Counter
-from collections.abc import Callable, Collection, Iterable, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from functools import lru_cache
@@ -281,6 +281,63 @@ def _drug(value: object) -> str | None:
     return drug if isinstance(drug, str) else None
 
 
+@dataclass(frozen=True)
+class DrugFacts:
+    """Everything the check reads besides the stored copy, read once per run.
+
+    `drugs` are the drug records with their names, `matched` each claim's resolved drug records,
+    `owners` each document's linked companies, and `named` each document's extractor claims with
+    the drug each names.
+    """
+
+    drugs: tuple[DrugRef, ...]
+    matched: Mapping[UUID, tuple[DrugRef, ...]]
+    owners: Mapping[UUID, frozenset[UUID]]
+    named: Mapping[UUID, tuple[tuple[UUID, str | None], ...]]
+
+    def names(self, claim_id: UUID, value: object) -> DrugNames | None:
+        """Return the claim's drug and every name its matched drug goes by; None when it names none."""
+        return drug_names(_drug(value), self.matched.get(claim_id, ()))
+
+    def check(
+        self, claim_id: UUID, document_id: UUID, value: object, span: tuple[str, int, int], text: str
+    ) -> CheckResult:
+        """Run the check on one claim, against its document's text."""
+        names = self.names(claim_id, value)
+        beside = [drug for other, drug in self.named.get(document_id, ()) if other != claim_id]
+        others = other_drugs(self.drugs, self.owners.get(document_id, frozenset()), names, beside)
+        return drug_named(text, *span, names, others)
+
+
+def load_drug_facts(session: Session) -> DrugFacts:
+    """Read the drug records, the resolver's drug matches, the company links, and every claim's drug."""
+    claim, links, match = TABLES[Claim], TABLES[CompanyDocument], TABLES[EntityMatch]
+    owners: dict[UUID, set[UUID]] = {}
+    for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
+        owners.setdefault(row.source_document_id, set()).add(row.company_id)
+    drugs = tuple(drug_refs(session))
+    by_id = {ref.id: ref for ref in drugs}
+    matched: dict[UUID, list[DrugRef]] = {}
+    resolved = select(match.c.claim_id, match.c.matched_id).where(
+        match.c.entity_type == MatchedEntity.DRUG.value, match.c.status == MatchStatus.RESOLVED.value
+    )
+    for row in session.execute(resolved):
+        if row.matched_id in by_id:
+            matched.setdefault(row.claim_id, []).append(by_id[row.matched_id])
+    named: dict[UUID, list[tuple[UUID, str | None]]] = {}
+    claims = select(claim.c.id, claim.c.source_document_id, claim.c.value).where(
+        claim.c.agent == ROLE, claim.c.field.startswith("catalyst:")
+    )
+    for row in session.execute(claims.order_by(claim.c.extracted_at, claim.c.id)):
+        named.setdefault(row.source_document_id, []).append((row.id, _drug(row.value)))
+    return DrugFacts(
+        drugs=drugs,
+        matched={c: tuple(refs) for c, refs in matched.items()},
+        owners={d: frozenset(c) for d, c in owners.items()},
+        named={d: tuple(n) for d, n in named.items()},
+    )
+
+
 def check_drug_named(
     session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
 ) -> DrugReport:
@@ -288,28 +345,12 @@ def check_drug_named(
 
     Each document is read once per run, and only when one of its claims names a drug.
     """
-    claim, document, links, match = (
-        TABLES[Claim],
-        TABLES[SourceDocument],
-        TABLES[CompanyDocument],
-        TABLES[EntityMatch],
-    )
+    claim, document = TABLES[Claim], TABLES[SourceDocument]
     report = DrugReport()
     outcomes: Counter[str] = Counter()
     at = now()
     with session_factory.begin() as session:
-        owners: dict[UUID, set[UUID]] = {}
-        for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
-            owners.setdefault(row.source_document_id, set()).add(row.company_id)
-        drugs = drug_refs(session)
-        by_id = {ref.id: ref for ref in drugs}
-        matched: dict[UUID, list[DrugRef]] = {}
-        resolved = select(match.c.claim_id, match.c.matched_id).where(
-            match.c.entity_type == MatchedEntity.DRUG.value, match.c.status == MatchStatus.RESOLVED.value
-        )
-        for row in session.execute(resolved):
-            if row.matched_id in by_id:
-                matched.setdefault(row.claim_id, []).append(by_id[row.matched_id])
+        facts = load_drug_facts(session)
         query = (
             select(
                 claim.c.id,
@@ -325,25 +366,19 @@ def check_drug_named(
             .where(claim.c.agent == ROLE, claim.c.field.startswith("catalyst:"))
             .order_by(claim.c.extracted_at, claim.c.id)
         )
-        rows = session.execute(query).all()
-        beside: dict[UUID, list[tuple[UUID, str | None]]] = {}
-        for row in rows:
-            beside.setdefault(row.source_document_id, []).append((row.id, _drug(row.value)))
         texts: dict[UUID, str | CheckResult] = {}
-        for row in rows:
-            names = drug_names(_drug(row.value), matched.get(row.id, []))
-            if names is None:
-                result = drug_named("", row.quote, row.quote_start, row.quote_end, None, ())
+        for row in session.execute(query).all():
+            span = (row.quote, row.quote_start, row.quote_end)
+            if facts.names(row.id, row.value) is None:
+                result = drug_named("", *span, None, ())
             else:
                 if row.source_document_id not in texts:
                     texts[row.source_document_id] = _read(store, row.snapshot_key, row.content_type, report)
                 text = texts[row.source_document_id]
-                named = [drug for claim_id, drug in beside[row.source_document_id] if claim_id != row.id]
-                others = other_drugs(drugs, owners.get(row.source_document_id, set()), names, named)
                 result = (
                     text
                     if isinstance(text, CheckResult)
-                    else drug_named(text, row.quote, row.quote_start, row.quote_end, names, others)
+                    else facts.check(row.id, row.source_document_id, row.value, span, text)
                 )
             store_check(session, row.id, result, at)
             report.claims += 1
