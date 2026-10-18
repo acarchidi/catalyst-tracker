@@ -33,7 +33,7 @@ The spec (Machine access) puts one API under the web app, the MCP server, and th
    - `/v1/catalysts/{id}`: one catalyst.
    - `/v1/companies/{company}/catalysts`: one company's upcoming catalysts.
 
-   A company is found by internal id, SEC number (digits), or current ticker. A drug is found by id, or by any of its names, ignoring case. The OpenAPI document comes from the same Pydantic shapes (`catalyst.api.views`).
+   A company is found by internal id, SEC number (digits), or current ticker. A drug is found by id, or by any of its names, ignoring case. The drug filter is open to free callers. The spec's free filters name ticker, date, phase, and type; a drug name is the same kind of lookup as a ticker, and a free caller still sees only the next 30 days. The OpenAPI document comes from the same Pydantic shapes (`catalyst.api.views`).
 5. **Pages.** A cursor holds the last row's window start and id, encoded. Results are ordered by window start, then id. `limit` runs from 1 to 200 and defaults to 50. A newly published record therefore never shifts a page the way offset paging would. A cursor the API did not give out is refused (HTTP 400).
 6. **Free versus paid** (spec: Offering). The caller passes an `Access` level: free or paid.
    - **HTTP:** a plain dependency returns free until accounts exist. Paid tests override it.
