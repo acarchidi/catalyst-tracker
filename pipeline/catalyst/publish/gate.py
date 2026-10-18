@@ -30,7 +30,7 @@ from catalyst.snapshots import (
     SnapshotStoreError,
     snapshot_key,
 )
-from catalyst.verify import advisory, company, drug, independent, second
+from catalyst.verify import advisory, company, drug, event_type, independent, second
 from catalyst.verify.rules import RULES, CheckResult, ClaimFacts
 
 QUOTE_CHECK = "quote_matches_stored_copy"
@@ -62,6 +62,7 @@ REQUIRED_CHECKS: tuple[str, ...] = (
     ADVISORY_CHECK,
     company.CHECK,  # the linked company is named in the source (part 3d)
     drug.CHECK,  # the claim's drug is named in or just before its quote (part 3e)
+    event_type.CHECK,  # the quote states the claim's type (part 5d)
     WRITER_CHECK,  # the writer can place the claim without guessing (part 5b)
 )
 # The only checks that may answer "not applicable" and still let a claim publish: each one is

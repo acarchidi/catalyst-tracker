@@ -128,6 +128,7 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         ".gitleaks.toml",
         ".pre-commit-config.yaml",
         "config/models.toml",
+        "config/orchestrator.toml",
         "evals/extract_catalysts/baseline.json",
         "evals/extract_catalysts/unscored.json",
         "evals/verify_catalysts/baseline.json",

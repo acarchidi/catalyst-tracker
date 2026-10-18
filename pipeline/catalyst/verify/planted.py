@@ -443,7 +443,12 @@ ERRORS: tuple[ErrorType, ...] = (
     _error("drug_elsewhere", "Wrong drug (another company's drug)", "drug", _drug_elsewhere,
            "the drug name is a generic or brand name, which matches under any company."),
     _error("wrong_type", "Wrong event type", "type", _wrong_type,
-           "no rule reads the type, except the FDA-date and advisory-meeting checks for those two types."),
+           "the quote also holds words for the planted type: data to be presented (a readout or a "
+           "presentation), enrollment completed beside topline data, or an NDA accepted with its PDUFA "
+           "date (an acceptance), so the type check (`type_named_near_quote`) passes; only the second "
+           "reading compares types.",
+           "The type check catches most of these without the second reading: the quote holds no words "
+           "for the planted type. It misses them when the quote holds words for both types."),
     _error("wrong_company", "Wrong company", "company", _wrong_company, _NO_COMPANY_CHECK),
     _error("wrong_trial", "Wrong trial (another of the company's trials)", "trials", _wrong_trial,
            "the quote also names the other trial, so `trial_named_in_quote` passes, and the phase check "

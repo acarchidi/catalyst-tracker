@@ -9,6 +9,8 @@ name: Extract catalysts (live)
 #   scores go to the job summary for the coding session to commit.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
+# After an extraction, plain code turns the run's summary and today's spend into alert issues
+# for the owner (ADR 0023); a separate job, the only one that may write issues, posts them.
 
 on:
   workflow_dispatch:
@@ -40,7 +42,11 @@ jobs:
   extract:
     name: Extract catalysts
     runs-on: ubuntu-latest
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # the long step has its own, lower limit: a step that times out fails, and the alert says so.
     timeout-minutes: 60
+    outputs:
+      alerts: ${{ steps.alerts.outputs.plan }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -50,7 +56,9 @@ jobs:
         run: uv sync --locked
 
       - name: Extract catalysts from the newest press releases
+        id: extract
         if: ${{ inputs.mode == 'extract' }}
+        timeout-minutes: 45
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -76,6 +84,23 @@ jobs:
           fi
           exit "$status"
 
+      # Free: no model call. Runs even when the extraction failed, so the failure is reported.
+      - name: Build alerts from this run
+        id: alerts
+        if: ${{ !cancelled() && inputs.mode == 'extract' }}
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          OUTCOME: ${{ steps.extract.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          { echo "## Alerts"; uv run catalyst alerts --run "extract-catalysts:$OUTCOME:$RUNNER_TEMP/summary.json" \
+            --spend --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
       - name: Score a reader on the gold set
         if: ${{ inputs.mode == 'evaluate' }}
         env:
@@ -90,3 +115,27 @@ jobs:
           { echo "## Scores: $PROMPT"; echo '```json'; cat "$RUNNER_TEMP/scores.json" 2>/dev/null; echo '```'; } \
             | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+  post-alerts:
+    name: Post alerts
+    needs: extract
+    if: ${{ !cancelled() && needs.extract.outputs.alerts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open, update, or close alert issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.extract.outputs.alerts }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/alerts.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/alerts.json"

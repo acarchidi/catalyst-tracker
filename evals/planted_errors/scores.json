@@ -15,6 +15,7 @@
     "phase_matches_registry",
     "second_reading_agrees",
     "trial_named_in_quote",
+    "type_named_near_quote",
     "window_matches_words",
     "window_not_past"
   ],
@@ -64,7 +65,7 @@
     "wrong_type": {
       "planted": 221,
       "caught": 221,
-      "caught_by_rules": 17,
+      "caught_by_rules": 216,
       "corrected": 221,
       "missed": 0
     },
