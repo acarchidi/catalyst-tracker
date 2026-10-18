@@ -273,6 +273,43 @@ def test_names_that_only_look_like_code_names_create_nothing(
     assert resolve_claims(session_factory, lambda: NOW).drugs_created == 0
 
 
+@pytest.mark.parametrize(
+    ("drug", "quote"),
+    [
+        ("ASCO 2027", "Acme Bio will present RAINIER results at ASCO 2027."),
+        ("FDA 2027", "Acme Bio expects to meet the FDA 2027 deadline."),
+        ("BUY 100", "BUY 100 shares before the data are out in 2027."),
+        ("ACME 2027", "The ACME 2027 data are expected in the fourth quarter."),
+        ("NDA 2027", "The NDA 2027 submission follows."),
+        ("EASL 2026", "Data will be shown at EASL 2026."),
+    ],
+    ids=[
+        "a congress and its year",
+        "an agency",
+        "an advice word",
+        "a year as the number",
+        "an application",
+        "a congress",
+    ],
+)
+def test_model_chosen_text_shaped_like_a_code_name_creates_no_drug(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID], drug: str, quote: str
+) -> None:
+    """CP4 round 2: "ASCO 2027" became a drug record and was published in a title."""
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], quote, drug, 1)
+    assert resolve_claims(session_factory, lambda: NOW).drugs_created == 0
+
+
+@pytest.mark.parametrize("code", ["SPY072", "SPY003", "ABP-450", "SPY-001", "VX-548", "INS 1007"])
+def test_real_code_names_still_create_their_drug(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID], code: str
+) -> None:
+    with session_factory.begin() as session:
+        _claim(session, spyre["release"], f"{code} data are expected in 2027.", code, 1)
+    assert resolve_claims(session_factory, lambda: NOW).drugs_created == 1
+
+
 def test_an_over_long_name_is_stored_shortened_as_unknown(
     session_factory: sessionmaker[Session], spyre: dict[str, UUID]
 ) -> None:
