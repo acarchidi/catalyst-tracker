@@ -184,6 +184,13 @@ class CheckOutcome(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class GateDecision(StrEnum):
+    """What the publish gate decided about a claim (ADR 0018, part 5)."""
+
+    PUBLISH = "publish"
+    REVIEW = "review"
+
+
 class MatchedEntity(StrEnum):
     """Which kind of record a name in a claim was matched to."""
 

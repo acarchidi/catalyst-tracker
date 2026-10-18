@@ -22,6 +22,7 @@ from catalyst.schemas.enums import (
     DocumentMatch,
     DrugNameKind,
     DrugRole,
+    GateDecision,
     LineOfTherapy,
     MatchedEntity,
     MatchStatus,
@@ -407,6 +408,36 @@ class ClaimCheck(Entity):
     outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
     checked_at: AwareDatetime = Field(description="When the check last ran.")
+
+
+class ClaimDecision(Entity):
+    """The publish gate's latest decision on one extractor claim, with every reason it waits for review.
+
+    Plain code over the stored checks and the stored copy decides (ADR 0018, part 5); a later run
+    replaces the decision. Only that code writes this table.
+    """
+
+    __tablename__ = "claim_decision"
+    __unique__ = (("claim_id",),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "review_has_reasons": (
+            "CASE WHEN jsonb_typeof(reasons) = 'array' "
+            "THEN (decision = 'review') = (jsonb_array_length(reasons) > 0) ELSE false END"
+        ),
+    }
+
+    claim_id: Annotated[UUID, References("claim")] = Field(description="The claim decided.")
+    decision: GateDecision = Field(description="Publish, or wait in the review queue.")
+    reasons: list[Annotated[str, Field(min_length=1)]] = Field(
+        description="Every reason the claim waits for review, in plain words; empty when it may publish."
+    )
+    decided_at: AwareDatetime = Field(description="When the gate last decided.")
+
+    @model_validator(mode="after")
+    def _explained(self) -> Self:
+        if (self.decision is GateDecision.REVIEW) != bool(self.reasons):
+            raise ValueError("a review decision lists its reasons, and only a review decision does")
+        return self
 
 
 class DocumentReading(Entity):
