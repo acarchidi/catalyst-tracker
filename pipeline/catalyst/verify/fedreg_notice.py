@@ -24,21 +24,22 @@ import logging
 import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from datetime import date, timedelta
+from datetime import date
 from itertools import pairwise
 from typing import Any, cast
+from zoneinfo import ZoneInfo
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from catalyst.collectors.documents import new_york_midnight
 from catalyst.db.tables import TABLES
 from catalyst.logs import log_event
 from catalyst.schemas import SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
 
 SOURCE_PREFIX = "fedreg:"
+NEW_YORK = ZoneInfo("America/New_York")
 TEXT_FIELDS = ("title", "abstract", "dates")
 MAX_MEETING_DAYS = 7  # advisory meetings run one to three days; a longer span is two dates mixed up
 MAX_DATE_SENTENCE = 1000  # a DATES sentence is one line; anything longer is not read for days
@@ -345,7 +346,13 @@ _ABSTRACT_COMMITTEE = re.compile(
     r"meeting of the (?P<name>[A-Z][^()]*?(?:Committee|Panel)(?: \([A-Z]{2,10}\))?)"
     r"(?= \(the Committee\)|[.,]| \()"
 )
-_AMENDMENT = re.compile(r"\bamendment to the notice of meeting\b")
+_AMENDMENT = re.compile(
+    r"\bamendment to the notice of meeting\b"
+    r"|\b(?:is|are|has been|have been|was|were|will be)\s+(?:cancell?ed|postponed|rescheduled)\b",
+    re.IGNORECASE,
+)
+# A cancellation or postponement changes a meeting just as an amendment does (Claude review of PR #49).
+_CHANGE_TITLE = re.compile(r"Amendment of Notice|Cancell?ation|Postponement|Reschedul", re.IGNORECASE)
 
 
 def _committee(title: _Unit | None, sentences: list[_Unit]) -> Fact[str] | None:
@@ -367,7 +374,7 @@ def _topic(title: _Unit | None) -> Fact[str] | None:
 
 
 def _amendment(title: _Unit | None, sentences: list[_Unit]) -> Evidence | None:
-    if title is not None and "Amendment of Notice" in title.text:
+    if title is not None and _CHANGE_TITLE.search(title.text):
         return title.evidence
     return next((u.evidence for u in sentences if _AMENDMENT.search(u.text)), None)
 
@@ -550,6 +557,20 @@ class NoticesInWindow:
     undated: list[StoredNotice] = field(default_factory=list[StoredNotice])
     superseded: list[StoredNotice] = field(default_factory=list[StoredNotice])
     unreadable: list[str] = field(default_factory=list[str])
+    # Every readable amendment, whatever its publication date or meeting days: matching one to the
+    # notice it amends by title can miss, so a check can look at them all (Opus review of PR #49).
+    amendments: list[StoredNotice] = field(default_factory=list[StoredNotice])
+    # Every other readable notice, whatever its dates: a meeting can be re-announced by a fresh
+    # "Notice of Meeting" for another day, which is not an amendment (Claude review of PR #49).
+    later: list[StoredNotice] = field(default_factory=list[StoredNotice])
+
+
+@dataclass
+class StoredNotices:
+    """Every stored notice, read once: the readable ones and the source keys of the rest."""
+
+    readable: list[StoredNotice] = field(default_factory=list[StoredNotice])
+    unreadable: list[str] = field(default_factory=list[str])
 
 
 def _meeting_key(notice: MeetingNotice) -> tuple[str | None, str | None]:
@@ -577,45 +598,59 @@ def _is_superseded(stored: StoredNotice, every: list[StoredNotice]) -> bool:
     )
 
 
+def load_notices(session: Session, store: SnapshotStore) -> StoredNotices:
+    """Read every stored Federal Register notice once, oldest first."""
+    table = TABLES[SourceDocument]
+    query = (
+        select(table)
+        .where(table.c.source_key.startswith(SOURCE_PREFIX, autoescape=True))
+        .order_by(table.c.published_at, table.c.source_key)
+    )
+    loaded = StoredNotices()
+    for row in session.execute(query).mappings():
+        document = SourceDocument.model_validate(dict(row))
+        try:
+            notice = read_notice(store.get(document.snapshot_key))
+        except (NoticeError, SnapshotStoreError, httpx.HTTPError) as error:
+            loaded.unreadable.append(document.source_key)
+            log_event(
+                _log, "fedreg_notice_unreadable", source_key=document.source_key, error=type(error).__name__
+            )
+            continue
+        loaded.readable.append(StoredNotice(document, notice))
+    return loaded
+
+
+def notices_in(loaded: StoredNotices, window_start: date, window_end: date) -> NoticesInWindow:
+    """Sort already-read notices for a window; see `notices_for`."""
+    if window_end < window_start:
+        raise ValueError("the window must not end before it starts")
+    # Compared by New York day, so a window ending on the last representable day cannot overflow.
+    early = [s for s in loaded.readable if s.document.published_at.astimezone(NEW_YORK).date() <= window_end]
+    found = NoticesInWindow(
+        unreadable=list(loaded.unreadable),
+        amendments=[s for s in loaded.readable if s.notice.amendment is not None],
+    )
+    for stored in early:
+        meeting = stored.notice.meeting
+        if _is_superseded(stored, early):
+            found.superseded.append(stored)
+        elif meeting is None:
+            found.undated.append(stored)
+        elif meeting.value.start <= window_end and meeting.value.end >= window_start:
+            found.matching.append(stored)
+    found.later = [s for s in loaded.readable if not any(s is m for m in found.matching)]
+    return found
+
+
 def notices_for(
     session: Session, store: SnapshotStore, window_start: date, window_end: date
 ) -> NoticesInWindow:
     """Return the stored notices whose meeting days overlap `window_start` to `window_end`.
 
     A notice is published before its meeting, so notices published after the window ends are not
-    read. Notices with no readable meeting date, and notices a later amendment replaces, are
-    listed apart, never matched by guess.
+    matched. Notices with no readable meeting date, and notices a later amendment replaces, are
+    listed apart, never matched by guess. Every unreadable copy and every readable amendment is
+    listed too, whenever it was published.
     """
-    if window_end < window_start:
-        raise ValueError("the window must not end before it starts")
-    table = TABLES[SourceDocument]
-    query = (
-        select(table)
-        .where(
-            table.c.source_key.startswith(SOURCE_PREFIX, autoescape=True),
-            table.c.published_at < new_york_midnight(window_end + timedelta(days=1)),
-        )
-        .order_by(table.c.published_at, table.c.source_key)
-    )
-    found = NoticesInWindow()
-    readable: list[StoredNotice] = []
-    for row in session.execute(query).mappings():
-        document = SourceDocument.model_validate(dict(row))
-        try:
-            notice = read_notice(store.get(document.snapshot_key))
-        except (NoticeError, SnapshotStoreError, httpx.HTTPError) as error:
-            found.unreadable.append(document.source_key)
-            log_event(
-                _log, "fedreg_notice_unreadable", source_key=document.source_key, error=type(error).__name__
-            )
-            continue
-        readable.append(StoredNotice(document, notice))
-    for stored in readable:
-        meeting = stored.notice.meeting
-        if _is_superseded(stored, readable):
-            found.superseded.append(stored)
-        elif meeting is None:
-            found.undated.append(stored)
-        elif meeting.value.start <= window_end and meeting.value.end >= window_start:
-            found.matching.append(stored)
-    return found
+    return notices_in(load_notices(session, store), window_start, window_end)
