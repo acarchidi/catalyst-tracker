@@ -366,7 +366,9 @@ def test_extract_catalysts_decides_last_and_a_failed_decision_fails_only_that_st
     }
 
 
-@pytest.mark.parametrize("failing", ["resolve_claims", "run_checks", "check_advisory_meetings"])
+@pytest.mark.parametrize(
+    "failing", ["resolve_claims", "run_checks", "check_advisory_meetings", "check_company_named"]
+)
 def test_extract_catalysts_decides_nothing_when_a_check_step_failed(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failing: str
 ) -> None:

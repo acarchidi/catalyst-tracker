@@ -54,9 +54,14 @@ if WINDOW_CHECK not in gate.RULE_CHECKS or WINDOW_CHECK not in gate.MAY_NOT_APPL
     raise RuntimeError(f"{WINDOW_CHECK} must be a rule check that may not apply")
 SEVERAL = "the claim matches more than one published catalyst"
 OTHER_INDICATION = "the indication differs from the published one"
-# The fields whose newest change row names the claim behind the current window (B1).
+# The fields whose newest change row names the claim behind the current dates (B1; round 2, N1).
 WINDOW_FIELDS = frozenset(
-    {CatalystField.WINDOW_START.value, CatalystField.WINDOW_END.value, CatalystField.WINDOW_PRECISION.value}
+    {
+        CatalystField.WINDOW_START.value,
+        CatalystField.WINDOW_END.value,
+        CatalystField.WINDOW_PRECISION.value,
+        CatalystField.DATE_CONFIDENCE.value,
+    }
 )
 _TIERS: tuple[SourceTier, ...] = tuple(SourceTier)  # highest first (spec: Provenance, source ranking)
 _WORD = re.compile(r"\w+")

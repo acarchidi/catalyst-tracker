@@ -869,7 +869,7 @@ def test_b5_the_drug_role_is_read_from_the_quote_or_left_to_a_person(
     quote: str, drug: str, expected: DrugRole | None
 ) -> None:
     """`alone` means the quote names no combination; a combination must join the drug itself."""
-    assert drug_role(quote, drug) is expected
+    assert drug_role(quote, drug, frozenset()) is expected
 
 
 def test_b5_a_quote_whose_drug_role_is_unclear_waits(world: World) -> None:
@@ -989,3 +989,153 @@ def test_two_writers_never_run_at_once(world: World) -> None:
     runner.join(timeout=30)
     assert not runner.is_alive()
     assert found["catalysts_created"] == 1
+
+
+# --- Opus review of PR #59, round 2 ---
+
+# Other words than A's, so B is a second source for A, not a copy of it.
+SEC_2H27 = "The Phase 3 RAINIER readout for pegozafermin remains on track for the second half of 2027."
+
+
+def _q4_with_wire_support(world: World, published: datetime = OCT_16) -> UUID:
+    """Store a company-site Q4 2027 claim, and the wire copy that gives it a second source."""
+    claim = world.claim("fourth quarter of 2027", published=published, tier=SourceTier.COMPANY_SITE)
+    wire = "Pegozafermin RAINIER topline data are now due in the fourth quarter of 2027."
+    world.claim("fourth quarter of 2027", published=published, tier=SourceTier.WIRE, sentence=wire)
+    return claim
+
+
+def test_n1_a_better_source_confirming_the_dates_protects_them_in_the_same_run(world: World) -> None:
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    world.claim("second half of 2027", published=OCT_15)  # B: an SEC filing, the same window
+    _q4_with_wire_support(world)
+    _publish_in_order(world, a)
+    summary = _publish(world)
+    assert (summary["catalysts_updated"], summary["not_written_same_dates"]) == (0, 1)
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_n1_the_confirmation_still_protects_the_dates_in_later_runs(world: World) -> None:
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    b = world.claim("second half of 2027", published=OCT_15, sentence=SEC_2H27)
+    _publish_in_order(world, a)
+    assert _publish_in_order(world, a, b)["not_written_same_dates"] == 1  # nothing to write, nothing cited
+    _q4_with_wire_support(world)
+    assert _publish(world)["catalysts_updated"] == 0
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_n1_a_confidence_change_makes_its_claim_the_window_source_in_the_same_run(world: World) -> None:
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    world.claim("second half of 2027", published=OCT_15, date_confidence="regulator_scheduled")
+    _q4_with_wire_support(world)
+    _publish_in_order(world, a)
+    assert _publish(world)["catalysts_updated"] == 1  # the confidence only
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_n1_a_confidence_change_makes_its_claim_the_window_source_in_later_runs(world: World) -> None:
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    b = world.claim(
+        "second half of 2027", published=OCT_15, date_confidence="regulator_scheduled", sentence=SEC_2H27
+    )
+    _publish_in_order(world, a)
+    _publish_in_order(world, a, b)
+    assert {c.field for c in world.rows(CatalystChange) if c.claim_id == b} == {"date_confidence"}
+    _q4_with_wire_support(world)
+    assert _publish(world)["catalysts_updated"] == 0
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_n1_the_window_source_is_updated_after_an_in_run_move(world: World) -> None:
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    world.claim("fourth quarter of 2027", published=OCT_15)  # B: SEC, narrows the window
+    world.claim("October 2027", published=OCT_16, tier=SourceTier.COMPANY_SITE)  # C: loses to B
+    wire = "Pegozafermin RAINIER topline data are now due in October 2027."
+    world.claim("October 2027", published=OCT_16, tier=SourceTier.WIRE, sentence=wire)
+    _publish_in_order(world, a)
+    assert _publish(world)["catalysts_updated"] == 1
+    assert _window(world)[2] == "fourth quarter of 2027"
+
+
+def test_n2_a_trial_written_into_a_catalyst_with_none_is_linked_and_keeps_other_trials_out(
+    world: World,
+) -> None:
+    program = world.claim(
+        "2027", trial=False, sentence="Topline data for pegozafermin in MASH are expected in 2027."
+    )
+    rainier = world.claim("second half of 2027", published=OCT_15)
+    symmetry = world.claim(
+        "fourth quarter of 2027",
+        published=OCT_16,
+        trial=world.other_trial,
+        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the fourth quarter of 2027.",
+    )
+    _publish_in_order(world, program)
+    assert _publish_in_order(world, program, rainier)["catalysts_updated"] == 1
+    (link,) = world.rows(CatalystTrial)
+    assert (link.trial_id, link.claim_id) == (world.trial, rainier)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["catalysts_updated"]) == (1, 0)
+    by_trial = {r.trial_id: r.catalyst_id for r in world.rows(CatalystTrial)}
+    windows = {r.id: r.window_raw_text for r in world.rows(Catalyst)}
+    assert windows[by_trial[world.trial]] == "second half of 2027"
+    assert windows[by_trial[world.other_trial]] == "fourth quarter of 2027"
+    assert {r.claim_id for r in world.rows(CatalystTrial)} == {rainier, symmetry}
+
+
+def test_n2_in_one_run_the_first_trial_takes_the_catalyst_and_the_other_is_a_new_event(world: World) -> None:
+    program = world.claim(
+        "2027", trial=False, sentence="Topline data for pegozafermin in MASH are expected in 2027."
+    )
+    world.claim("second half of 2027", published=OCT_15)
+    world.claim(
+        "fourth quarter of 2027",
+        published=OCT_16,
+        trial=world.other_trial,
+        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the fourth quarter of 2027.",
+    )
+    _publish_in_order(world, program)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["catalysts_updated"]) == (1, 1)
+    assert len(world.rows(CatalystTrial)) == 2
+    assert len({r.catalyst_id for r in world.rows(CatalystTrial)}) == 2  # never two trials on one
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Data for pegozafermin with semaglutide are expected in 2H27.",
+        "Data for pegozafermin with AB-123 are expected in 2H27.",
+        "A pegozafermin-based doublet regimen reads out in 2H27.",
+        "A pegozafermin triplet reads out in 2H27.",
+        "Pegozafermin on a statin backbone reads out in 2H27.",
+        "Pegozafermin in addition to standard care reads out in 2H27.",
+        "Pegozafermin on top of statins reads out in 2H27.",
+        "Data for pegozafermin plus semaglutide, and pegozafermin monotherapy, come in 2H27.",
+    ],
+)
+def test_o1_other_combination_wording_leaves_the_role_to_a_person(quote: str) -> None:
+    assert drug_role(quote, "pegozafermin", frozenset({"semaglutide"})) is None
+
+
+def test_o1_with_and_a_word_that_is_no_drug_is_still_alone() -> None:
+    assert (
+        drug_role(
+            "Pegozafermin data with 12-month follow-up come in 2H27.",
+            "pegozafermin",
+            frozenset({"semaglutide"}),
+        )
+        is DrugRole.ALONE
+    )
+
+
+def test_o1_with_another_drug_on_file_waits_in_the_writer(world: World) -> None:
+    world.add(Drug(company_id=world.company, preferred_name="semaglutide"))
+    sentence = (
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin with semaglutide "
+        "are expected in the second half of 2027."
+    )
+    claim = world.claim("second half of 2027", sentence=sentence)
+    assert _publish(world)["held_by_writer"] == 1
+    assert _check(world, claim, "safe_to_write") == ("fail", ROLE_UNCLEAR)

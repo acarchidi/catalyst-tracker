@@ -396,7 +396,8 @@ def _decide_after(
 
     Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
     """
-    if any("error" in part for part in (checks, checks.get("advisory", {}), checks.get("safe_to_write", {}))):
+    steps = ("advisory", "company", "safe_to_write")
+    if "error" in checks or any("error" in checks.get(step, {}) for step in steps):
         return {"skipped": "the checks did not finish, so nothing was decided"}
     try:
         return decide_claims(session_factory, store, _utc_now).summary()

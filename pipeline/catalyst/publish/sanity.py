@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -44,7 +44,7 @@ from catalyst.publish.live import (
     load_live,
     ranks_above,
 )
-from catalyst.schemas import CheckOutcome, Claim, DrugRole, SourceDocument, SourceTier
+from catalyst.schemas import CheckOutcome, Claim, Drug, DrugName, DrugRole, SourceDocument, SourceTier
 from catalyst.verify.rules import CheckResult, months_after
 from catalyst.verify.run import load_matches, store_check
 
@@ -63,17 +63,43 @@ _COMBINATION = re.compile(
     re.IGNORECASE,
 )
 _ALONE = re.compile(r"\bmonotherapy\b|\balone\b", re.IGNORECASE)
+# Words that say a regimen or a combination without saying which drug is in it (round 2, O1).
+_UNCLEAR = re.compile(
+    r"\bdoublets?\b|\btriplets?\b|\bregimens?\b|\bbackbones?\b|\bin\s+addition\s+to\b|\bon\s+top\s+of\b",
+    re.IGNORECASE,
+)
+_WITH = re.compile(r"\bwith\s+", re.IGNORECASE)
+# A code name, as the resolver reads one: letters, an optional dash or space, then digits (AB-123).
+_CODE_NAME = re.compile(r"[A-Z]{1,6}[\s\-\u2010-\u2015]?\d{2,6}[A-Z]?(?!\w)")
 
 _log = logging.getLogger(__name__)
 
 
-def drug_role(quote: str, drug: str | None) -> DrugRole | None:
+def _with_another_drug(quote: str, other_drugs: frozenset[str]) -> bool:
+    """Say whether "with" is followed by another drug on file, or by a code name."""
+    for found in _WITH.finditer(quote):
+        after = quote[found.end() :]
+        if _CODE_NAME.match(after):
+            return True
+        words = after.casefold()
+        if any(
+            words.startswith(name) and not words[len(name) : len(name) + 1].isalnum() for name in other_drugs
+        ):
+            return True
+    return False
+
+
+def drug_role(quote: str, drug: str | None, other_drugs: frozenset[str]) -> DrugRole | None:
     """Return the drug's role as the quote states it, or None when a person must decide.
 
     A quote with no combination words names no combination, so the link is `alone`. A quote with
     combination words gives `in_combination` only when they join the drug itself ("X plus Y",
-    "Y in combination with X") and nothing says "alone" or "monotherapy". Anything else is unclear.
+    "Y in combination with X") and nothing says "alone" or "monotherapy". A regimen word
+    (doublet, triplet, regimen, backbone, "in addition to", "on top of"), or "with" before another
+    drug on file (`other_drugs`, case-folded) or a code name, is unclear too.
     """
+    if _UNCLEAR.search(quote) or _with_another_drug(quote, other_drugs):
+        return None
     combined, alone = _COMBINATION.search(quote), _ALONE.search(quote)
     if not combined:
         return DrugRole.ALONE
@@ -127,6 +153,7 @@ class Candidate:
     quote: str
     key: Key | None
     rank: Rank
+    other_drugs: frozenset[str] = frozenset()  # every drug name on file but the claim's own, case-folded
 
 
 def _fail(reason: str) -> CheckResult:
@@ -142,10 +169,8 @@ def safe_to_write(candidate: Candidate, where: Place, today: date) -> CheckResul
     live = where.catalyst
     if live is None:
         drug = candidate.value.get("drug")
-        unclear = (
-            candidate.key.drugs
-            and drug_role(candidate.quote, drug if isinstance(drug, str) else None) is None
-        )
+        stated = drug if isinstance(drug, str) else None
+        unclear = candidate.key.drugs and drug_role(candidate.quote, stated, candidate.other_drugs) is None
         return _fail(ROLE_UNCLEAR) if unclear else CheckResult(WRITER_CHECK, CheckOutcome.PASS)
     window = window_of(candidate.value)
     if window is None:  # `has_window` fails it; nothing here to compare
@@ -164,10 +189,31 @@ def safe_to_write(candidate: Candidate, where: Place, today: date) -> CheckResul
     return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
 
 
+def drug_names(session: Session) -> dict[UUID, frozenset[str]]:
+    """Return every drug's names on file, preferred and other, case-folded."""
+    drug, name = TABLES[Drug], TABLES[DrugName]
+    found: defaultdict[UUID, set[str]] = defaultdict(set)
+    for row in session.execute(select(drug.c.id, drug.c.preferred_name)):
+        found[row.id].add(row.preferred_name.casefold())
+    for row in session.execute(select(name.c.drug_id, name.c.name)):
+        found[row.drug_id].add(row.name.casefold())
+    return {drug_id: frozenset(names) for drug_id, names in found.items()}
+
+
+def others(names: dict[UUID, frozenset[str]], key: Key | None) -> frozenset[str]:
+    """Return the names of every drug on file except the claim's own matched drugs."""
+    own = key.drugs if key is not None else frozenset[UUID]()
+    mine: set[str] = set()
+    rest: set[str] = set()
+    for drug_id, drug_names_ in names.items():
+        (mine if drug_id in own else rest).update(drug_names_)
+    return frozenset(rest - mine)
+
+
 def safe_results(session: Session, today: date) -> dict[UUID, CheckResult]:
     """Compute, without storing, `safe_to_write` for every extractor claim against the published catalysts."""
     claim, document = TABLES[Claim], TABLES[SourceDocument]
-    live, matches = load_live(session), load_matches(session)
+    live, matches, names = load_live(session), load_matches(session), drug_names(session)
     query = (
         select(claim.c.id, claim.c.value, claim.c.quote, document.c.source_tier, document.c.published_at)
         .join(document, document.c.id == claim.c.source_document_id)
@@ -179,9 +225,8 @@ def safe_results(session: Session, today: date) -> dict[UUID, CheckResult]:
             results[row.id] = CheckResult(WRITER_CHECK, CheckOutcome.PASS)
             continue
         key = claim_key(row.value, matches.get(row.id, []))
-        candidate = Candidate(
-            claim_value(row.value), row.quote, key, Rank(SourceTier(row.source_tier), row.published_at)
-        )
+        rank = Rank(SourceTier(row.source_tier), row.published_at)
+        candidate = Candidate(claim_value(row.value), row.quote, key, rank, others(names, key))
         results[row.id] = safe_to_write(candidate, live.place(key), today)
     return results
 

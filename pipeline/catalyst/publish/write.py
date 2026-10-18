@@ -59,7 +59,7 @@ from catalyst.publish.live import (
     place,
     ranks_above,
 )
-from catalyst.publish.sanity import Candidate, drug_role, safe_to_write, same_dates
+from catalyst.publish.sanity import Candidate, drug_names, drug_role, others, safe_to_write, same_dates
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -232,6 +232,7 @@ def _recheck(
     noticed = advisory_results(session, store, ids)
     stored = _stored(session, ids)
     read_now = _read_now(session, verifier_model)
+    names_on_file = drug_names(session)
     names = list(TABLES[Claim].c.keys())
     ready: list[_Ready] = []
     for _, group in groupby(rows, key=lambda row: row.source_document_id):
@@ -253,7 +254,9 @@ def _recheck(
                 report.reasons.update(hold.label for hold in decision.holds)
                 continue
             rank = Rank(SourceTier(row.source_tier), row.published_at)
-            candidate = Candidate(claim_value(claim.value), claim.quote, key, rank)
+            candidate = Candidate(
+                claim_value(claim.value), claim.quote, key, rank, others(names_on_file, key)
+            )
             if key is None:  # no single company: `safe_to_write` says why
                 result = safe_to_write(candidate, Place(), at.astimezone(NEW_YORK).date())
                 results.append(result)
@@ -303,11 +306,11 @@ def _write_links(
     key = ready.key
     claim_id = ready.claim.id
     drug = ready.candidate.value.get("drug")
-    role = drug_role(ready.claim.quote, drug if isinstance(drug, str) else None) or DrugRole.ALONE
+    stated = drug if isinstance(drug, str) else None
+    role = drug_role(ready.claim.quote, stated, ready.candidate.other_drugs) or DrugRole.ALONE
     links = [
         CatalystDrug(catalyst_id=catalyst_id, drug_id=d, role=role, claim_id=claim_id) for d in key.drugs
     ]
-    trials = [CatalystTrial(catalyst_id=catalyst_id, trial_id=t, claim_id=claim_id) for t in key.trials]
     if links:
         session.execute(insert(TABLES[CatalystDrug]).values([link.model_dump() for link in links]))
         listed = sorted((str(link.drug_id), link.role.value) for link in links)
@@ -318,9 +321,17 @@ def _write_links(
             )
         )
         report.changes_written += 1
+    report.drug_links_written += len(links)
+    _link_trials(session, catalyst_id, ready, report)
+
+
+def _link_trials(session: Session, catalyst_id: UUID, ready: _Ready, report: PublishReport) -> None:
+    """Link each trial the claim names to the catalyst, each link naming the claim."""
+    trials = [
+        CatalystTrial(catalyst_id=catalyst_id, trial_id=t, claim_id=ready.claim.id) for t in ready.key.trials
+    ]
     if trials:
         session.execute(insert(TABLES[CatalystTrial]).values([trial.model_dump() for trial in trials]))
-    report.drug_links_written += len(links)
     report.trial_links_written += len(trials)
 
 
@@ -364,9 +375,12 @@ def _move(
     run.report.changes_written += len(rows)
     run.report.catalysts_updated += 1
     log_event(_log, "catalyst_changed", catalyst_id=str(live.row.id), claim_id=str(ready.claim.id))
-    window_moved = any(name in changed for name in DATE_FIELDS[:3])
-    source = ready.candidate.rank if window_moved else live.source
-    return replace(live, row=live.row.model_copy(update=updated), source=source, last_learned=at)
+    key = live.key
+    if not key.trials and ready.key.trials:  # the trial is now stated: later claims about others are not this
+        _link_trials(session, live.row.id, ready, run.report)
+        key = replace(key, trials=ready.key.trials)
+    row = live.row.model_copy(update=updated)
+    return replace(live, row=row, key=key, source=ready.candidate.rank, last_learned=at)
 
 
 def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) -> None:
@@ -401,6 +415,10 @@ def _apply(
         return None
     same = same_dates(live, item.candidate.value)
     if same and live.row.date_confidence.value == item.candidate.value.get("date_confidence"):
+        # A better source confirms the dates: nothing to write, but it now stands behind them, so a
+        # weaker claim later in this run cannot move them. It is never cited, so every run places it
+        # again, best first, before any weaker claim (round 2, N1).
+        catalysts[catalysts.index(live)] = replace(live, source=item.candidate.rank)
         run.report.not_written_same_dates += 1
         return None
     moved = _move(session, live, item, (CatalystField.DATE_CONFIDENCE,) if same else DATE_FIELDS, run)
