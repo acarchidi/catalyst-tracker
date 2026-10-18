@@ -54,6 +54,7 @@ from catalyst.snapshots import (
 )
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
+from catalyst.verify.drug import check_drug_named
 from catalyst.verify.planted import load_corpus
 from catalyst.verify.planted_report import render_report
 from catalyst.verify.planted_report import run as run_planted
@@ -360,6 +361,7 @@ def _extract(args: argparse.Namespace) -> int:
                     checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
                 except (SQLAlchemyError, ValueError, OSError) as error:
                     checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+                checks["drug"] = _drug_check(sessionmaker(engine), store)
                 checks["safe_to_write"] = _safe_to_write(sessionmaker(engine))
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
@@ -389,6 +391,14 @@ def _extract(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _drug_check(session_factory: sessionmaker[Session], store: SnapshotStore) -> dict[str, Any]:
+    """Run the drug-named check as its own step, so a problem in it keeps every earlier summary."""
+    try:
+        return check_drug_named(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the drug check did not finish"}
+
+
 def _decide_after(
     session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
 ) -> dict[str, Any]:
@@ -396,7 +406,7 @@ def _decide_after(
 
     Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
     """
-    steps = ("advisory", "company", "safe_to_write")
+    steps = ("advisory", "company", "drug", "safe_to_write")
     if "error" in checks or any("error" in checks.get(step, {}) for step in steps):
         return {"skipped": "the checks did not finish, so nothing was decided"}
     try:
@@ -465,6 +475,7 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+        report["drug"] = _drug_check(sessionmaker(engine), store)
         report["safe_to_write"] = _safe_to_write(sessionmaker(engine))
     finally:
         engine.dispose()

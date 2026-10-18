@@ -471,6 +471,27 @@ def test_the_company_check_is_read_as_stored(world: World) -> None:
     assert world.counts() == (0, 0, 0, 0)
 
 
+def test_the_drug_check_is_recomputed(world: World) -> None:
+    """Part 3e: a stored pass does not count when the quote and the text before it name no such drug.
+
+    Its outcome rests on rows that change after it is stored (drug records, the release's other
+    claims), and the writer already reads the stored copy, so it checks again.
+    """
+    sentence = _sentence("second half of 2027", "efruxifermin")
+    claim = world.claim("second half of 2027", sentence=sentence)
+    assert _publish(world)["top_reasons"] == {"drug_named_near_quote failed": 1}
+    assert world.counts() == (0, 0, 0, 0)
+    assert _check(world, claim, "drug_named_near_quote") == (
+        "fail",
+        "the quote and the text just before it do not name pegozafermin",
+    )
+
+
+def test_a_stored_drug_check_failure_is_not_trusted_either_way(world: World) -> None:
+    world.claim("second half of 2027", stored={"drug_named_near_quote": CheckOutcome.FAIL})
+    assert _publish(world)["catalysts_created"] == 1
+
+
 def test_the_trial_named_in_quote_rule_is_recomputed(world: World) -> None:
     """A rule (part 3d): a stored pass does not count when the quote no longer names the trial."""
     sentence = "Topline data from the Phase 3 trial of pegozafermin are expected in the second half of 2027."
@@ -663,7 +684,10 @@ def test_another_drug_or_type_is_another_catalyst(world: World) -> None:
     world.claim(
         "second half of 2027",
         catalyst_type="enrollment_completion",
-        sentence="Enrollment in the Phase 3 RAINIER trial should complete in the second half of 2027.",
+        sentence=(
+            "Enrollment in the Phase 3 RAINIER trial of pegozafermin "
+            "should complete in the second half of 2027."
+        ),
     )
     assert _publish(world)["catalysts_created"] == 2
 
@@ -795,7 +819,10 @@ def test_b4_a_release_that_names_no_trial_waits_when_two_trials_are_published(wo
         "second half of 2027",
         trial=world.other_trial,
         indication="SHTG",  # one fits by indication, but two fit by trial: still a person's call
-        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the second half of 2027.",
+        sentence=(
+            "Topline data from the Phase 3 SYMMETRY trial of pegozafermin "
+            "are expected in the second half of 2027."
+        ),
     )
     assert _publish(world)["catalysts_created"] == 2  # two trials, two events
     world.claim(
@@ -911,7 +938,10 @@ def test_o3_the_check_job_stores_safe_to_write_for_every_claim(world: World) -> 
     new = world.claim(
         "second half of 2027",
         catalyst_type="enrollment_completion",
-        sentence="Enrollment in the Phase 3 RAINIER trial should complete in the second half of 2027.",
+        sentence=(
+            "Enrollment in the Phase 3 RAINIER trial of pegozafermin "
+            "should complete in the second half of 2027."
+        ),
     )
     report = check_safe_to_write(world.factory, lambda: NOW)
     assert report.summary() == {"claims": 3, "outcomes": {"safe_to_write:pass": 2, "safe_to_write:fail": 1}}
@@ -1070,7 +1100,10 @@ def test_n2_a_trial_written_into_a_catalyst_with_none_is_linked_and_keeps_other_
         "fourth quarter of 2027",
         published=OCT_16,
         trial=world.other_trial,
-        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the fourth quarter of 2027.",
+        sentence=(
+            "Topline data from the Phase 3 SYMMETRY trial of pegozafermin "
+            "are expected in the fourth quarter of 2027."
+        ),
     )
     _publish_in_order(world, program)
     assert _publish_in_order(world, program, rainier)["catalysts_updated"] == 1
@@ -1094,7 +1127,10 @@ def test_n2_in_one_run_the_first_trial_takes_the_catalyst_and_the_other_is_a_new
         "fourth quarter of 2027",
         published=OCT_16,
         trial=world.other_trial,
-        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the fourth quarter of 2027.",
+        sentence=(
+            "Topline data from the Phase 3 SYMMETRY trial of pegozafermin "
+            "are expected in the fourth quarter of 2027."
+        ),
     )
     _publish_in_order(world, program)
     summary = _publish(world)
@@ -1116,7 +1152,10 @@ def test_a_claim_excused_as_an_update_never_becomes_a_new_catalyst_with_a_passed
         "third quarter of 2026",
         published=datetime(2026, 9, 1, 20, tzinfo=UTC),
         trial=world.other_trial,
-        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the third quarter of 2026.",
+        sentence=(
+            "Topline data from the Phase 3 SYMMETRY trial of pegozafermin "
+            "are expected in the third quarter of 2026."
+        ),
     )
     world.claim("fourth quarter of 2026", published=OCT_16)
     _publish_in_order(world, program)
