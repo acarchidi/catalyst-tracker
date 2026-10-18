@@ -19,6 +19,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
+from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
@@ -30,6 +31,7 @@ from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
+from catalyst.issues import API, plan_markdown, post
 from catalyst.links import check_links, link_client, links_markdown
 from catalyst.llm import anthropic_adapter
 from catalyst.llm.client import ModelClient
@@ -151,6 +153,7 @@ def _parser() -> argparse.ArgumentParser:
     )
     planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
     planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
+    _issue_arguments(commands)
     check = commands.add_parser(
         "prospects-check",
         help="Check the outreach prospect list and print its counts (ADR 0020; sends nothing).",
@@ -160,6 +163,24 @@ def _parser() -> argparse.ArgumentParser:
         "--previous", type=Path, help="An earlier copy; fail if it had a do_not_contact row now missing."
     )
     return parser
+
+
+def _issue_arguments(commands: Any) -> None:
+    alerts = commands.add_parser(
+        "alerts", help="Build the alerts a run raises or solves, from its job summaries (free; no model)."
+    )
+    alerts.add_argument(
+        "--run",
+        action="append",
+        default=[],
+        type=parse_run,
+        help="A job in this run as NAME:OUTCOME[:FILE], FILE being the JSON the job printed. Repeatable.",
+    )
+    alerts.add_argument("--spend", action="store_true", help="Also check today's spend per role (database).")
+    alerts.add_argument("--run-url", required=True, help="Link to this run's log, for the alert text.")
+    alerts.add_argument("--out", type=Path, required=True, help="Write the plan (JSON) here.")
+    issues = commands.add_parser("post-issues", help="Post a plan from `alerts` to GitHub as issues.")
+    issues.add_argument("--from", dest="plan", type=Path, required=True, help="The plan (JSON).")
 
 
 def _store_arguments(parser: argparse.ArgumentParser) -> None:
@@ -197,6 +218,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
+        "alerts": _alerts,
+        "post-issues": _post_issues,
         "decide-claims": _decide_claims,
         "api": _serve,
         "mcp": _serve,
@@ -427,6 +450,47 @@ def _serve(args: argparse.Namespace) -> int:
             build_server(sessionmaker(engine)).run("stdio")
     finally:
         engine.dispose()
+    return 0
+
+
+def _alerts(args: argparse.Namespace) -> int:
+    runs = list(args.run)
+    spend = None
+    if args.spend:
+        try:
+            spend = _spend_today()
+        except (SQLAlchemyError, settings.MissingSettingError):
+            runs.append(parse_run("spend-check:failure"))  # the alert says spending could not be read
+        else:
+            runs.append(parse_run("spend-check:success"))  # closes that alert once spending reads
+    plan = build_alerts(runs, spend, load_thresholds(), args.run_url)
+    args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    print(plan_markdown(plan), end="")
+    return 0
+
+
+def _spend_today() -> dict[str, RoleSpend]:
+    engine = create_engine(settings.database_url())
+    try:
+        return spend_today(engine, load_config(), datetime.now(NEW_YORK).date())
+    finally:
+        engine.dispose()
+
+
+def _post_issues(args: argparse.Namespace) -> int:
+    try:
+        token, repo = settings.github_token(), settings.github_repository()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    with httpx.Client(base_url=API, timeout=30) as client:
+        try:
+            actions = post(plan, client, repo, token)
+        except httpx.HTTPError as error:
+            print(f"Posting stopped: a GitHub request failed ({type(error).__name__}).", file=sys.stderr)
+            return 1
+    print(json.dumps({"changes": [type(action).__name__.lower() for action in actions]}))
     return 0
 
 

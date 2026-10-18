@@ -81,3 +81,22 @@ def supabase_url() -> str:
 def supabase_secret_key() -> str:
     """Return the Supabase secret key for server-side access (storage and database)."""
     return _required("SUPABASE_SECRET_KEY", "Part 3, then Part 5")
+
+
+def github_token() -> str:
+    """Return the token GitHub Actions gives each run; it posts alerts as issues (ADR 0023)."""
+    return _github("GITHUB_TOKEN")
+
+
+def github_repository() -> str:
+    """Return the repository as owner/name, which GitHub Actions sets for each run."""
+    return _github("GITHUB_REPOSITORY")
+
+
+def _github(name: str) -> str:
+    value = os.environ.get(name, "").strip()
+    if not value:
+        raise MissingSettingError(
+            f"{name} is missing. GitHub Actions sets it; post issues only from a workflow."
+        )
+    return value

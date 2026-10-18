@@ -3,6 +3,7 @@
 import json
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -573,3 +574,33 @@ def test_prospects_check_fails_when_a_do_not_contact_row_was_removed(
     current.write_text(_PROSPECT_HEADER, encoding="utf-8")
     assert main(["prospects-check", "--file", str(current), "--previous", str(previous)]) == 1
     assert "Example, Jane: a do_not_contact row was removed" in capsys.readouterr().err
+
+
+def test_alerts_solves_the_spending_could_not_be_read_alert_once_spending_reads(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    spend = {"extractor": cli.RoleSpend(Decimal("0.10"), Decimal("5.00"), Decimal("0.01"))}
+    monkeypatch.setattr(cli, "_spend_today", lambda: spend)
+    out = tmp_path / "plan.json"
+    assert main(["alerts", "--spend", "--run-url", "https://example.org/run/1", "--out", str(out)]) == 0
+    capsys.readouterr()
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    solved = {item["key"] for item in plan["solved"]}
+    assert "job-failed:spend-check" in solved
+    assert "spend-cap:extractor" in solved
+    assert plan["issues"] == []
+
+
+def test_alerts_raises_the_spending_could_not_be_read_alert_when_the_read_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    def fail() -> dict[str, Any]:
+        raise OperationalError("SELECT 1", {}, Exception("no database"))
+
+    monkeypatch.setattr(cli, "_spend_today", fail)
+    out = tmp_path / "plan.json"
+    assert main(["alerts", "--spend", "--run-url", "https://example.org/run/1", "--out", str(out)]) == 0
+    capsys.readouterr()
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [issue["key"] for issue in plan["issues"]] == ["job-failed:spend-check"]
+    assert "job-failed:spend-check" not in {item["key"] for item in plan["solved"]}
