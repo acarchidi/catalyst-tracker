@@ -5,6 +5,7 @@ resolver's matches, stored check rows, and the stored decision. The writer must 
 before it writes, and what it writes must be what the read API shows (ADR 0025).
 """
 
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,8 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish import gate
 from catalyst.publish.run import decide_claims
-from catalyst.publish.write import publish_claims, ranks_above
+from catalyst.publish.sanity import ROLE_UNCLEAR, check_safe_to_write, drug_role
+from catalyst.publish.write import LOCK, publish_claims, ranks_above
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -37,7 +39,9 @@ from catalyst.schemas import (
     ClaimSubject,
     Company,
     DocumentMatch,
+    DocumentReading,
     Drug,
+    DrugRole,
     EntityMatch,
     GateDecision,
     MatchedEntity,
@@ -47,10 +51,13 @@ from catalyst.schemas import (
     TrialPhase,
 )
 from catalyst.snapshots import LocalSnapshotStore
+from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
 OCT_14 = datetime(2026, 10, 14, 20, tzinfo=UTC)
+OCT_15 = datetime(2026, 10, 15, 20, tzinfo=UTC)
 OCT_16 = datetime(2026, 10, 16, 20, tzinfo=UTC)
+VERIFIER_MODEL = "claude-sonnet-5-5"
 
 
 def _sentence(date_text: str, drug: str = "pegozafermin") -> str:
@@ -65,7 +72,11 @@ class World:
         self.company = self.add(Company(cik=1, name="Acme Bio", sic_code="2834"))
         self.drug = self.add(Drug(company_id=self.company, preferred_name="pegozafermin"))
         self.trial = self.add(Trial(nct_id="NCT04929483", study_name="RAINIER", phase=TrialPhase.PHASE_3))
+        self.other_trial = self.add(
+            Trial(nct_id="NCT05000001", study_name="SYMMETRY", phase=TrialPhase.PHASE_3)
+        )
         self._releases = 0
+        self._last: tuple[UUID, str, datetime] = (UUID(int=0), "", OCT_14)
 
     def add(self, record: Any) -> UUID:
         with self.factory.begin() as session:
@@ -80,49 +91,73 @@ class World:
         tier: SourceTier = SourceTier.REGULATOR_OR_SEC,
         drug: str | None = "pegozafermin",
         drug_id: UUID | None = None,
-        trial: bool = True,
+        trial: UUID | bool = True,
         catalyst_type: str = "topline_readout",
         decision: GateDecision = GateDecision.PUBLISH,
         stored: dict[str, CheckOutcome] | None = None,
         sentence: str | None = None,
+        indication: str | None = "MASH",
+        date_confidence: str = "company_confirmed",
+        same_release: bool = False,
+        read: bool = True,
     ) -> UUID:
-        """Store a release stating one catalyst, its claim, matches, passing check rows, and decision."""
-        self._releases += 1
-        n = self._releases
+        """Store a release stating one catalyst, its claim, matches, passing check rows, and decision.
+
+        `same_release` adds the claim to the last release instead (its sentence must be in it).
+        `read` records the verifier's current reading of the release.
+        """
         sentence = sentence or _sentence(date_text, drug or "the program")
-        content = f"<html><body><p>Release {n}</p><p>{sentence}</p></body></html>".encode()
-        fetched = FetchedDocument(
-            source_key=f"sec:{n}",
-            url=f"https://www.sec.gov/Archives/edgar/data/1/{n}.htm",
-            publisher="SEC EDGAR",
-            source_tier=tier,
-            document_type="8-K EX-99.1",
-            published_at=published,
-            content=content,
-            content_type="text/html",
-        )
-        document, _ = store_fetched(
-            fetched, self.store, self.factory, (self.company, DocumentMatch.SEC_CIK), lambda: published
-        )
-        text = document_text(content, "text/html")
+        if same_release:
+            document_id, text, published = self._last
+        else:
+            self._releases += 1
+            n = self._releases
+            content = f"<html><body><p>Release {n}</p><p>{sentence}</p></body></html>".encode()
+            fetched = FetchedDocument(
+                source_key=f"sec:{n}",
+                url=f"https://www.sec.gov/Archives/edgar/data/1/{n}.htm",
+                publisher="SEC EDGAR",
+                source_tier=tier,
+                document_type="8-K EX-99.1",
+                published_at=published,
+                content=content,
+                content_type="text/html",
+            )
+            document, _ = store_fetched(
+                fetched, self.store, self.factory, (self.company, DocumentMatch.SEC_CIK), lambda: published
+            )
+            document_id, text = document.id, document_text(content, "text/html")
+            self._last = (document_id, text, published)
+            if read:
+                self.add(
+                    DocumentReading(
+                        source_document_id=document_id,
+                        agent=VERIFIER_ROLE,
+                        prompt_id=VERIFIER_PROMPT[0],
+                        prompt_version=VERIFIER_PROMPT[1],
+                        model=VERIFIER_MODEL,
+                        catalysts=1,
+                        read_at=published,
+                    )
+                )
         window = parse_window(date_text, published.astimezone(NEW_YORK).date())
         assert window is not None
         value: dict[str, Any] = {
             "catalyst_type": catalyst_type,
             "title": f"Phase 3 RAINIER topline data for {drug or 'the program'} in MASH",
             "drug": drug,
-            "indication": "MASH",
+            "indication": indication,
             "date_text": date_text,
             "window_start": window.start.isoformat(),
             "window_end": window.end.isoformat(),
             "window_precision": window.precision.value,
-            "date_confidence": "company_confirmed",
+            "date_confidence": date_confidence,
             "problems": [],
             "text_version": TEXT_VERSION,
         }
         start = text.index(sentence)
         claim = Claim(
-            source_document_id=document.id,
+            source_document_id=document_id,
             subject_type=ClaimSubject.CATALYST,
             field=claim_field(value),
             value=value,
@@ -141,7 +176,9 @@ class World:
         if drug:
             self.match(claim.id, MatchedEntity.DRUG, drug, drug_id or self.drug)
         if trial:
-            self.match(claim.id, MatchedEntity.TRIAL, "RAINIER", self.trial)
+            trial_id = self.trial if trial is True else trial
+            name = "SYMMETRY" if trial_id == self.other_trial else "RAINIER"
+            self.match(claim.id, MatchedEntity.TRIAL, name, trial_id)
         outcomes = {name: CheckOutcome.PASS for name in gate.REQUIRED_CHECKS} | (stored or {})
         for name, outcome in outcomes.items():
             reason = "stored as failed" if outcome is CheckOutcome.FAIL else None
@@ -192,8 +229,14 @@ def world(session_factory: sessionmaker[Session], tmp_path: Path) -> World:
     return World(session_factory, LocalSnapshotStore(tmp_path))
 
 
+def _check(world: World, claim: UUID, name: str) -> tuple[str, str | None]:
+    """Return one stored check's outcome and reason."""
+    (row,) = [r for r in world.rows(ClaimCheck) if r.claim_id == claim and r.check_name == name]
+    return row.outcome, row.reason
+
+
 def _publish(world: World, at: datetime = NOW) -> dict[str, Any]:
-    return publish_claims(world.factory, world.store, lambda: at).summary()
+    return publish_claims(world.factory, world.store, lambda: at, verifier_model=VERIFIER_MODEL).summary()
 
 
 # --- A publishable claim becomes a catalyst the read API shows ---
@@ -338,12 +381,15 @@ def test_a_window_that_passed_since_the_decision_is_not_published(world: World) 
     assert world.counts() == (0, 0, 0, 0)
     assert summary["held_on_recheck"] == 1
     assert summary["top_reasons"] == {"window_not_past failed": 1}
-    # The fresh reason replaces the stale publish decision, so the review queue shows it.
+    # The fresh outcome is stored, so the next decision holds the claim with the reason.
+    reason = "the window ended on 2026-12-31, before 2027-01-05"
+    assert _check(world, claim, "window_not_past") == ("fail", reason)
+    checks = world.rows(ClaimCheck)
+    assert _publish(world, later + timedelta(hours=1))["checks_updated"] == 0
+    assert world.rows(ClaimCheck) == checks  # a re-run writes nothing
+    decide_claims(world.factory, world.store, lambda: later)
     (decision,) = world.rows(ClaimDecision)
-    assert (decision.claim_id, decision.decision, decision.decided_at) == (claim, "review", later)
-    assert decision.reasons == ["window_not_past: the window ended on 2026-12-31, before 2027-01-05"]
-    assert _publish(world, later + timedelta(hours=1))["claims_marked_publish"] == 0
-    assert world.rows(ClaimDecision) == [decision]  # a re-run writes nothing
+    assert (decision.decision, decision.reasons) == ("review", [f"window_not_past: {reason}"])
 
 
 def test_a_match_that_changed_since_the_decision_is_not_published(world: World) -> None:
@@ -527,25 +573,26 @@ def test_a_newer_release_that_narrows_the_window_moves_the_date(world: World) ->
     assert _publish(world)["changes_written"] == 0
 
 
-def _publish_in_order(world: World, first: UUID) -> None:
-    """Publish only `first`, by holding every other claim for one run."""
+def _publish_in_order(world: World, *first: UUID, at: datetime = NOW) -> dict[str, Any]:
+    """Publish only the `first` claims, by holding every other claim for one run."""
     decision = TABLES[ClaimDecision]
     with world.factory.begin() as session:
         held = list(
             session.execute(
                 select(decision.c.claim_id).where(
-                    decision.c.claim_id != first, decision.c.decision == "publish"
+                    decision.c.claim_id.not_in(first), decision.c.decision == "publish"
                 )
             ).scalars()
         )
         session.execute(
             update(decision).where(decision.c.claim_id.in_(held)).values(decision="review", reasons=["later"])
         )
-    _publish(world)
+    summary = _publish(world, at)
     with world.factory.begin() as session:
         session.execute(
             update(decision).where(decision.c.claim_id.in_(held)).values(decision="publish", reasons=[])
         )
+    return summary
 
 
 def test_an_older_release_does_not_move_a_newer_ones_date(world: World) -> None:
@@ -587,8 +634,12 @@ def test_a_move_of_more_than_six_months_waits_for_a_person(world: World) -> None
     assert summary["held_by_writer"] == 1
     assert list(summary["top_reasons"]) == ["the date would move more than 6 months"]
     assert len([c for c in world.rows(CatalystChange) if c.old_value is not None]) == 0
-    decisions = {row.claim_id: (row.decision, row.reasons) for row in world.rows(ClaimDecision)}
-    assert decisions[moved] == ("review", ["the date would move more than 6 months"])
+    # Stored as the writer's own check, so the decision job holds it too, and does not flip it back.
+    assert _check(world, moved, "safe_to_write") == ("fail", "the date would move more than 6 months")
+    for _ in range(2):
+        decide_claims(world.factory, world.store, lambda: NOW)
+        decisions = {row.claim_id: (row.decision, row.reasons) for row in world.rows(ClaimDecision)}
+        assert decisions[moved] == ("review", ["safe_to_write: the date would move more than 6 months"])
 
 
 def test_a_widening_of_up_to_six_months_is_written(world: World) -> None:
@@ -623,8 +674,9 @@ def test_another_drug_or_type_is_another_catalyst(world: World) -> None:
         ((SourceTier.WIRE, OCT_16), (SourceTier.COMPANY_SITE, OCT_14), False),
         ((SourceTier.COMPANY_SITE, OCT_16), (SourceTier.COMPANY_SITE, OCT_14), True),
         ((SourceTier.COMPANY_SITE, OCT_14), (SourceTier.COMPANY_SITE, OCT_16), False),
+        ((SourceTier.COMPANY_SITE, OCT_14), (SourceTier.COMPANY_SITE, OCT_14), False),
     ],
-    ids=["higher tier, older", "lower tier, newer", "same tier, newer", "same tier, older"],
+    ids=["higher tier, older", "lower tier, newer", "same tier, newer", "same tier, older", "a tie"],
 )
 def test_the_highest_ranked_source_wins_then_the_most_recent(
     claim: tuple[SourceTier, datetime], live: tuple[SourceTier, datetime], expected: bool
@@ -643,3 +695,297 @@ def test_a_claim_whose_values_make_no_valid_catalyst_waits(world: World) -> None
     assert (summary["held_by_writer"], summary["catalysts_created"]) == (1, 0)
     assert list(summary["top_reasons"]) == ["the claim's values do not make a valid catalyst"]
     assert world.counts() == (0, 0, 0, 0)
+
+
+# --- Opus review of PR #59: blocking findings ---
+
+
+def _window(world: World) -> tuple[str, str, str]:
+    (row,) = world.rows(Catalyst)
+    return row.window_start.isoformat(), row.window_end.isoformat(), row.window_raw_text
+
+
+def test_b1_the_window_source_is_the_claim_behind_any_date_field(world: World) -> None:
+    """A move that changes only the end writes no `window_start` row; its claim is still the source."""
+    a = world.claim("second half of 2027", tier=SourceTier.COMPANY_SITE)
+    b = world.claim("July 2027", published=OCT_15)
+    world.claim("third quarter of 2027", published=OCT_16, tier=SourceTier.COMPANY_SITE)
+    _publish_in_order(world, a)
+    assert _publish_in_order(world, a, b)["catalysts_updated"] == 1
+    assert {c.field for c in world.rows(CatalystChange) if c.claim_id == b} == {
+        "window_end",
+        "window_precision",
+        "window_raw_text",
+    }
+    summary = _publish(world)  # C, from the company site, does not outrank B's SEC filing
+    assert (summary["catalysts_updated"], summary["not_written_lower_rank"]) == (0, 1)
+    assert _window(world) == ("2027-07-01", "2027-07-31", "July 2027")
+
+
+def test_b2_a_window_that_has_ended_never_replaces_one_that_has_not(world: World) -> None:
+    live = world.claim("second half of 2026", published=datetime(2026, 7, 1, 20, tzinfo=UTC))
+    late = world.claim("third quarter of 2026", published=datetime(2026, 8, 10, 20, tzinfo=UTC))
+    _publish_in_order(world, live)
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_updated"]) == (1, 0)
+    assert list(summary["top_reasons"]) == ["the new window has already passed"]
+    assert _window(world) == ("2026-07-01", "2026-12-31", "second half of 2026")  # still on the calendar
+    check_safe_to_write(world.factory, lambda: NOW)
+    decide_claims(world.factory, world.store, lambda: NOW)
+    decisions = {row.claim_id: (row.decision, row.reasons) for row in world.rows(ClaimDecision)}
+    assert decisions[late] == ("review", ["safe_to_write: the new window has already passed"])
+
+
+def test_b3_another_indication_for_the_same_drug_waits_instead_of_moving_the_date(world: World) -> None:
+    world.claim("second half of 2027")
+    _publish(world)
+    shtg = world.claim(
+        "fourth quarter of 2027",
+        published=OCT_16,
+        trial=False,
+        indication="SHTG",
+        sentence="Phase 2 data for pegozafermin in SHTG are expected in the fourth quarter of 2027.",
+    )
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_updated"]) == (1, 0)
+    assert _check(world, shtg, "safe_to_write") == ("fail", "the indication differs from the published one")
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_b3_two_indications_in_one_release_are_never_merged_or_dropped(world: World) -> None:
+    sentence = (
+        "Phase 3 RAINIER data for pegozafermin in MASH and SHTG are expected in the second half of 2027."
+    )
+    world.claim("second half of 2027", sentence=sentence)
+    world.claim("second half of 2027", sentence=sentence, indication="SHTG", same_release=True)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["held_by_writer"], summary["not_written_lower_rank"]) == (
+        1,
+        1,
+        0,
+    )
+    assert list(summary["top_reasons"]) == ["the indication differs from the published one"]
+
+
+def test_b3_the_indication_is_compared_without_case_or_punctuation(world: World) -> None:
+    world.claim("second half of 2027", indication="NASH / MASH")
+    _publish(world)
+    world.claim("fourth quarter of 2027", published=OCT_16, indication="nash mash")
+    assert _publish(world)["catalysts_updated"] == 1
+
+
+def test_b4_a_release_that_names_no_trial_is_the_same_event(world: World) -> None:
+    world.claim("second half of 2027")
+    _publish(world)
+    world.claim(
+        "fourth quarter of 2027",
+        published=OCT_16,
+        trial=False,
+        sentence="Topline data for pegozafermin in MASH are expected in the fourth quarter of 2027.",
+    )
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["catalysts_updated"]) == (0, 1)
+    assert _window(world)[2] == "fourth quarter of 2027"
+
+
+def test_b4_a_release_that_names_no_trial_waits_when_two_trials_are_published(world: World) -> None:
+    world.claim("second half of 2027")
+    world.claim(
+        "second half of 2027",
+        trial=world.other_trial,
+        indication="SHTG",  # one fits by indication, but two fit by trial: still a person's call
+        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the second half of 2027.",
+    )
+    assert _publish(world)["catalysts_created"] == 2  # two trials, two events
+    world.claim(
+        "fourth quarter of 2027",
+        published=OCT_16,
+        trial=False,
+        sentence="Topline data for pegozafermin in MASH are expected in the fourth quarter of 2027.",
+    )
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["held_by_writer"]) == (0, 1)
+    assert list(summary["top_reasons"]) == ["the claim matches more than one published catalyst"]
+
+
+def test_a_claim_matching_two_identical_published_catalysts_waits(world: World) -> None:
+    """Two open catalysts with one event (only a hand edit makes them) leave the choice to a person."""
+    world.claim("second half of 2027")
+    _publish(world)
+    (original,) = world.rows(Catalyst)
+    copy_id = UUID(int=7)
+    with world.factory.begin() as session:
+        session.execute(insert(TABLES[Catalyst]).values(**(original._asdict() | {"id": copy_id})))
+        for model in (CatalystChange, CatalystDrug, CatalystTrial):
+            for row in world.rows(model):
+                fresh = row._asdict() | {
+                    "id": UUID(int=hash((model.__name__, row.id)) % 2**64),
+                    "catalyst_id": copy_id,
+                }
+                session.execute(insert(TABLES[model]).values(**fresh))
+    world.claim("fourth quarter of 2027", published=OCT_16)
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_updated"]) == (1, 0)
+    assert list(summary["top_reasons"]) == ["the claim matches more than one published catalyst"]
+
+
+@pytest.mark.parametrize(
+    ("quote", "drug", "expected"),
+    [
+        ("Pegozafermin data are expected in 2H27.", "pegozafermin", DrugRole.ALONE),
+        ("Pegozafermin monotherapy data are expected in 2H27.", "pegozafermin", DrugRole.ALONE),
+        (
+            "Data for pegozafermin plus pembrolizumab are expected in 2H27.",
+            "pegozafermin",
+            DrugRole.IN_COMBINATION,
+        ),
+        (
+            "Data for pembrolizumab plus pegozafermin are expected in 2H27.",
+            "pegozafermin",
+            DrugRole.IN_COMBINATION,
+        ),
+        ("Data for X + pegozafermin are expected in 2H27.", "pegozafermin", DrugRole.IN_COMBINATION),
+        (
+            "Pegozafermin in combination with semaglutide reads out in 2H27.",
+            "pegozafermin",
+            DrugRole.IN_COMBINATION,
+        ),
+        ("SPY001 alone and in pairwise combinations reads out in 2027.", "SPY001", None),
+        ("A combination study is ongoing; pegozafermin data come in 2H27.", "pegozafermin", None),
+        (
+            "Pegozafermin added to standard of care reads out in 2H27.",
+            "pegozafermin",
+            DrugRole.IN_COMBINATION,
+        ),
+        (
+            "Data for pegozafermin co-administered with statins come in 2H27.",
+            "pegozafermin",
+            DrugRole.IN_COMBINATION,
+        ),
+        ("Data with drugs combined in one arm come in 2H27 for pegozafermin.", "pegozafermin", None),
+    ],
+)
+def test_b5_the_drug_role_is_read_from_the_quote_or_left_to_a_person(
+    quote: str, drug: str, expected: DrugRole | None
+) -> None:
+    """`alone` means the quote names no combination; a combination must join the drug itself."""
+    assert drug_role(quote, drug) is expected
+
+
+def test_b5_a_quote_whose_drug_role_is_unclear_waits(world: World) -> None:
+    sentence = (
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin alone and in combination "
+        "are expected in the second half of 2027."
+    )
+    claim = world.claim("second half of 2027", sentence=sentence)
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_created"]) == (1, 0)
+    assert _check(world, claim, "safe_to_write") == ("fail", ROLE_UNCLEAR)
+
+
+def test_b5_a_drug_joined_by_plus_is_linked_in_combination(world: World) -> None:
+    sentence = (
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin plus semaglutide "
+        "are expected in the second half of 2027."
+    )
+    world.claim("second half of 2027", sentence=sentence)
+    _publish(world)
+    (link,) = world.rows(CatalystDrug)
+    assert link.role == "in_combination"
+
+
+# --- Opus review of PR #59: optional findings ---
+
+
+def test_o2_a_second_reading_counts_only_with_a_current_reading(world: World) -> None:
+    world.claim("second half of 2027", read=False)
+    assert _publish(world)["top_reasons"] == {"second_reading_agrees has not run": 1}
+    assert world.counts() == (0, 0, 0, 0)
+
+
+def test_o3_the_check_job_stores_safe_to_write_for_every_claim(world: World) -> None:
+    first = world.claim("second half of 2027")
+    _publish(world)
+    later = world.claim("first half of 2028", published=OCT_16)
+    new = world.claim(
+        "second half of 2027",
+        catalyst_type="enrollment_completion",
+        sentence="Enrollment in the Phase 3 RAINIER trial should complete in the second half of 2027.",
+    )
+    report = check_safe_to_write(world.factory, lambda: NOW)
+    assert report.summary() == {"claims": 3, "outcomes": {"safe_to_write:pass": 2, "safe_to_write:fail": 1}}
+    assert _check(world, first, "safe_to_write") == ("pass", None)
+    assert _check(world, new, "safe_to_write") == ("pass", None)
+    assert _check(world, later, "safe_to_write") == ("fail", "the window does not overlap the published one")
+
+
+def test_o5_a_better_source_with_the_same_dates_updates_the_confidence(world: World) -> None:
+    first = world.claim("second half of 2027")
+    world.claim("second half of 2027", published=OCT_16, date_confidence="regulator_scheduled")
+    _publish_in_order(world, first)
+    summary = _publish(world)
+    assert (summary["catalysts_updated"], summary["changes_written"]) == (1, 1)
+    (row,) = world.rows(Catalyst)
+    assert row.date_confidence == "regulator_scheduled"
+    world.shown(row.id)  # the read API still shows it, every value with its source
+
+
+# --- Mutation gaps ---
+
+
+def test_a_narrowing_may_move_the_start_more_than_six_months(world: World) -> None:
+    world.claim("2027")
+    _publish(world)
+    world.claim("fourth quarter of 2027", published=OCT_16)
+    assert _publish(world)["catalysts_updated"] == 1
+
+
+def test_a_start_moved_more_than_six_months_earlier_waits(world: World) -> None:
+    world.claim("October 2027")
+    _publish(world)
+    world.claim(
+        "by year-end 2027",
+        published=OCT_16,
+        sentence="Topline data from the Phase 3 RAINIER trial of pegozafermin are expected by year-end 2027.",
+    )
+    summary = _publish(world)
+    assert (summary["held_by_writer"], list(summary["top_reasons"])) == (
+        1,
+        ["the date would move more than 6 months"],
+    )
+
+
+def test_a_losing_first_seen_claim_whose_window_does_not_overlap_waits(world: World) -> None:
+    world.claim("second half of 2027", published=OCT_16)
+    world.claim("first half of 2028")
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["held_by_writer"]) == (1, 1)
+    assert list(summary["top_reasons"]) == ["the window does not overlap the published one"]
+
+
+def test_one_run_moves_a_catalyst_once_and_compares_the_rest_with_the_move(world: World) -> None:
+    first = world.claim("second half of 2027")
+    _publish_in_order(world, first)
+    world.claim("fourth quarter of 2027", published=OCT_16)
+    world.claim("third quarter of 2027", published=OCT_15)
+    summary = _publish(world)
+    assert summary["catalysts_updated"] == 1
+    assert _window(world)[2] == "fourth quarter of 2027"
+    assert list(summary["top_reasons"]) == ["the window does not overlap the published one"]
+
+
+def test_two_writers_never_run_at_once(world: World) -> None:
+    """The advisory lock: a second run waits until the first one's transaction ends."""
+    world.claim("second half of 2027")
+    found: dict[str, Any] = {}
+    with world.factory() as holder:
+        holder.execute(select(func.pg_advisory_xact_lock(LOCK)))
+        runner = threading.Thread(target=lambda: found.update(_publish(world)))
+        runner.start()
+        runner.join(timeout=1.5)
+        assert runner.is_alive()  # waiting for the lock
+        assert world.counts() == (0, 0, 0, 0)
+        holder.commit()
+    runner.join(timeout=30)
+    assert not runner.is_alive()
+    assert found["catalysts_created"] == 1

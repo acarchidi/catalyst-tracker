@@ -41,6 +41,7 @@ from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
 from catalyst.outreach import prospects
 from catalyst.publish.run import decide_claims
+from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.snapshots import (
@@ -359,6 +360,7 @@ def _extract(args: argparse.Namespace) -> int:
                     checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
                 except (SQLAlchemyError, ValueError, OSError) as error:
                     checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+                checks["safe_to_write"] = _safe_to_write(sessionmaker(engine))
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -367,7 +369,7 @@ def _extract(args: argparse.Namespace) -> int:
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
         decisions = _decide_after(sessionmaker(engine), store, checks)
-        published = _publish_after(sessionmaker(engine), store, decisions)
+        published = _publish_after(sessionmaker(engine), store, decisions, config.roles[VERIFIER_ROLE].model)
     finally:
         engine.dispose()
     if args.out is not None:
@@ -394,7 +396,7 @@ def _decide_after(
 
     Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
     """
-    if "error" in checks or "error" in checks.get("advisory", {}):
+    if any("error" in part for part in (checks, checks.get("advisory", {}), checks.get("safe_to_write", {}))):
         return {"skipped": "the checks did not finish, so nothing was decided"}
     try:
         return decide_claims(session_factory, store, _utc_now).summary()
@@ -402,8 +404,19 @@ def _decide_after(
         return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
 
 
+def _safe_to_write(session_factory: sessionmaker[Session]) -> dict[str, Any]:
+    """Run the writer's own check before the decisions, so they see every claim it would hold."""
+    try:
+        return check_safe_to_write(session_factory, _utc_now).summary()
+    except (SQLAlchemyError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the safe-to-write check did not finish"}
+
+
 def _publish_after(
-    session_factory: sessionmaker[Session], store: SnapshotStore, decisions: dict[str, Any]
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    decisions: dict[str, Any],
+    verifier_model: str,
 ) -> dict[str, Any]:
     """Write the live catalysts last; every earlier summary stands if this fails (ADR 0018, part 5b).
 
@@ -413,7 +426,7 @@ def _publish_after(
     if "error" in decisions or "skipped" in decisions:
         return {"skipped": "the publish decisions did not finish, so nothing was published"}
     try:
-        return publish_claims(session_factory, store, _utc_now).summary()
+        return publish_claims(session_factory, store, _utc_now, verifier_model=verifier_model).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
         return {"error": f"{type(error).__name__}: publishing did not finish"}
 
@@ -451,6 +464,7 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+        report["safe_to_write"] = _safe_to_write(sessionmaker(engine))
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))
@@ -482,7 +496,8 @@ def _publish_claims(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        report = publish_claims(sessionmaker(engine), store, _utc_now)
+        model = load_config().roles[VERIFIER_ROLE].model
+        report = publish_claims(sessionmaker(engine), store, _utc_now, verifier_model=model)
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))

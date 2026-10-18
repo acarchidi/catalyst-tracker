@@ -257,7 +257,7 @@ Rules:
 
 ## `catalyst_drug`
 
-Links a catalyst to one drug it concerns, tested alone or in combination (ADR 0016). A catalyst may link many drugs, and one drug both alone and in combination. Each link names the claim whose quote states it.
+Links a catalyst to one drug it concerns, tested alone or in combination (ADR 0016). A catalyst may link many drugs, and one drug both alone and in combination. Each link names the claim whose quote states it. `alone` means the quote names no combination; the writer links `in_combination` only when the quote joins the drug to another, and leaves any other quote with combination words to a person (ADR 0018, part 5b).
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
