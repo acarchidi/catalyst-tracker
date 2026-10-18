@@ -245,3 +245,16 @@ def test_a_wrong_company_or_a_wrong_trial_is_caught_every_time() -> None:
         planted = [p for p in _results().planted if p.error == name]
         assert planted
         assert all(p.caught for p in planted), name
+
+
+def test_the_floor_holds_what_the_drug_check_now_catches() -> None:
+    # Raised with part 3e (Opus review of PR #61), so losing the drug check fails CI.
+    baseline = json.loads((FOLDER / "baseline.json").read_text(encoding="utf-8"))
+    assert baseline["catch_rate"]["quote_same_date"] == 0.8
+    assert baseline["rule_catch_rate"]["quote_same_date"] == 0.8
+    assert baseline["rule_catch_rate"]["drug_in_release"] == 0.759
+    assert baseline["rule_catch_rate"]["drug_elsewhere"] == 0.993
+    without = [check for check in CHECKS if check.__name__ != "_drug_named"]
+    assert len(without) == len(CHECKS) - 1
+    problems = floor_problems(scores(run(_corpus(), checks=without)), baseline)
+    assert "quote_same_date: catch_rate fell to 0.0, below the floor 0.8" in problems

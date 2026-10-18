@@ -7,6 +7,7 @@ name it goes by, is written in the quote, or within the 1,000 characters before 
 drug of the company named after it. Every correct gold-set claim must pass or not apply.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime
 from functools import cache
 from pathlib import Path
@@ -47,6 +48,7 @@ from catalyst.verify.drug import (
     other_drugs,
 )
 from catalyst.verify.planted import ERRORS, Corpus, Record, load_corpus, plant
+from catalyst.verify.planted_report import run, scores
 from catalyst.verify.rules import CheckResult, Outcome
 from conftest import REPO_ROOT
 
@@ -64,7 +66,7 @@ def _refs(record: Record, corpus: Corpus) -> list[DrugRef]:
     """Return the record's own drug in the reference tables, as the matching job would link it."""
     return [
         d
-        for d in corpus.drug_refs
+        for d in corpus.drug_records
         if d.company_id == record.company_id and record.value["drug"] in dict(d.names)
     ]
 
@@ -72,13 +74,20 @@ def _refs(record: Record, corpus: Corpus) -> list[DrugRef]:
 def _check(
     record: Record, corpus: Corpus, *, drug: str | None = None, extra: tuple[str, ...] = ()
 ) -> CheckResult:
-    """Run the check on a gold record as the job does, with its company's other drugs."""
+    """Run the check on a gold record as the job does: its company's other drugs, and its release's."""
     names = drug_names(record.value["drug"] if drug is None else drug, _refs(record, corpus))
     if names is not None and extra:
         names = DrugNames(names.shown, (*names.names, *extra))
-    others = other_drugs(corpus.drug_refs, {record.company_id}, names)
+    release = [r for r in (*corpus.records, *corpus.left_out) if r.document == record.document]
+    beside = [r.value["drug"] for r in release if r.id != record.id]
+    others = other_drugs(corpus.drug_records, {record.company_id}, names, beside)
     text = corpus.texts[record.document]
     return drug_named(text, record.quote, record.quote_start, record.quote_end, names, others)
+
+
+def _every_drug(corpus: Corpus) -> Corpus:
+    """Put every gold drug on file, brand and generic names too, which production does not."""
+    return replace(corpus, drug_records=corpus.drug_refs)
 
 
 def _record(drug: str | None, date_text: str) -> Record:
@@ -485,3 +494,132 @@ def test_an_empty_database_stores_nothing(
     session_factory: sessionmaker[Session], store: _CountingStore
 ) -> None:
     assert check_drug_named(session_factory, store, lambda: NOW) == DrugReport()
+
+
+# --- Production-like reference tables (Opus review of PR #61) ---------------------------------
+#
+# Production stores a drug record only for a company's new code name (`resolve_claims`), so
+# brand and generic names such as LIVMARLI and Brelovitug are not on file. The drugs the
+# release's other claims name stand in for them.
+
+
+def test_the_planted_test_holds_only_the_drug_records_production_holds() -> None:
+    names = {name for d in _corpus().drug_records for name, _ in d.names}
+    assert names == {"ABP-450", "SPY003", "SPY072"}
+
+
+def test_another_claims_drug_in_the_same_release_counts_as_another_drug() -> None:
+    drug = drug_names("Brelovitug", [])
+    assert other_drugs([], set(), drug, ["LIVMARLI", "brelovitug", None, "volixibat", "LIVMARLI"]) == (
+        _names("LIVMARLI"),
+        _names("volixibat"),
+    )
+    text = "LIVMARLI EXPAND Phase 3 study topline results expected in Q4 2026."
+    result = _alone(text, text, drug, *other_drugs([], set(), drug, ["LIVMARLI"]))
+    assert (result.outcome, result.reason) == (Outcome.FAIL, "the quote names LIVMARLI, not Brelovitug")
+
+
+def test_with_every_drug_on_file_every_correct_gold_claim_still_passes() -> None:
+    corpus = _every_drug(_corpus())
+    for record in corpus.records:
+        expected = Outcome.NOT_APPLICABLE if record.value["drug"] is None else Outcome.PASS
+        assert _check(record, corpus).outcome is expected, record.value["drug"]
+
+
+def test_with_production_like_tables_the_same_date_swaps_are_still_caught() -> None:
+    """The page's drug-check numbers rest only on what production holds (Opus review of PR #61).
+
+    With code names alone on file, 4 of 5 same-date swaps are caught, as with every drug on file.
+    A wrong drug from the same release is caught a little less often: when the copy replaced the
+    only claim naming the true drug, and that drug is a brand or generic name (TG's BRIUMVI and
+    azer-cel, Mirum's LIVMARLI and zilurgisertib), nothing on file names it.
+    """
+    like, full = scores(run(_corpus())), scores(run(_every_drug(_corpus())))
+    assert like["errors"]["quote_same_date"]["caught"] == full["errors"]["quote_same_date"]["caught"] == 4
+    assert like["errors"]["drug_in_release"]["caught_by_rules"] == 22
+    assert full["errors"]["drug_in_release"]["caught_by_rules"] == 26
+    assert like["clean"] == full["clean"]
+
+
+def test_the_job_counts_the_drugs_its_releases_other_claims_name(
+    session_factory: sessionmaker[Session], store: _CountingStore, spyre: UUID
+) -> None:
+    """No drug is on file; SPY003 is known only because another claim of the release names it."""
+    with session_factory.begin() as session:
+        document = _document(session, store)
+        link_company_document(session, spyre, document, DocumentMatch.SEC_CIK)
+        _claim(session, document, "SPY003", NAMES_SPY003, 1)
+        swapped = _claim(session, document, "SPY072", NAMES_SPY003, 2)
+        own = _claim(session, document, "SPY072", OWN, 3)
+    check_drug_named(session_factory, store, lambda: NOW)
+    outcomes = _outcomes(session_factory)
+    assert outcomes[swapped] == ("fail", "the quote names SPY003, not SPY072")
+    assert outcomes[own] == ("pass", None)
+
+
+# --- Hidden characters, combinations, and the window's size (Opus review of PR #61) -----------
+
+
+@pytest.mark.parametrize("hidden", ["­", "​", "‌", "‍", "⁠", "﻿"])
+def test_a_hidden_character_inside_a_name_does_not_hide_it(hidden: str) -> None:
+    text = f"Topline data for SPY{hidden}002 are expected in 2027."
+    assert _alone(text, text, _names("SPY002")).outcome is Outcome.PASS
+    assert _alone(
+        "Topline data for SPY002.", "Topline data for SPY002.", _names(f"SPY{hidden}002")
+    ).outcome is (Outcome.PASS)
+
+
+@pytest.mark.parametrize("hidden", ["­", "‍", "⁠", "﻿"])
+def test_a_hidden_character_does_not_make_a_longer_name_a_whole_word(hidden: str) -> None:
+    for text in (f"Data for X{hidden}SPY002 in 2027.", f"Data for SPY002{hidden}A in 2027."):
+        assert _alone(text, text, _names("SPY002")).outcome is Outcome.FAIL, repr(text)
+
+
+COMBO = "SPY072 + IL-17A/F"
+
+
+def test_a_single_drug_claim_last_named_inside_a_combination_is_held() -> None:
+    """The quote may be about the combination, not the drug alone, so it goes to review."""
+    before = f"{COMBO} data were presented. {QUOTE}"
+    result = _alone(before, QUOTE, _names("SPY072"), _names(COMBO))
+    assert (result.outcome, result.reason) == (
+        Outcome.FAIL,
+        "the quote and the text just before it do not name SPY072",
+    )
+    inside = f"Topline data for {COMBO} are expected in 2027."
+    result = _alone(inside, inside, _names("SPY072"), _names(COMBO))
+    assert (result.outcome, result.reason) == (Outcome.FAIL, f"the quote names {COMBO}, not SPY072")
+    alone = f"{COMBO} data were presented. SPY072 completed enrollment. {QUOTE}"
+    assert _alone(alone, QUOTE, _names("SPY072"), _names(COMBO)).outcome is Outcome.PASS
+
+
+def test_a_drug_inside_the_combinations_own_name_is_not_another_drug() -> None:
+    text = f"{COMBO} data were presented. {QUOTE}"
+    assert _alone(text, QUOTE, _names(COMBO), _names("SPY072")).outcome is Outcome.PASS
+
+
+def test_a_combinations_drugs_must_be_named_near_each_other() -> None:
+    far = "SPY072 completed enrollment." + " " * 300 + f"IL-17A/F is approved. {QUOTE}"
+    result = _alone(far, QUOTE, _names(COMBO))
+    assert (result.outcome, result.reason) == (
+        Outcome.FAIL,
+        f"the quote and the text just before it do not name {COMBO}",
+    )
+    near = "SPY072 in combination with IL-17A/F is planned." + " " * 600 + QUOTE
+    assert _alone(near, QUOTE, _names(COMBO)).outcome is Outcome.PASS
+    # Parts named at different distances: the drug alone, named after the pair, is another drug.
+    later = "SPY072 in combination with IL-17A/F is planned." + " " * 600 + f"SPY072 alone. {QUOTE}"
+    result = _alone(later, QUOTE, _names(COMBO), _names("SPY072"))
+    assert (result.outcome, result.reason) == (
+        Outcome.FAIL,
+        f"the text just before the quote names SPY072 after {COMBO}",
+    )
+    assert _alone(later, QUOTE, _names(COMBO)).outcome is Outcome.PASS
+
+
+def test_the_window_is_one_thousand_characters() -> None:
+    assert LOOK_BACK == 1_000
+    at_edge = "SPY072" + " " * 994 + QUOTE  # "SPY072" starts 1,000 characters before the quote
+    assert _alone(at_edge, QUOTE, _names("SPY072")).outcome is Outcome.PASS
+    beyond = "SPY072" + " " * 995 + QUOTE
+    assert _alone(beyond, QUOTE, _names("SPY072")).outcome is Outcome.FAIL

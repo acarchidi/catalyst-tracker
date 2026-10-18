@@ -8,7 +8,7 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 | Another date from the same quote, stored consistently | 11 | 11 | 1 | 11 | 0 |
 | Date moved into the past | 17 | 17 | 17 | 17 | 0 |
 | FDA decision date outside its review window | 1 | 1 | 1 | 1 | 0 |
-| Wrong drug (another in the same release) | 29 | 29 | 26 | 29 | 0 |
+| Wrong drug (another in the same release) | 29 | 29 | 22 | 29 | 0 |
 | Wrong drug (another company's drug) | 150 | 150 | 149 | 150 | 0 |
 | Wrong event type | 221 | 221 | 17 | 221 | 0 |
 | Wrong company | 153 | 153 | 153 | 0 | 0 |
@@ -16,7 +16,7 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 | Wrong phase (registry phase contradicts the quote) | 128 | 128 | 128 | 0 | 0 |
 | Quote from an unrelated sentence | 17 | 17 | 17 | 0 | 0 |
 | Quote from another event with the same date words | 5 | 4 | 4 | 0 | 1 |
-| **All errors** | **1163** | **1162** | **944** | **477** | **1** |
+| **All errors** | **1163** | **1162** | **940** | **477** | **1** |
 
 - **Caught**: at least one check failed the copy, so it goes to the review queue, not the site.
 - **Caught without the second reading**: a rule check failed it too.
@@ -24,7 +24,7 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 - **Missed**: every check passed the copy, so it would have published.
 - **Wrong quarter, half, month, or year (date words left as they were)**: Only the stored window changes, so it no longer matches its own date words; a rule catches that by construction. The next row is the harder case.
 - **Another date from the same quote, stored consistently**: Only the second reading catches these (a rule only when the other date has passed), and in this test it never misreads.
-- **Wrong drug (another in the same release)**: The drug check catches these unless the quote names both drugs (one Spyre sentence names SPY072 alone and with IL-17A/F); then only the second reading does, and in this test it never misreads.
+- **Wrong drug (another in the same release)**: The drug check catches most of these. It misses them when the quote names both drugs (one Spyre sentence names SPY072 alone and with IL-17A/F), or when the true drug is a brand or generic name that no other claim of the release names: production keeps records only of code names, and this test checks with those alone. Then only the second reading catches them, and in this test it never misreads.
 - **Wrong phase (registry phase contradicts the quote)**: Built to be exactly what the phase check looks for, so this row shows that the check works, not how often such errors are caught.
 - **Quote from another event with the same date words**: The drug check (`drug_named_near_quote`) catches every copy whose sentence is about another drug.
 

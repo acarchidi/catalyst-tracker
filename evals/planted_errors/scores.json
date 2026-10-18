@@ -50,7 +50,7 @@
     "drug_in_release": {
       "planted": 29,
       "caught": 29,
-      "caught_by_rules": 26,
+      "caught_by_rules": 22,
       "corrected": 29,
       "missed": 0
     },

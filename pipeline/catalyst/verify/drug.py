@@ -11,8 +11,10 @@ and passes when the claim's drug is named:
 A drug is named by the claim's own drug name or any name the reference tables give the drug it
 was matched to. A name is found as the resolver compares drug names (case, marks, spaces, and
 dashes do not count, so "SPY-003" and "spy 003" name SPY003) and as whole words ("SPY0031" does
-not). A combination ("SPY072 + IL-17A/F") is named when each of its drugs is. A claim with no
-drug, such as a trial of several drugs, is not applicable.
+not). Hidden characters (a soft hyphen, a zero-width space) are looked past. A combination
+("SPY072 + IL-17A/F") is named when each of its drugs is, within `NEAR` characters of each other.
+A drug's name inside another drug's longer name ("SPY072" in "SPY072 + IL-17A/F") does not name
+it. A claim with no drug, such as a trial of several drugs, is not applicable.
 
 The check cannot tell two events of the same drug apart: a quote from the drug's other sub-study,
 with the same date words, passes.
@@ -56,6 +58,11 @@ _MARKS = re.compile(r"[®™©℠]")
 # What may sit between the letters and digits of one name: "SPY 003", "SPY-003", "IL-17A/F".
 _GAP = re.compile(r"[\s/+®™©℠\-\u2010-\u2015]")
 _PLUS = re.compile(r"\s*\+\s*")
+# Characters a reader does not see, which copies of releases sometimes carry inside or beside a
+# name: soft hyphen, zero-width space and (non-)joiners, word joiner, byte-order mark.
+_HIDDEN = frozenset("\u00ad\u200b\u200c\u200d\u2060\ufeff")
+# A combination's drugs must be named within this many characters, about one sentence.
+NEAR = 200
 
 Span = tuple[int, int]
 
@@ -85,15 +92,29 @@ def drug_names(drug: str | None, matched: Iterable[DrugRef]) -> DrugNames | None
 
 
 def other_drugs(
-    drugs: Iterable[DrugRef], companies: Collection[UUID], claim: DrugNames | None
+    drugs: Iterable[DrugRef],
+    companies: Collection[UUID],
+    claim: DrugNames | None,
+    beside: Iterable[str | None] = (),
 ) -> tuple[DrugNames, ...]:
-    """Return the companies' other drugs: every drug of theirs that shares no name with the claim's."""
+    """Return the other drugs a quote might be about instead of the claim's.
+
+    They are every drug of the companies' that shares no name with the claim's, and every drug
+    the release's other claims name (`beside`). Production stores a drug record only for a new
+    code name, so brand and generic names such as LIVMARLI are known only from those claims
+    (Opus review of PR #61).
+    """
     mine = {name_key(name) for name in claim.names} if claim else set[str]()
     found: list[DrugNames] = []
     for ref in drugs:
         names = _names(*(name for name, _ in ref.names))
         if ref.company_id in companies and names and not mine & {name_key(n) for n in names}:
             found.append(DrugNames(names[0], names))
+    known = mine | {name_key(name) for other in found for name in other.names}
+    for name in beside:
+        if name and (key := name_key(name)) and key not in known:
+            known.add(key)
+            found.append(DrugNames(name.strip(), (name.strip(),)))
     return tuple(found)
 
 
@@ -126,10 +147,15 @@ class _Text:
         return self._found[key]
 
     def _whole(self, start: int, end: int) -> bool:
-        text = self.text
-        if (start > 0 and text[start - 1].isalnum()) or (end < len(text) and text[end].isalnum()):
+        """Say whether the span is whole words: hidden characters are looked past, as a reader would."""
+        text, before, after = self.text, start - 1, end
+        while before >= 0 and text[before] in _HIDDEN:
+            before -= 1
+        while after < len(text) and text[after] in _HIDDEN:
+            after += 1
+        if (before >= 0 and text[before].isalnum()) or (after < len(text) and text[after].isalnum()):
             return False
-        return all(char.isalnum() or _GAP.fullmatch(char) for char in text[start:end])
+        return all(char.isalnum() or char in _HIDDEN or _GAP.fullmatch(char) for char in text[start:end])
 
 
 @lru_cache(maxsize=16)
@@ -142,27 +168,35 @@ def _parts(name: str) -> list[str]:
     return parts if len(parts) > 1 else []
 
 
-def _latest(text: _Text, name: str, end: int) -> int | None:
-    """Return the latest start from which the text up to `end` names the drug by this name."""
-    whole = [start for start, stop in text.spans(name) if stop <= end]
-    latest = max(whole, default=None)
-    parts = [[start for start, stop in text.spans(part) if stop <= end] for part in _parts(name)]
-    if parts and all(parts):
-        combined = min(max(starts) for starts in parts)
-        latest = combined if latest is None else max(latest, combined)
-    return latest
+def _within(inner: Span, outer: Span) -> bool:
+    return outer[0] <= inner[0] and inner[1] <= outer[1]
 
 
-def _other(
-    text: _Text, others: Sequence[DrugNames], start: int, end: int, mine: Sequence[Span]
+def _mentions(text: _Text, drug: DrugNames, end: int) -> list[Span]:
+    """Every stretch ending by `end` that names the drug.
+
+    That is one of its names, or, for a combination, each of its drugs within `NEAR` characters
+    of the first.
+    """
+    found: list[Span] = []
+    for name in drug.names:
+        found += [span for span in text.spans(name) if span[1] <= end]
+        groups = [[span for span in text.spans(part) if span[1] <= end] for part in _parts(name)]
+        for first in (span for group in groups for span in group):
+            fits = [[s for s in group if s[0] >= first[0] and s[1] <= first[0] + NEAR] for group in groups]
+            if all(fits):
+                found.append((first[0], max(min(stop for _, stop in fit) for fit in fits)))
+    return found
+
+
+def _first(
+    theirs: Sequence[tuple[Span, str]], start: int, end: int, mine: Sequence[Span]
 ) -> tuple[int, str] | None:
-    """Return the first place another drug is named in [start, end), outside the claim's own names."""
+    """Return the first other drug named in [start, end), apart from those inside the claim's own names."""
     found = [
-        (begin, other.shown)
-        for other in others
-        for name in other.names
-        for begin, stop in text.spans(name)
-        if start <= begin and stop <= end and not any(b < stop and begin < e for b, e in mine)
+        (span[0], shown)
+        for span, shown in theirs
+        if start <= span[0] and span[1] <= end and not any(_within(span, m) for m in mine)
     ]
     return min(found, default=None)
 
@@ -170,30 +204,33 @@ def _other(
 def drug_named(
     text: str, quote: str, start: int, end: int, drug: DrugNames | None, others: Sequence[DrugNames]
 ) -> CheckResult:
-    """Pass when the drug is named in the quote, or just before it with no other drug named after it."""
+    """Pass when the drug is named in the quote, or just before it with no other drug named after it.
+
+    A mention inside another drug's longer name ("SPY072" in "SPY072 + IL-17A/F") does not count:
+    the quote may be about the combination, so the claim waits for review.
+    """
     if drug is None:
         return CheckResult(CHECK, Outcome.NOT_APPLICABLE, "the claim names no drug")
     if text[start:end] != quote:
         return CheckResult(CHECK, Outcome.FAIL, "the quote is not at its stored place in the stored copy")
     index = _indexed(text)
-    latest = max((at for name in drug.names if (at := _latest(index, name, end)) is not None), default=None)
+    theirs = [(span, other.shown) for other in others for name in other.names for span in index.spans(name)]
+    mine = [
+        m
+        for m in _mentions(index, drug, end)
+        if not any(_within(m, span) and m != span for span, _ in theirs)
+    ]
+    latest = max((m[0] for m in mine), default=None)
     if latest is not None and latest >= start:
         return CheckResult(CHECK, Outcome.PASS)
     if latest is None or latest < start - LOOK_BACK:
-        named = _other(index, others, start, end, ())
+        named = _first(theirs, start, end, ())
         if named:
             return CheckResult(CHECK, Outcome.FAIL, f"the quote names {named[1]}, not {drug.shown}")
         return CheckResult(
             CHECK, Outcome.FAIL, f"the quote and the text just before it do not name {drug.shown}"
         )
-    mine = [
-        span
-        for name in drug.names
-        for each in (name, *_parts(name))
-        for span in index.spans(each)
-        if latest <= span[0] and span[1] <= end
-    ]
-    named = _other(index, others, start, end, mine) or _other(index, others, latest, start, mine)
+    named = _first(theirs, start, end, mine) or _first(theirs, latest, start, mine)
     if named is None:
         return CheckResult(CHECK, Outcome.PASS)
     if named[0] >= start:
@@ -288,8 +325,12 @@ def check_drug_named(
             .where(claim.c.agent == ROLE, claim.c.field.startswith("catalyst:"))
             .order_by(claim.c.extracted_at, claim.c.id)
         )
+        rows = session.execute(query).all()
+        beside: dict[UUID, list[tuple[UUID, str | None]]] = {}
+        for row in rows:
+            beside.setdefault(row.source_document_id, []).append((row.id, _drug(row.value)))
         texts: dict[UUID, str | CheckResult] = {}
-        for row in session.execute(query).all():
+        for row in rows:
             names = drug_names(_drug(row.value), matched.get(row.id, []))
             if names is None:
                 result = drug_named("", row.quote, row.quote_start, row.quote_end, None, ())
@@ -297,7 +338,8 @@ def check_drug_named(
                 if row.source_document_id not in texts:
                     texts[row.source_document_id] = _read(store, row.snapshot_key, row.content_type, report)
                 text = texts[row.source_document_id]
-                others = other_drugs(drugs, owners.get(row.source_document_id, set()), names)
+                named = [drug for claim_id, drug in beside[row.source_document_id] if claim_id != row.id]
+                others = other_drugs(drugs, owners.get(row.source_document_id, set()), names, named)
                 result = (
                     text
                     if isinstance(text, CheckResult)

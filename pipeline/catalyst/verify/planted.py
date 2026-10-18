@@ -81,6 +81,9 @@ class Corpus:
     drugs: tuple[str, ...]
     references: ReferenceData
     drug_refs: tuple[DrugRef, ...]  # the drugs in `references`, with their companies
+    # The drug records production holds: `resolve_claims` stores only a company's new code names,
+    # so brand and generic names (LIVMARLI, azer-cel) are not on file (Opus review of PR #61).
+    drug_records: tuple[DrugRef, ...]
     phases: Mapping[UUID, TrialPhase | None]
     company_trials: Mapping[UUID, tuple[UUID, ...]]
     trial_names: Mapping[UUID, str]
@@ -199,6 +202,7 @@ def load_corpus(
         drugs=tuple(drugs[key] for key in sorted(drugs)),
         references=references,
         drug_refs=drug_refs,
+        drug_records=tuple(d for d in drug_refs if all(k is DrugNameKind.CODE for _, k in d.names)),
         phases={trial.id: phase for trial, phase in trials},
         company_trials={c: tuple(ids) for c, ids in company_trials.items()},
         trial_names={
@@ -428,11 +432,14 @@ ERRORS: tuple[ErrorType, ...] = (
     _error("pdufa_outside_review", "FDA decision date outside its review window", "window", _pdufa_outside,
            "the date still falls within 15 months of the release."),
     _error("drug_in_release", "Wrong drug (another in the same release)", "drug", _drug_in_release,
-           "the quote names both drugs, so the drug check passes, and the other drug is the same "
-           "company's, so it matches; only the second reading compares drugs.",
-           "The drug check catches these unless the quote names both drugs (one Spyre sentence names "
-           "SPY072 alone and with IL-17A/F); then only the second reading does, and in this test it never "
-           "misreads."),
+           "the quote names both drugs, or its true drug is a brand or generic name that no other claim "
+           "of the release names, so the drug check passes, and the other drug is the same company's, so "
+           "it matches; only the second reading compares drugs.",
+           "The drug check catches most of these. It misses them when the quote names both drugs (one "
+           "Spyre sentence names SPY072 alone and with IL-17A/F), or when the true drug is a brand or "
+           "generic name that no other claim of the release names: production keeps records only of code "
+           "names, and this test checks with those alone. Then only the second reading catches them, and "
+           "in this test it never misreads."),
     _error("drug_elsewhere", "Wrong drug (another company's drug)", "drug", _drug_elsewhere,
            "the drug name is a generic or brand name, which matches under any company."),
     _error("wrong_type", "Wrong event type", "type", _wrong_type,
