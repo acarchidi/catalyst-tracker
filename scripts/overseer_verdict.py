@@ -14,8 +14,9 @@ Anything missing, malformed, or unexpected in the answer means a fail with a pla
 and no action but that message. Standard library only: the workflow runs it with `python3 -I`.
 
 Commands:
-  budget --config TOML --runs RUNS_JSON --run-id ID
+  budget --config TOML --runs RUNS_JSON --run-id ID --run-attempt N
       Print GitHub step outputs `allowed=true|false` and, when not allowed, `skip=MESSAGE`.
+      Every attempt of every run counts, this run's earlier attempts included.
   judge REPORT_PATH
       Write the plain-English report; exit 0 only on a pass.
   act
@@ -31,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import html
 import json
 import os
 import re
@@ -78,6 +80,21 @@ MAX_FINDINGS = 20
 MAX_DECISIONS = 3
 LONG = 2000
 SHORT = 300
+# GitHub refuses a comment or issue body over 65,536 characters, and an issue title over 256.
+MAX_BODY = 60_000
+MAX_TITLE = 200
+CUT_NOTE = "_The rest was cut off here, because GitHub does not take a text this long._\n"
+
+# Text from the model or an author is shown, never obeyed by GitHub (see `clean`).
+INVISIBLE = re.compile(
+    r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e"
+    r"\u2060-\u206f\ufeff\ufff9-\ufffb]"
+)
+SECRET = re.compile(r"(?:sk-ant-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{8,}")
+URL = re.compile(r"(?:https?://|www\.)[^\s`<>]+", re.IGNORECASE)
+CROSS_REF = re.compile(r"([\w.-]+/[\w.-]+)#(?=\d)")
+MENTION = re.compile(r"@(?=[A-Za-z0-9])")
+BREAK = "\u200b"  # a zero-width space: GitHub sees no mention or reference, the reader sees no change
 
 Runner = Callable[[list[str], str | None], str]
 
@@ -222,7 +239,9 @@ def validate(raw: str, mode: str, expected: Sequence[int]) -> Plan:
     """Return the checked plan, or raise InvalidError naming (never quoting) the problem."""
     try:
         parsed: Any = json.loads(raw, object_pairs_hook=_no_duplicate_keys)
-    except json.JSONDecodeError as exc:
+    except RecursionError as exc:  # nested too deeply to read
+        raise InvalidError("the answer is not JSON that can be read") from exc
+    except ValueError as exc:  # JSONDecodeError, and numbers too long to read
         raise InvalidError("the answer is not JSON") from exc
     top = _object(parsed, TOP_KEYS, "the answer")
     items = _list(top["pull_requests"], "pull_requests", MAX_PULLS)
@@ -252,10 +271,40 @@ def validate(raw: str, mode: str, expected: Sequence[int]) -> Plan:
 # --- Plain-English reports -------------------------------------------------------------------------
 
 
+def _plain(text: str) -> str:
+    """Make text show as written: no HTML, links, mentions, or cross-repository references."""
+    text = text.replace("\\", "\\\\")  # first, so a backslash cannot undo the escapes below
+    text = html.escape(text, quote=False)  # & < >: no tags, comments, or entities such as &#64;
+    for char in "[]`":  # no links, images, link definitions, or code spans to pair with a URL's
+        text = text.replace(char, "\\" + char)
+    text = CROSS_REF.sub(rf"\1#{BREAK}", text)
+    return MENTION.sub("@" + BREAK, text)
+
+
 def clean(text: str) -> str:
-    """Neutralise @-mentions and hidden HTML comments in text written by the model or an author."""
-    text = text.replace("<!--", "&lt;!--").replace("-->", "--&gt;")
-    return re.sub(r"@(?=[A-Za-z0-9])", "@​", text)
+    """Neutralise text written by the model or an author before it is posted on GitHub.
+
+    Removes invisible and direction-changing characters, redacts key-shaped strings, and makes
+    HTML, links, images, @-mentions, and other-repository references show as plain text. A URL
+    is kept, but as code, so it does not render as a link.
+    """
+    text = SECRET.sub("[redacted]", INVISIBLE.sub("", text))
+    parts: list[str] = []
+    start = 0
+    for match in URL.finditer(text):
+        parts += [_plain(text[start : match.start()]), f"`{match.group()}`"]
+        start = match.end()
+    return "".join([*parts, _plain(text[start:])])
+
+
+def cap(body: str) -> str:
+    """Cut a body below GitHub's limit at a line end (so no URL's code span is split), with a note."""
+    if len(body) <= MAX_BODY:
+        return body
+    head = body[: MAX_BODY - len(CUT_NOTE) - 2]
+    if "\n" in head:
+        head = head[: head.rindex("\n")]
+    return f"{head}\n\n{CUT_NOTE}"
 
 
 def _cell(text: str) -> str:
@@ -338,24 +387,37 @@ def load_limit(text: str | None) -> int:
     return value
 
 
-def runs_used(runs: Sequence[dict[str, Any]], current_run_id: int) -> int:
-    """Count today's overseer runs that may have spent: not this one, not skipped, not Dependabot's."""
-    return sum(
-        1
+def _attempts(run: dict[str, Any]) -> int:
+    """How many times a run was attempted; one when the number is missing or odd."""
+    value = run.get("run_attempt")
+    return value if type(value) is int and value > 1 else 1
+
+
+def runs_used(runs: Sequence[dict[str, Any]], current_run_id: int, current_attempt: int = 1) -> int:
+    """Count today's model calls so far: every attempt of every other run, and this run's earlier ones.
+
+    Runs whose jobs were skipped (drafts) and Dependabot's runs never reach the model, so they do
+    not count. A re-run is a new attempt of the same run, and each attempt may call the model.
+    """
+    others = sum(
+        _attempts(run)
         for run in runs
         if run.get("id") != current_run_id
         and run.get("conclusion") != "skipped"
         and run.get("actor") != DEPENDABOT
     )
+    return others + max(current_attempt, 1) - 1
 
 
-def budget(config: str | None, runs: Sequence[dict[str, Any]], current_run_id: int) -> tuple[bool, str]:
+def budget(
+    config: str | None, runs: Sequence[dict[str, Any]], current_run_id: int, current_attempt: int = 1
+) -> tuple[bool, str]:
     """Return whether this run may call the model, and a plain one-line message."""
     try:
         limit = load_limit(config)
     except InvalidError as exc:
         return False, f"The overseer did not run: {exc}."
-    used = runs_used(runs, current_run_id)
+    used = runs_used(runs, current_run_id, current_attempt)
     if used >= limit:
         return False, (
             f"The daily limit of {limit} overseer runs (UTC day) was reached, so the overseer did not "
@@ -425,9 +487,9 @@ class GitHub:
         return self._get(f"actions/runs?head_sha={sha}&per_page=100")["workflow_runs"]
 
     def bot_issues(self) -> list[dict[str, Any]]:
-        """Open issues (not pull requests) written by the workflow bot."""
+        """Issues (not pull requests), open or closed, written by the workflow bot."""
         issues: list[dict[str, Any]] = self._get(
-            "issues?state=open&creator=github-actions%5Bbot%5D&per_page=100", paginate=True
+            "issues?state=all&creator=github-actions%5Bbot%5D&per_page=100", paginate=True
         )
         return [i for i in issues if "pull_request" not in i and _login(i) == BOT]
 
@@ -435,7 +497,10 @@ class GitHub:
     def create_comment(self, number: int, body: str) -> None:
         """Post a new comment."""
         self._write(
-            f"post the overseer comment on #{number}", "POST", f"issues/{number}/comments", {"body": body}
+            f"post the overseer comment on #{number}",
+            "POST",
+            f"issues/{number}/comments",
+            {"body": cap(body)},
         )
 
     def update_comment(self, comment_id: int, number: int, body: str) -> None:
@@ -444,7 +509,7 @@ class GitHub:
             f"update the overseer comment on #{number}",
             "PATCH",
             f"issues/comments/{comment_id}",
-            {"body": body},
+            {"body": cap(body)},
         )
 
     def add_hold(self, number: int) -> None:
@@ -479,11 +544,13 @@ class GitHub:
 
     def create_issue(self, what: str, title: str, body: str) -> dict[str, Any] | None:
         """Open an issue (no labels, no assignees)."""
-        return self._write(f"open {what}", "POST", "issues", {"title": title, "body": body})
+        payload = {"title": title[:MAX_TITLE], "body": cap(body)}
+        return self._write(f"open {what}", "POST", "issues", payload)
 
     def update_issue(self, what: str, number: int, title: str, body: str) -> None:
         """Replace an issue's title and body."""
-        self._write(f"update {what} (#{number})", "PATCH", f"issues/{number}", {"title": title, "body": body})
+        payload = {"title": title[:MAX_TITLE], "body": cap(body)}
+        self._write(f"update {what} (#{number})", "PATCH", f"issues/{number}", payload)
 
     def pin_issue(self, node_id: str) -> None:
         """Pin an issue to the repository's issue list."""
@@ -542,10 +609,18 @@ def upsert_decision(gh: GitHub, decision: Decision, issues: list[dict[str, Any]]
     )
     title = f"Owner decision: {clean(decision.title)}"
     found = [i for i in issues if str(i.get("body", "")).startswith(marker)]
-    if found:
-        gh.update_issue("the owner-decision issue", int(found[0]["number"]), title, body)
+    still_open = [i for i in found if _is_open(i)]
+    if still_open:
+        gh.update_issue("the owner-decision issue", int(still_open[0]["number"]), title, body)
+    elif found:
+        # Closing the issue settles the question; the overseer does not open it again.
+        print(f"Owner decision {decision.key}: issue #{found[0]['number']} was closed, so it stays closed.")
     else:
         gh.create_issue("an owner-decision issue", title, body)
+
+
+def _is_open(issue: dict[str, Any]) -> bool:
+    return issue.get("state", "open") == "open"
 
 
 def status_body(plan: Plan, pulls: dict[int, dict[str, Any]], now: datetime) -> str:
@@ -579,7 +654,7 @@ def upsert_status(
 ) -> None:
     """Update the Build status issue, or open and pin it."""
     body = status_body(plan, pulls, now)
-    found = [i for i in issues if str(i.get("body", "")).startswith(STATUS_MARKER)]
+    found = [i for i in issues if str(i.get("body", "")).startswith(STATUS_MARKER) and _is_open(i)]
     if found:
         gh.update_issue("the Build status issue", int(found[0]["number"]), STATUS_TITLE, body)
         return
@@ -691,6 +766,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--config", type=Path, required=True)
     b.add_argument("--runs", type=Path, required=True)
     b.add_argument("--run-id", type=int, required=True)
+    b.add_argument("--run-attempt", type=int, required=True)
     j = sub.add_parser("judge")
     j.add_argument("report", type=Path)
     sub.add_parser("act")
@@ -699,7 +775,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "budget":
         config = args.config.read_text(encoding="utf-8") if args.config.is_file() else None
         runs = json.loads(args.runs.read_text(encoding="utf-8"))
-        allowed, message = budget(config, runs, args.run_id)
+        allowed, message = budget(config, runs, args.run_id, args.run_attempt)
         print(f"allowed={'true' if allowed else 'false'}")
         print(f"message={message}")
         if not allowed:
