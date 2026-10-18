@@ -3,6 +3,7 @@
 import argparse
 import json
 import sys
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, date, datetime
@@ -38,6 +39,7 @@ from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
+from catalyst.outreach import prospects
 from catalyst.publish.run import decide_claims
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
@@ -50,6 +52,7 @@ from catalyst.snapshots import (
     verify_snapshots,
 )
 from catalyst.verify.advisory import check_advisory_meetings
+from catalyst.verify.company import check_company_named
 from catalyst.verify.planted import load_corpus
 from catalyst.verify.planted_report import render_report
 from catalyst.verify.planted_report import run as run_planted
@@ -161,6 +164,14 @@ def _parser() -> argparse.ArgumentParser:
     planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
     planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     _issue_arguments(commands)
+    check = commands.add_parser(
+        "prospects-check",
+        help="Check the outreach prospect list and print its counts (ADR 0020; sends nothing).",
+    )
+    check.add_argument("--file", type=Path, default=prospects.DEFAULT_PATH, help="Prospect list (CSV).")
+    check.add_argument(
+        "--previous", type=Path, help="An earlier copy; fail if it had a do_not_contact row now missing."
+    )
     return parser
 
 
@@ -224,6 +235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "api": _serve,
         "mcp": _serve,
         "planted-errors": _planted_errors,
+        "prospects-check": _prospects_check,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -343,6 +355,10 @@ def _extract(args: argparse.Namespace) -> int:
                     checks["advisory"] = {
                         "error": f"{type(error).__name__}: the advisory check did not finish"
                     }
+                try:
+                    checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
+                except (SQLAlchemyError, ValueError, OSError) as error:
+                    checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -431,6 +447,10 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
+        try:
+            report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))
@@ -572,6 +592,31 @@ def _planted_errors(args: argparse.Namespace) -> int:
         args.scores.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(counted["errors"], indent=2))
     return 0
+
+
+def _prospects_check(args: argparse.Namespace) -> int:
+    try:
+        rows = prospects.load_prospects(args.file)
+        dropped = (
+            prospects.dropped_do_not_contact(prospects.load_prospects(args.previous), rows)
+            if args.previous
+            else []
+        )
+    except prospects.ProspectsError as error:
+        print("\n".join(error.problems), file=sys.stderr)
+        return 1
+    for row in dropped:
+        print(
+            f"{row.organization}, {row.name}: a do_not_contact row was removed; put it back.", file=sys.stderr
+        )
+    counts = {
+        "rows": len(rows),
+        "with_email": sum(row.email is not None for row in rows),
+        "categories": dict(sorted(Counter(row.category for row in rows).items())),
+        "statuses": {status: sum(row.status == status for row in rows) for status in prospects.STATUSES},
+    }
+    print(json.dumps(counts, indent=2))
+    return 1 if dropped else 0
 
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:

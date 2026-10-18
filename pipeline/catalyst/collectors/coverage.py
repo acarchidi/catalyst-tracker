@@ -60,11 +60,23 @@ _A_COMPANY = re.compile(r"(?:^|[,(\-\u2013]\s*)an?\s+(?P<parent>[^,()]+?)\s+comp
 _PARENTHETICAL = re.compile(r"\s*\([^)]*\)\s*$")
 
 
+def _spelled(text: str) -> str:
+    text = text.casefold().replace("&", " and ")
+    text = _DOTTED.sub(lambda match: match.group(0).replace(".", ""), text)
+    return _SLASHED.sub(r"\1\2", text)
+
+
+def name_words(text: str) -> str:
+    """Return a longer text's words spelled as `normalize_name` spells them, legal-form words kept.
+
+    A company's normalized name appears in a text exactly when it is a run of whole words here.
+    """
+    return " ".join(_WORD.findall(_spelled(text)))
+
+
 def normalize_name(name: str) -> str:
     """Return the name in a form two spellings of one company share: lower case, words only."""
-    text = name.casefold().replace("&", " and ")
-    text = _DOTTED.sub(lambda match: match.group(0).replace(".", ""), text)
-    text = _SLASHED.sub(r"\1\2", text)
+    text = _spelled(name)
     while True:
         shorter = _STATE_SUFFIX.sub("", text)
         shorter = _TRAILING_LEGAL.sub("", shorter)

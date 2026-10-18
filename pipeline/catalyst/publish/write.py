@@ -11,8 +11,9 @@ Recomputed here, because they are plain code over stored rows and can go stale:
 - `advisory_meeting_noticed`, since a notice may have been amended or cancelled;
 - the quote match against the stored copy.
 
-Read as stored: every other check on the gate's list. Today that is `second_reading_agrees`,
-which needs a model call; its job removes outcomes no current reading supports. The entity
+Read as stored: every other check on the gate's list. Today those are `second_reading_agrees`,
+which needs a model call (its job removes outcomes no current reading supports), and
+`company_named_in_source`, a job of its own (part 3d). The entity
 matches and registry phases the rules read are stored inputs, renewed by their own jobs.
 
 A claim the fresh checks hold, or one the writer cannot place safely (a window that does not

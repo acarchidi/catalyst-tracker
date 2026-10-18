@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 
 from catalyst.schemas import TrialPhase
-from catalyst.verify.rules import ClaimFacts, Match, Outcome, rule_checks, stated_phases
+from catalyst.verify.rules import ClaimFacts, Match, Outcome, TrialNames, rule_checks, stated_phases
 
 TODAY = date(2026, 10, 17)
 PUBLISHED = date(2026, 10, 1)
@@ -42,6 +42,7 @@ def _facts(quote: str = "Phase 3 AZURE-1 topline data expected in Q4 2026.", **c
         ),
     )
     phases = changes.pop("trial_phases", {TRIAL: TrialPhase.PHASE_3})
+    names = changes.pop("trial_names", {TRIAL: TrialNames("NCT06111111", "AZURE-1")})
     return ClaimFacts(
         id=uuid4(),
         value=_value(**changes),
@@ -49,6 +50,7 @@ def _facts(quote: str = "Phase 3 AZURE-1 topline data expected in Q4 2026.", **c
         published=PUBLISHED,
         matches=matches,
         trial_phases=phases,
+        trial_names=names,
     )
 
 
@@ -67,6 +69,7 @@ def test_a_clean_claim_passes_every_check() -> None:
         "window_not_past",
         "names_matched",
         "phase_matches_registry",
+        "trial_named_in_quote",
         "pdufa_date_plausible",
     }
 
@@ -263,3 +266,108 @@ def test_the_fifteen_month_limit_runs_to_the_end_of_a_short_month(day: date, exp
 
 def test_the_pdufa_rule_does_not_apply_to_other_catalysts() -> None:
     assert _outcomes(_facts())["pdufa_date_plausible"][0] is Outcome.NOT_APPLICABLE
+
+
+# trial_named_in_quote: a matched trial must be one the quote names (planted-error test).
+# The study names and registry numbers below are Spyre's and Mirum's, as ClinicalTrials.gov has them.
+SKYLINE_UC = TrialNames("NCT07012395", "SKYLINE-UC")
+VANTAGE = TrialNames("NCT05050136", "VANTAGE")
+IMAGINE, IMAGINE_II = TrialNames("NCT02047318", "IMAGINE"), TrialNames("NCT02117713", "IMAGINE-II")
+VANTAGE_QUOTE = (
+    "Completed enrollment in the volixibat VANTAGE Phase 2b study in cholestatic pruritus due to "
+    "primary biliary cholangitis (PBC); topline results expected in Q1 2027."
+)
+
+
+def _trial_check(quote: str, *trials: TrialNames) -> tuple[Outcome, str | None]:
+    ids = [uuid4() for _ in trials]
+    matches = (Match("company", "resolved", COMPANY), *(Match("trial", "resolved", i) for i in ids))
+    facts = _facts(quote, matches=matches, trial_phases={}, trial_names=dict(zip(ids, trials, strict=True)))
+    return _outcomes(facts)["trial_named_in_quote"]
+
+
+@pytest.mark.parametrize(
+    ("quote", "trial"),
+    [
+        (VANTAGE_QUOTE, VANTAGE),
+        ("SKYLINE-UC Part A topline data for SPY003 are expected in Q4 2026.", SKYLINE_UC),
+        ("SKYLINE UC Part A topline data for SPY003 are expected in Q4 2026.", SKYLINE_UC),
+        ("Topline data from NCT07012395 are expected in Q4 2026.", SKYLINE_UC),
+        ("Topline data from nct07012395 are expected in Q4 2026.", SKYLINE_UC),
+        ("Topline data from NCT07012395 are expected in Q4 2026.", TrialNames("NCT07012395", None)),
+        ("IMAGINE-II topline data are expected in Q4 2026.", IMAGINE_II),
+    ],
+    ids=["study name", "dashed study name", "spaced study name", "number", "lower-case number",
+         "number, no study name", "longer of two names"],
+)  # fmt: skip
+def test_a_matched_trial_named_in_the_quote_passes(quote: str, trial: TrialNames) -> None:
+    assert _trial_check(quote, trial) == (Outcome.PASS, None)
+
+
+@pytest.mark.parametrize(
+    ("quote", "trial"),
+    [
+        (VANTAGE_QUOTE, IMAGINE_II),  # another of the company's trials, swapped in
+        ("SKYLINE Part A Ulcerative Colitis SPY003 Sept 2026", SKYLINE_UC),  # the release's short name
+        ("IMAGINE-II topline data are expected in Q4 2026.", IMAGINE),  # part of a longer study name
+        ("Imagine topline data are expected in Q4 2026.", IMAGINE),  # an ordinary word, not the study
+        ("VANTAGE2 topline data are expected in Q4 2026.", VANTAGE),
+        ("Topline data from NCT050501360 are expected in Q4 2026.", VANTAGE),  # nine digits
+        ("Topline data from NCT05050137 are expected in Q4 2026.", VANTAGE),
+        ("Topline data from the SKYLINE trial are expected in Q4 2026.", TrialNames("NCT07012395", None)),
+    ],
+    ids=["another trial", "near-miss short name", "near-miss longer name", "lower-case word",
+         "joined to a digit", "longer number", "another number", "no study name on file"],
+)  # fmt: skip
+def test_a_matched_trial_the_quote_does_not_name_fails(quote: str, trial: TrialNames) -> None:
+    outcome, reason = _trial_check(quote, trial)
+    assert outcome is Outcome.FAIL
+    assert reason is not None
+    assert trial.nct_id in reason
+
+
+def test_every_matched_trial_must_be_named() -> None:
+    outcome, reason = _trial_check(VANTAGE_QUOTE, VANTAGE, IMAGINE_II)
+    assert outcome is Outcome.FAIL
+    assert reason == "the quote does not name the matched trial NCT02117713 (IMAGINE-II)"
+
+
+def test_a_matched_trial_with_no_registry_record_fails() -> None:
+    matches = (Match("company", "resolved", COMPANY), Match("trial", "resolved", uuid4()))
+    outcome, reason = _outcomes(_facts(VANTAGE_QUOTE, matches=matches, trial_names={}))[
+        "trial_named_in_quote"
+    ]
+    assert (outcome, reason) == (Outcome.FAIL, "a matched trial has no registry record")
+
+
+def test_a_resolved_trial_match_without_an_id_fails() -> None:
+    matches = (Match("company", "resolved", COMPANY), Match("trial", "resolved", None))
+    assert _outcomes(_facts(VANTAGE_QUOTE, matches=matches))["trial_named_in_quote"][0] is Outcome.FAIL
+
+
+@pytest.mark.parametrize("status", [None, "unknown", "ambiguous"], ids=["no trial", "unknown", "ambiguous"])
+def test_without_a_resolved_trial_the_check_does_not_apply(status: str | None) -> None:
+    """names_matched already fails an unknown or ambiguous trial; this check is about resolved ones."""
+    trials = () if status is None else (Match("trial", status, None),)
+    facts = _facts(VANTAGE_QUOTE, matches=(Match("company", "resolved", COMPANY), *trials))
+    outcomes = _outcomes(facts)
+    assert outcomes["trial_named_in_quote"][0] is Outcome.NOT_APPLICABLE
+    assert outcomes["names_matched"][0] is (Outcome.PASS if status is None else Outcome.FAIL)
+
+
+def test_an_ambiguous_trial_match_with_a_candidate_id_does_not_apply() -> None:
+    """Only resolved matches are held to their quote; an ambiguous one is left to names_matched."""
+    candidate = uuid4()
+    matches = (Match("company", "resolved", COMPANY), Match("trial", "ambiguous", candidate))
+    facts = _facts(VANTAGE_QUOTE, matches=matches, trial_names={candidate: IMAGINE_II})
+    assert _outcomes(facts)["trial_named_in_quote"][0] is Outcome.NOT_APPLICABLE
+
+
+@pytest.mark.parametrize(
+    "quote",
+    ["Topline data from VANTAGE\u2014the Phase 2b study\u2014are expected in Q1 2027.",
+     "The pivotal trial\u2014VANTAGE\u2014reads out in Q1 2027."],
+    ids=["em dash after", "em dashes around"],
+)  # fmt: skip
+def test_a_study_name_set_against_an_em_dash_is_named(quote: str) -> None:
+    assert _trial_check(quote, VANTAGE) == (Outcome.PASS, None)

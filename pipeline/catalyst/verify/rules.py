@@ -9,13 +9,14 @@ from __future__ import annotations
 import calendar
 import re
 from collections.abc import Callable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, cast
 from uuid import UUID
 
 from catalyst.extract.agent import has_words
 from catalyst.extract.dates import parse_window
+from catalyst.resolve import names_trial
 from catalyst.schemas import CheckOutcome, TrialPhase
 
 PDUFA_MONTHS = 15  # longest standard review (12 months from submission) plus a 3-month extension
@@ -34,8 +35,20 @@ class Match:
 
 
 @dataclass(frozen=True)
+class TrialNames:
+    """What a trial is called: its registry number and, if it has one, the company's study name."""
+
+    nct_id: str
+    study_name: str | None
+
+
+@dataclass(frozen=True)
 class ClaimFacts:
-    """Everything the rule checks read about one claim."""
+    """Everything the rule checks read about one claim.
+
+    A matched trial missing from `trial_names` fails `trial_named_in_quote`, so leaving the
+    names out can only hold a claim back, never let one through.
+    """
 
     id: UUID
     value: Mapping[str, Any]
@@ -43,6 +56,7 @@ class ClaimFacts:
     published: date
     matches: tuple[Match, ...]
     trial_phases: Mapping[UUID, TrialPhase | None]
+    trial_names: Mapping[UUID, TrialNames] = field(default_factory=dict[UUID, TrialNames])
 
 
 @dataclass(frozen=True)
@@ -220,6 +234,25 @@ def _phase_matches_registry(facts: ClaimFacts, _today: date) -> CheckResult:
     return _passed("phase_matches_registry")
 
 
+def _trial_named_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
+    """Check that every trial the claim is matched to is one its quote names.
+
+    A trial counts as named by its registry number or its study name, found the way the resolver
+    finds them. Unknown and ambiguous trial names are left to `names_matched`.
+    """
+    resolved = [m.matched_id for m in facts.matches if m.entity == "trial" and m.status == "resolved"]
+    if not resolved:
+        return _not_applicable("trial_named_in_quote", "no matched trial")
+    for trial in resolved:
+        names = facts.trial_names.get(trial) if trial is not None else None
+        if names is None:
+            return _failed("trial_named_in_quote", "a matched trial has no registry record")
+        if not names_trial(facts.quote, names.nct_id, names.study_name):
+            shown = f"{names.nct_id} ({names.study_name})" if names.study_name else names.nct_id
+            return _failed("trial_named_in_quote", f"the quote does not name the matched trial {shown}")
+    return _passed("trial_named_in_quote")
+
+
 def months_after(start: date, months: int) -> date:
     """Return the same day `months` later, or that month's last day if it is shorter (Oct 31 → Jan 31)."""
     month = start.month - 1 + months
@@ -257,6 +290,7 @@ RULES: tuple[Callable[[ClaimFacts, date], CheckResult], ...] = (
     _window_not_past,
     _names_matched,
     _phase_matches_registry,
+    _trial_named_in_quote,
     _pdufa_date_plausible,
 )
 

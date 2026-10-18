@@ -395,17 +395,41 @@ def test_the_second_reading_is_read_as_stored(world: World) -> None:
 def test_a_required_check_the_writer_does_not_recompute_is_read_from_the_gates_list(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """PR #55 will add checks to the gate's list; the writer reads that list, never a copy."""
+    """A check added to the gate's list is read as stored until the writer recomputes it."""
     claim = world.claim("second half of 2027")
-    monkeypatch.setattr(gate, "REQUIRED_CHECKS", (*gate.REQUIRED_CHECKS, "company_named_in_source"))
-    assert _publish(world)["top_reasons"] == {"company_named_in_source has not run": 1}
+    monkeypatch.setattr(gate, "REQUIRED_CHECKS", (*gate.REQUIRED_CHECKS, "a_future_check"))
+    assert _publish(world)["top_reasons"] == {"a_future_check has not run": 1}
     world.add(
-        ClaimCheck(
-            claim_id=claim, check_name="company_named_in_source", outcome=CheckOutcome.PASS, checked_at=NOW
-        )
+        ClaimCheck(claim_id=claim, check_name="a_future_check", outcome=CheckOutcome.PASS, checked_at=NOW)
     )
     decide_claims(world.factory, world.store, lambda: NOW)  # the decision job sees the new row first
     assert _publish(world)["catalysts_created"] == 1
+
+
+def test_the_company_check_is_read_as_stored(world: World) -> None:
+    """`company_named_in_source` is its own job (part 3d), not a rule, so its stored row counts."""
+    world.claim("second half of 2027", stored={"company_named_in_source": CheckOutcome.FAIL})
+    unchecked = world.claim("second half of 2027", published=OCT_16)
+    check = TABLES[ClaimCheck]
+    with world.factory.begin() as session:
+        session.execute(
+            delete(check).where(
+                check.c.claim_id == unchecked, check.c.check_name == "company_named_in_source"
+            )
+        )
+    assert _publish(world)["top_reasons"] == {
+        "company_named_in_source failed": 1,
+        "company_named_in_source has not run": 1,
+    }
+    assert world.counts() == (0, 0, 0, 0)
+
+
+def test_the_trial_named_in_quote_rule_is_recomputed(world: World) -> None:
+    """A rule (part 3d): a stored pass does not count when the quote no longer names the trial."""
+    sentence = "Topline data from the Phase 3 trial of pegozafermin are expected in the second half of 2027."
+    world.claim("second half of 2027", sentence=sentence)
+    assert _publish(world)["top_reasons"] == {"trial_named_in_quote failed": 1}
+    assert world.counts() == (0, 0, 0, 0)
 
 
 def test_the_independent_source_check_is_recomputed(world: World) -> None:

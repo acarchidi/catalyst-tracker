@@ -30,7 +30,7 @@ from catalyst.snapshots import (
     SnapshotStoreError,
     snapshot_key,
 )
-from catalyst.verify import advisory, independent, second
+from catalyst.verify import advisory, company, independent, second
 from catalyst.verify.rules import RULES, CheckResult, ClaimFacts
 
 QUOTE_CHECK = "quote_matches_stored_copy"
@@ -51,13 +51,26 @@ def rule_check_names(rules: Sequence[Callable[[ClaimFacts, date], CheckResult]])
 
 RULE_CHECKS: tuple[str, ...] = rule_check_names(RULES)
 ADVISORY_CHECK = advisory.CHECK
-REQUIRED_CHECKS: tuple[str, ...] = (*RULE_CHECKS, second.CHECK, independent.CHECK, ADVISORY_CHECK)
+REQUIRED_CHECKS: tuple[str, ...] = (
+    *RULE_CHECKS,
+    second.CHECK,
+    independent.CHECK,
+    ADVISORY_CHECK,
+    company.CHECK,  # the linked company is named in the source (part 3d)
+)
 # The only checks that may answer "not applicable" and still let a claim publish: each one is
 # about a kind of claim or fact that may be absent (no window to be past, no stated phase or
-# matched trial, not an FDA decision date, not an advisory meeting). Every other required check
-# must pass; a "not applicable" from any of them holds the claim (Opus review of PR #52).
+# matched trial, not an FDA decision date, not an advisory meeting, no matched trial to name).
+# Every other required check must pass; a "not applicable" from any of them holds the claim
+# (Opus review of PR #52).
 MAY_NOT_APPLY: frozenset[str] = frozenset(
-    {"window_not_past", "phase_matches_registry", "pdufa_date_plausible", ADVISORY_CHECK}
+    {
+        "window_not_past",
+        "phase_matches_registry",
+        "pdufa_date_plausible",
+        ADVISORY_CHECK,
+        "trial_named_in_quote",
+    }
 )
 if not set(REQUIRED_CHECKS) >= MAY_NOT_APPLY:
     raise RuntimeError(f"not required, so it cannot be excused: {MAY_NOT_APPLY - set(REQUIRED_CHECKS)}")

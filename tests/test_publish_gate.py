@@ -31,7 +31,7 @@ from catalyst.publish.gate import (
 )
 from catalyst.schemas import CheckOutcome, Claim, ClaimCheck, ClaimSubject, GateDecision
 from catalyst.snapshots import LocalSnapshotStore, snapshot_key
-from catalyst.verify import advisory, independent, rules, second
+from catalyst.verify import advisory, company, independent, rules, second
 from catalyst.verify.rules import ClaimFacts, Outcome, rule_checks
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
@@ -90,18 +90,21 @@ def test_the_rule_checks_are_read_from_the_rules_themselves() -> None:
         trial_phases={},
     )
     assert tuple(result.check for result in rule_checks(facts, date(2026, 10, 18))) == RULE_CHECKS
-    assert len(set(RULE_CHECKS)) == len(RULE_CHECKS) == 8
+    assert len(set(RULE_CHECKS)) == len(RULE_CHECKS) == 9
+    assert "trial_named_in_quote" in RULE_CHECKS  # part 3d
 
 
 def test_every_check_the_publish_rule_names_is_required() -> None:
     # Spec: quote match (here, by the gate itself), second extraction, rule checks, and a second
     # source or a regulator or SEC filing (the independent-source check). ADR 0018 part 3 adds
-    # the Federal Register notice for an advisory meeting.
+    # the Federal Register notice for an advisory meeting, and part 3d the company named in the
+    # source document.
     assert set(RULE_CHECKS) < set(REQUIRED_CHECKS)
     assert second.CHECK in REQUIRED_CHECKS
     assert independent.CHECK in REQUIRED_CHECKS
     assert ADVISORY_CHECK in REQUIRED_CHECKS
-    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 3
+    assert company.CHECK in REQUIRED_CHECKS
+    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 4
     assert QUOTE_CHECK not in REQUIRED_CHECKS  # the gate matches the quote itself, never from a row
 
 
@@ -115,8 +118,16 @@ def test_only_checks_about_a_possibly_absent_fact_may_not_apply() -> None:
         "phase_matches_registry",
         "pdufa_date_plausible",
         "advisory_meeting_noticed",
+        "trial_named_in_quote",  # no matched trial (part 3d)
     } == MAY_NOT_APPLY
-    for name in ("extractor_checks", "has_window", "names_matched", second.CHECK, independent.CHECK):
+    for name in (
+        "extractor_checks",
+        "has_window",
+        "names_matched",
+        second.CHECK,
+        independent.CHECK,
+        company.CHECK,
+    ):
         assert name not in MAY_NOT_APPLY
 
 
@@ -424,3 +435,22 @@ def test_the_quote_check_names_its_check() -> None:
     claim = _claim()
     result = match_quote(claim, TEXT)
     assert (result.check, result.outcome, result.reason) == (QUOTE_CHECK, Outcome.PASS, None)
+
+
+def test_a_claim_with_no_matched_trial_can_still_publish() -> None:
+    """Most claims name no trial; trial_named_in_quote then does not apply (part 3d)."""
+    claim = _claim()
+    rows = [r for r in _all_pass(claim) if r.check_name != "trial_named_in_quote"]
+    rows.append(_row(claim, "trial_named_in_quote", CheckOutcome.NOT_APPLICABLE, "no matched trial"))
+    assert decide(claim, rows, _quote_ok(claim)) == Decision(GateDecision.PUBLISH, ())
+
+
+def test_a_claim_whose_source_does_not_name_its_company_goes_to_review() -> None:
+    claim = _claim()
+    rows = [r for r in _all_pass(claim) if r.check_name != company.CHECK]
+    rows.append(
+        _row(claim, company.CHECK, CheckOutcome.FAIL, "the source does not name Spyre Therapeutics, Inc.")
+    )
+    decision = decide(claim, rows, _quote_ok(claim))
+    assert decision.decision is GateDecision.REVIEW
+    assert decision.reasons == (f"{company.CHECK}: the source does not name Spyre Therapeutics, Inc.",)
