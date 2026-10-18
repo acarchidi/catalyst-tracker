@@ -69,6 +69,7 @@ BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.D
 DRUGS = CatalystField.DRUGS.value
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
+_BATCH = 1000  # catalysts per `published` read
 _CIK_DIGITS = 10
 # Every query that adds these also names the claim, as `claim_id`, from the row that points at it.
 _SOURCE_COLUMNS = (
@@ -143,7 +144,7 @@ def company_catalysts(
     if company_id is None:
         return None
     page = upcoming(session, replace(query, company=str(company_id)), access, today)
-    return CompanyCatalystPage(**dict(page), company=_companies(session, [company_id])[company_id])
+    return CompanyCatalystPage(**dict(page), company=company_views(session, [company_id])[company_id])
 
 
 def catalyst(session: Session, catalyst_id: UUID, access: Access) -> CatalystResult | None:
@@ -153,6 +154,26 @@ def catalyst(session: Session, catalyst_id: UUID, access: Access) -> CatalystRes
     if not details:
         return None
     return CatalystResult(notice=NOTICE, access=access.value, catalyst=shape(details[0], access))
+
+
+def published(session: Session) -> list[CatalystDetail]:
+    """Return every published catalyst, of any status, as a paid caller sees one by id (ADR 0033).
+
+    The same rule as every read applies: a record with a value no source states is left out.
+    Ordered by window start, then id; read in batches to stay inside Postgres's parameter limit.
+    """
+    ids = session.execute(select(_CATALYST.c.id).order_by(_CATALYST.c.window_start, _CATALYST.c.id))
+    ordered = list(ids.scalars())
+    details: list[CatalystDetail] = []
+    for start in range(0, len(ordered), _BATCH):
+        batch = ordered[start : start + _BATCH]
+        statement = (
+            select(_CATALYST)
+            .where(_CATALYST.c.id.in_(batch))
+            .order_by(_CATALYST.c.window_start, _CATALYST.c.id)
+        )
+        details += _details(session, session.execute(statement).all())
+    return details
 
 
 def _page(
@@ -238,6 +259,7 @@ def _decode(cursor: str) -> tuple[date, UUID]:
 
 def _source(row: Row[Any], fields: list[str]) -> SourceView:
     return SourceView(
+        claim_id=row.claim_id,
         url=row.url,
         publisher=row.publisher,
         document_type=row.document_type,
@@ -270,7 +292,7 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     )
     for link in session.execute(links):
         drugs[link.catalyst_id].append(link)
-    companies = _companies(session, list({row.company_id for row in rows}))
+    companies = company_views(session, list({row.company_id for row in rows}))
     indications = _indications(session, [row.indication_id for row in rows if row.indication_id])
     built: list[CatalystDetail] = []
     for row in rows:
@@ -360,7 +382,8 @@ def _change(row: Row[Any]) -> ChangeView:
     )
 
 
-def _companies(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
+def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
+    """Return each company with its current ticker, by id."""
     current = _TICKER.c.valid_to.is_(None)
     statement = (
         select(_COMPANY.c.id, _COMPANY.c.name, _COMPANY.c.cik, _TICKER.c.ticker)

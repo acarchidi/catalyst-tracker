@@ -22,11 +22,13 @@ from catalyst import settings
 from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
+from catalyst.api.read import read_session
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
-from catalyst.collectors.run import build_clients, collect_all, load_companies
+from catalyst.collectors.run import SOURCES, build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
+from catalyst.export import build_export, write_export
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
 from catalyst.extract.run import extract_documents
@@ -86,6 +88,12 @@ def _parser() -> argparse.ArgumentParser:
     collect.add_argument("--companies", type=Path, default=DEFAULT_COMPANIES, help="Company list (TOML).")
     collect.add_argument(
         "--since", type=date.fromisoformat, required=True, help="Earliest SEC filing date, YYYY-MM-DD."
+    )
+    collect.add_argument(
+        "--sources",
+        type=_sources,
+        default=None,
+        help=f"Only these collectors, comma-separated, from: {', '.join(SOURCES)} (default: all).",
     )
     _store_arguments(collect)
     commands.add_parser(
@@ -150,6 +158,16 @@ def _parser() -> argparse.ArgumentParser:
     )
     api.add_argument("--port", type=int, default=8000, help="Port on this computer (default 8000).")
     commands.add_parser("mcp", help="Run the read-only MCP server over standard input and output.")
+    export = commands.add_parser(
+        "export-catalysts",
+        help="Write every published catalyst, each value with its source, to one JSON file (read-only).",
+    )
+    export.add_argument("--out", type=Path, required=True, help="Write the export (JSON) here.")
+    export.add_argument(
+        "--include-held",
+        action="store_true",
+        help="Also list, apart, the claims the publish gate holds for review, with its reasons.",
+    )
     evaluate = commands.add_parser(
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
@@ -176,6 +194,16 @@ def _parser() -> argparse.ArgumentParser:
         "--previous", type=Path, help="An earlier copy; fail if it had a do_not_contact row now missing."
     )
     return parser
+
+
+def _sources(value: str) -> frozenset[str]:
+    """Parse `--sources`: comma-separated names from `SOURCES`; refuse any other, naming the valid ones."""
+    names = [name.strip() for name in value.split(",")]
+    unknown = [name for name in names if name not in SOURCES]
+    if unknown:
+        shown = ", ".join(repr(name) for name in unknown)
+        raise argparse.ArgumentTypeError(f"unknown source {shown}; valid sources: {', '.join(SOURCES)}")
+    return frozenset(names)
 
 
 def _issue_arguments(commands: Any) -> None:
@@ -237,6 +265,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "publish-claims": _publish_claims,
         "api": _serve,
         "mcp": _serve,
+        "export-catalysts": _export,
         "planted-errors": _planted_errors,
         "prospects-check": _prospects_check,
     }
@@ -545,6 +574,27 @@ def _serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _export(args: argparse.Namespace) -> int:
+    """Write the prototype export; print only its counts, never a claim or quote (ADR 0033)."""
+    try:
+        database = settings.database_url()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        with read_session(sessionmaker(engine)) as session:
+            export = build_export(session, _utc_now(), include_held=args.include_held)
+    except OperationalError:
+        print("Nothing written: cannot reach the database. Is it running? See README.", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+    write_export(args.out, export)
+    print(json.dumps(export["counts"]))
+    return 0
+
+
 def _alerts(args: argparse.Namespace) -> int:
     runs = list(args.run)
     spend = None
@@ -672,12 +722,10 @@ def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int
 def _collect(
     args: argparse.Namespace, email: str, store: SnapshotStore, session_factory: sessionmaker[Session]
 ) -> int:
+    # Without --sources, collect_all runs with its own default, every source, as before.
+    chosen: dict[str, Any] = {} if args.sources is None else {"sources": args.sources}
     stats = collect_all(
-        load_companies(args.companies),
-        build_clients(email),
-        store,
-        session_factory,
-        args.since,
+        load_companies(args.companies), build_clients(email), store, session_factory, args.since, **chosen
     )
     summary = [
         {"source": s.source, "created": s.created, "existing": s.existing, "error": s.error} for s in stats
