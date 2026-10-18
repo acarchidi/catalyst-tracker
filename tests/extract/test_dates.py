@@ -261,6 +261,46 @@ def test_ranges_that_are_backwards_or_incomplete_give_no_range(text: str) -> Non
         assert window is None
 
 
+# Review of PR #40: when only the last part writes the year, the first part takes that year,
+# never the document's.
+EARLY_2026 = date(2026, 3, 1)
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (
+            "first quarter to second quarter of 2028",
+            _window(date(2028, 1, 1), date(2028, 6, 30), DatePrecision.QUARTER),
+        ),
+        ("first half to second half 2028", _window(date(2028, 1, 1), date(2028, 12, 31), DatePrecision.HALF)),
+        (
+            "November 16 to December 2, 2027",
+            _window(date(2027, 11, 16), date(2027, 12, 2), DatePrecision.MONTH),
+        ),
+        ("Q3 to Q4 2027", _window(date(2027, 7, 1), date(2027, 12, 31), DatePrecision.QUARTER)),
+        # "this quarter" names its own year, so it keeps it.
+        ("this quarter or Q1 2027", _window(date(2026, 1, 1), date(2027, 3, 31), DatePrecision.QUARTER)),
+    ],
+)
+def test_a_year_written_only_at_the_end_applies_to_the_first_part(
+    text: str, expected: tuple[date, date, DatePrecision]
+) -> None:
+    assert _parsed(text, EARLY_2026) == expected
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "year-end or first quarter 2028",  # year-end of 2027 or 2028? Code does not guess.
+        "2027-2028",  # an unspaced ASCII hyphen joins only days, as in "November 16-19"
+        "Q4 2026-Q1 2027",
+    ],
+)
+def test_ranges_code_cannot_read_safely_give_no_window(text: str) -> None:
+    assert parse_window(text, EARLY_2026) is None
+
+
 @given(
     first=st.tuples(years, st.integers(min_value=1, max_value=4)),
     second=st.tuples(years, st.integers(min_value=1, max_value=4)),

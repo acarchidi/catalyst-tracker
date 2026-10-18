@@ -139,15 +139,25 @@ _PATTERNS: list[tuple[re.Pattern[str], _Builder]] = [
 ]
 
 
-def _period(phrase: str, published: date) -> _Period | None:
-    """Return the calendar period a phrase names, or None."""
+def _read(phrase: str, published: date) -> tuple[_Period | None, bool]:
+    """Return the calendar period a phrase names, or None, and whether the phrase fixes its year.
+
+    A phrase fixes its year when it writes one, or when it names the document's own period ("this
+    quarter"). "First quarter" or "November 16" alone does not: it borrows the document's year.
+    """
     phrase = _PREFIX.sub("", phrase)
     for pattern, build in _PATTERNS:
         match = pattern.fullmatch(phrase)
         if match is not None:
             found = match.groupdict()
-            return build(found, _year(found.get("year"), published), published)
-    return None
+            fixed = build is _this_quarter or found.get("year") is not None
+            return build(found, _year(found.get("year"), published), published), fixed
+    return None, False
+
+
+def _period(phrase: str, published: date) -> _Period | None:
+    """Return the calendar period a phrase names, or None."""
+    return _read(phrase, published)[0]
 
 
 _BY = re.compile(r"^by (?:(?:the )?end of )?(?P<rest>.+)$")
@@ -228,10 +238,12 @@ def _range(phrase: str, published: date) -> _Period | None:
         if len(parts) != 2 or (" and " in phrase) != between:
             return None
     second = _period(parts[1], published)
-    first = _period(parts[0], published)
+    first, fixed = _read(parts[0], published)
     year = _TRAILING_YEAR.search(parts[1])
-    if first is None and year is not None:  # "Q3 to Q4 2027": the year is written once, at the end
-        first = _period(f"{parts[0]} {year.group(1)}", published)
+    if not fixed and year is not None:
+        # "Q3 to Q4 2027", "November 16 to December 2, 2027": the year is written once, at the end,
+        # and the first part takes it, never the document's year (review of PR #40).
+        first = _period(f"{parts[0]} {year[1]}", published) or _period(f"{parts[0]}, {year[1]}", published)
     if first is None or second is None:
         return None
     return _span(first, second)
