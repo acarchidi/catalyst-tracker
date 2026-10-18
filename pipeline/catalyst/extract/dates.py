@@ -1,6 +1,7 @@
 """Read a date phrase such as "2H26", "mid-2027" or "by year-end" as a window (spec: Date precision).
 
 The phrase is the source's own words; the window is what code, not a model, makes of them.
+Only ASCII digits count: "2\u09ea" (a Bengali four) may look like 28 or 24, so it names no window.
 A phrase without a year takes the year of the document it came from. "By" phrases run from
 the document's date to the end of the period. Anything vague ("soon", "upon approval") gives
 no window. ADR 0012 records the conventions (for example, "mid-2027" is April to September).
@@ -38,7 +39,7 @@ _ORDINALS = {"first": 1, "second": 2, "third": 3, "fourth": 4}
 # 1Q27: alone, "April 27" or "26" is a day or a number, not a year (review of PR #14).
 _YEAR = r"(?P<year>\d{4}|'\d{2}|this year|next year|the year)"
 _COMPACT_YEAR = r"(?P<year>\d{4}|'?\d{2})"
-_PREFIX = re.compile(r"^(?:(?:in|during|around|the)\s+)+")
+_PREFIX = re.compile(r"^(?:(?:in|during|around|the)\s+)+", re.ASCII)
 
 _Period = tuple[date, date, DatePrecision]
 
@@ -122,20 +123,23 @@ def _whole_year(found: dict[str, str | None], year: int, published: date) -> _Pe
 _Builder = Callable[[dict[str, str | None], int, date], _Period | None]
 _OPTIONAL_YEAR = "(?: " + _YEAR + ")?"
 _PATTERNS: list[tuple[re.Pattern[str], _Builder]] = [
-    (re.compile(_MONTH + r" (?P<day>\d{1,2}), (?P<year>\d{4})"), _day),
-    (re.compile(_MONTH + r" (?P<day>\d{1,2})"), _day_this_year),
-    (re.compile(_MONTH + r" (?:of )?" + _YEAR), _month),
-    (re.compile(r"q(?P<n>[1-4]) ?" + _COMPACT_YEAR), _quarter_of),
-    (re.compile(r"(?P<n>[1-4])q ?" + _COMPACT_YEAR), _quarter_of),
-    (re.compile(r"(?P<ord>first|second|third|fourth) quarter(?: of)?" + _OPTIONAL_YEAR), _quarter_of),
-    (re.compile(r"this quarter"), _this_quarter),
-    (re.compile(r"(?P<n>[12])h ?" + _COMPACT_YEAR), _half_of),
-    (re.compile(r"h(?P<n>[12]) ?" + _COMPACT_YEAR), _half_of),
-    (re.compile(r"(?P<ord>first|second) half(?: of)?" + _OPTIONAL_YEAR), _half_of),
-    (re.compile(r"(?P<part>early|mid|late)[- ]" + _YEAR), _part_of_year),
-    (re.compile(r"(?:year[- ]end|(?:the )?end of(?: the)? year)" + _OPTIONAL_YEAR), _year_end),
-    (re.compile(r"(?:the )?end of " + _YEAR), _year_end),
-    (re.compile(_YEAR), _whole_year),
+    (re.compile(_MONTH + r" (?P<day>\d{1,2}), (?P<year>\d{4})", re.ASCII), _day),
+    (re.compile(_MONTH + r" (?P<day>\d{1,2})", re.ASCII), _day_this_year),
+    (re.compile(_MONTH + r" (?:of )?" + _YEAR, re.ASCII), _month),
+    (re.compile(r"q(?P<n>[1-4]) ?" + _COMPACT_YEAR, re.ASCII), _quarter_of),
+    (re.compile(r"(?P<n>[1-4])q ?" + _COMPACT_YEAR, re.ASCII), _quarter_of),
+    (
+        re.compile(r"(?P<ord>first|second|third|fourth) quarter(?: of)?" + _OPTIONAL_YEAR, re.ASCII),
+        _quarter_of,
+    ),
+    (re.compile(r"this quarter", re.ASCII), _this_quarter),
+    (re.compile(r"(?P<n>[12])h ?" + _COMPACT_YEAR, re.ASCII), _half_of),
+    (re.compile(r"h(?P<n>[12]) ?" + _COMPACT_YEAR, re.ASCII), _half_of),
+    (re.compile(r"(?P<ord>first|second) half(?: of)?" + _OPTIONAL_YEAR, re.ASCII), _half_of),
+    (re.compile(r"(?P<part>early|mid|late)[- ]" + _YEAR, re.ASCII), _part_of_year),
+    (re.compile(r"(?:year[- ]end|(?:the )?end of(?: the)? year)" + _OPTIONAL_YEAR, re.ASCII), _year_end),
+    (re.compile(r"(?:the )?end of " + _YEAR, re.ASCII), _year_end),
+    (re.compile(_YEAR, re.ASCII), _whole_year),
 ]
 
 
@@ -160,8 +164,8 @@ def _period(phrase: str, published: date) -> _Period | None:
     return _read(phrase, published)[0]
 
 
-_BY = re.compile(r"^by (?:(?:the )?end of )?(?P<rest>.+)$")
-_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?year|year)(?: (?P<year>\d{4}|'\d{2}))?$")
+_BY = re.compile(r"^by (?:(?:the )?end of )?(?P<rest>.+)$", re.ASCII)
+_YEAR_END = re.compile(r"^(?:year[- ]end|(?:the )?year|year)(?: (?P<year>\d{4}|'\d{2}))?$", re.ASCII)
 
 
 def _deadline(phrase: str, published: date) -> _Period | None:
@@ -201,13 +205,15 @@ _DAY_RANGE = re.compile(
     _MONTH
     + r" (?P<day>\d{1,2}) ?[-\u2010-\u2015] ?(?:(?P<month2>"
     + "|".join(sorted(_MONTHS, key=len, reverse=True))
-    + r")\.? )?(?P<day2>\d{1,2}),? (?P<year>\d{4})$"
+    + r")\.? )?(?P<day2>\d{1,2}),? (?P<year>\d{4})$",
+    re.ASCII,
 )
 _SHARED_NOUN = re.compile(
     r"^(?P<a>first|second|third|fourth) (?:or|to|and|through) (?P<b>first|second|third|fourth) "
-    r"(?P<rest>(?:quarter|half)(?: of)?(?: .+)?)$"
+    r"(?P<rest>(?:quarter|half)(?: of)?(?: .+)?)$",
+    re.ASCII,
 )
-_JOINER = re.compile(r"\s*[\u2013\u2014/]\s*|\s+(?:or|to|through|and)\s+|\s+-\s+")
+_JOINER = re.compile(r"\s*[\u2013\u2014/]\s*|\s+(?:or|to|through|and)\s+|\s+-\s+", re.ASCII)
 
 
 def _span(first: _Period, second: _Period) -> _Period | None:

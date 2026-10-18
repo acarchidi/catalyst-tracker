@@ -44,6 +44,7 @@ class Problem(StrEnum):
     DATE_PASSED = "the window ended before the document was published"
     QUOTE_HIDDEN = "the quote is text the page hides from readers"
     INVISIBLE_CHARACTERS = "the quote, date words, or names hold invisible or direction-changing characters"
+    NON_ASCII_DIGITS = "the date words hold a digit from another script, which may read as another number"
     SOURCE_INSTRUCTS_MODELS = "the source holds text written to steer a model, so a person must read it"
 
 
@@ -116,6 +117,8 @@ def check_proposal(
     names = (date_text, item["title"], item["drug"], item["indication"])
     if invisible_characters(span.quote if span else None, *names):
         problems.append(Problem.INVISIBLE_CHARACTERS)
+    if any(ch.isdigit() and not ch.isascii() for ch in date_text):
+        problems.append(Problem.NON_ASCII_DIGITS)
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)
     elif not has_words(span.quote, date_text):

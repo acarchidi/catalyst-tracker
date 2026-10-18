@@ -796,6 +796,16 @@ def test_an_invisible_character_in_a_drug_name_never_lets_a_claim_through(mark: 
     assert Problem.INVISIBLE_CHARACTERS in check_proposal(item, quote, date(2026, 10, 14), quote).problems
 
 
+@pytest.mark.parametrize("digit", ["\u09ea", "\u0664", "\uff14", "\u096a", "\u0e54"])
+def test_a_digit_from_another_script_in_the_date_words_holds_the_claim(digit: str) -> None:
+    """A Bengali four after a 2 may be read as 24 or 28; code must not choose (CP4, B3)."""
+    quote = PDUFA_QUOTE.replace("28", "2" + digit)
+    item = PDUFA | {"date_text": "August 2" + digit + ", 2027", "quote": quote}
+    checked = check_proposal(item, quote, date(2026, 10, 14), quote)
+    assert Problem.NON_ASCII_DIGITS in checked.problems
+    assert checked.window is None
+
+
 def test_invisible_characters_are_named_by_code_point() -> None:
     assert invisible_characters("Aug\u200bust", None, "2\u202e027") == ("U+200B", "U+202E")
     assert invisible_characters("August 28, 2027", "pegozafermin") == ()
