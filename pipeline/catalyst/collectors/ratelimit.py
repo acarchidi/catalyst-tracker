@@ -49,9 +49,14 @@ class MinIntervalLimiter:
 
     def wait(self) -> None:
         """Block until the next request may start."""
+        self.take_turn()
+
+    def take_turn(self) -> float:
+        """Block until the next request may start, and return that start time (by `clock`)."""
         with self._lock:
             now = self._clock()
             if self._next_allowed is not None and now < self._next_allowed:
                 self._sleep(self._next_allowed - now)
                 now = self._next_allowed
             self._next_allowed = now + self._interval
+            return now
