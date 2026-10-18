@@ -18,6 +18,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
+from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
@@ -29,6 +30,7 @@ from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
+from catalyst.issues import API, plan_markdown, post
 from catalyst.links import check_links, link_client, links_markdown
 from catalyst.llm import anthropic_adapter
 from catalyst.llm.client import ModelClient
@@ -36,6 +38,7 @@ from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
+from catalyst.publish.run import decide_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -47,6 +50,10 @@ from catalyst.snapshots import (
 )
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
+from catalyst.verify.planted import load_corpus
+from catalyst.verify.planted_report import render_report
+from catalyst.verify.planted_report import run as run_planted
+from catalyst.verify.planted_report import scores as planted_scores
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -116,6 +123,11 @@ def _parser() -> argparse.ArgumentParser:
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
     _store_arguments(verify_claims)
+    decide = commands.add_parser(
+        "decide-claims",
+        help="Decide, from the stored checks and copies, which extracted claims may publish (free).",
+    )
+    _store_arguments(decide)
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -134,7 +146,32 @@ def _parser() -> argparse.ArgumentParser:
         default=EXTRACTOR_PROMPT[0],
         help="Which reader to score: the extractor (default) or the verifier's second reading.",
     )
+    planted = commands.add_parser(
+        "planted-errors",
+        help="Plant known errors in gold-set claims and report what the checks catch (free).",
+    )
+    planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
+    planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
+    _issue_arguments(commands)
     return parser
+
+
+def _issue_arguments(commands: Any) -> None:
+    alerts = commands.add_parser(
+        "alerts", help="Build the alerts a run raises or solves, from its job summaries (free; no model)."
+    )
+    alerts.add_argument(
+        "--run",
+        action="append",
+        default=[],
+        type=parse_run,
+        help="A job in this run as NAME:OUTCOME[:FILE], FILE being the JSON the job printed. Repeatable.",
+    )
+    alerts.add_argument("--spend", action="store_true", help="Also check today's spend per role (database).")
+    alerts.add_argument("--run-url", required=True, help="Link to this run's log, for the alert text.")
+    alerts.add_argument("--out", type=Path, required=True, help="Write the plan (JSON) here.")
+    issues = commands.add_parser("post-issues", help="Post a plan from `alerts` to GitHub as issues.")
+    issues.add_argument("--from", dest="plan", type=Path, required=True, help="The plan (JSON).")
 
 
 def _store_arguments(parser: argparse.ArgumentParser) -> None:
@@ -172,8 +209,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
+        "alerts": _alerts,
+        "post-issues": _post_issues,
+        "decide-claims": _decide_claims,
         "api": _serve,
         "mcp": _serve,
+        "planted-errors": _planted_errors,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -304,15 +345,37 @@ def _extract(args: argparse.Namespace) -> int:
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
+        decisions = _decide_after(sessionmaker(engine), store, checks)
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary() | {"matches": matches, "checks": checks, "second_reading": second}
+    summary = report.summary() | {
+        "matches": matches,
+        "checks": checks,
+        "second_reading": second,
+        "decisions": decisions,
+    }
     print(json.dumps(summary, indent=2))
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
-    return 1 if summary["documents_failed"] or summary["stopped_early"] or second_failed else 0
+    failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or "error" in decisions
+    return 1 if failed else 0
+
+
+def _decide_after(
+    session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
+) -> dict[str, Any]:
+    """Decide every claim after every check; earlier steps stand if this fails.
+
+    Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
+    """
+    if "error" in checks or "error" in checks.get("advisory", {}):
+        return {"skipped": "the checks did not finish, so nothing was decided"}
+    try:
+        return decide_claims(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
 
 
 def _resolve(_args: argparse.Namespace) -> int:
@@ -354,6 +417,22 @@ def _verify_claims(args: argparse.Namespace) -> int:
     return 0
 
 
+def _decide_claims(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = decide_claims(sessionmaker(engine), store, _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
+    return 0
+
+
 def _serve(args: argparse.Namespace) -> int:
     """Serve published data read-only: the HTTP API on localhost, or MCP over stdio (ADR 0025)."""
     try:
@@ -369,6 +448,47 @@ def _serve(args: argparse.Namespace) -> int:
             build_server(sessionmaker(engine)).run("stdio")
     finally:
         engine.dispose()
+    return 0
+
+
+def _alerts(args: argparse.Namespace) -> int:
+    runs = list(args.run)
+    spend = None
+    if args.spend:
+        try:
+            spend = _spend_today()
+        except (SQLAlchemyError, settings.MissingSettingError):
+            runs.append(parse_run("spend-check:failure"))  # the alert says spending could not be read
+        else:
+            runs.append(parse_run("spend-check:success"))  # closes that alert once spending reads
+    plan = build_alerts(runs, spend, load_thresholds(), args.run_url)
+    args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
+    print(plan_markdown(plan), end="")
+    return 0
+
+
+def _spend_today() -> dict[str, RoleSpend]:
+    engine = create_engine(settings.database_url())
+    try:
+        return spend_today(engine, load_config(), datetime.now(NEW_YORK).date())
+    finally:
+        engine.dispose()
+
+
+def _post_issues(args: argparse.Namespace) -> int:
+    try:
+        token, repo = settings.github_token(), settings.github_repository()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    with httpx.Client(base_url=API, timeout=30) as client:
+        try:
+            actions = post(plan, client, repo, token)
+        except httpx.HTTPError as error:
+            print(f"Posting stopped: a GitHub request failed ({type(error).__name__}).", file=sys.stderr)
+            return 1
+    print(json.dumps({"changes": [type(action).__name__.lower() for action in actions]}))
     return 0
 
 
@@ -404,6 +524,17 @@ def _evaluate(args: argparse.Namespace) -> int:
     record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
+    return 0
+
+
+def _planted_errors(args: argparse.Namespace) -> int:
+    corpus = load_corpus()
+    results = run_planted(corpus)
+    args.out.write_text(render_report(results, corpus), encoding="utf-8")
+    counted = planted_scores(results)
+    if args.scores:
+        args.scores.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(counted["errors"], indent=2))
     return 0
 
 

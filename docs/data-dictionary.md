@@ -325,6 +325,23 @@ Rules:
 - Unique: `claim_id`, `check_name`
 - Database check `fail_has_reason`: `outcome <> 'fail' OR reason IS NOT NULL`
 
+## `claim_decision`
+
+The publish gate's latest decision on one extractor claim, with every reason it waits for review. Plain code over the stored checks and the stored copy decides (ADR 0018, part 5); a later run replaces the decision. Only that code writes this table.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `claim_id` | link to `claim` | yes | The claim decided. |
+| `decision` | one of: `publish`, `review` | yes | Publish, or wait in the review queue. |
+| `reasons` | structured value (JSON) | yes | Every reason the claim waits for review, in plain words; empty when it may publish. |
+| `decided_at` | date and time (with time zone) | yes | When the gate last decided. |
+
+Rules:
+
+- Unique: `claim_id`
+- Database check `review_has_reasons`: `CASE WHEN jsonb_typeof(reasons) = 'array' THEN (decision = 'review') = (jsonb_array_length(reasons) > 0) ELSE false END`
+
 ## `document_reading`
 
 One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model.

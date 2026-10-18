@@ -3,6 +3,7 @@
 import json
 from collections import Counter
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ from catalyst.collectors.sec.press_release import NoPressReleaseError
 from catalyst.extract.evaluate import Scores
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
+from catalyst.publish.run import DecisionReport
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 from catalyst.verify.advisory import AdvisoryReport
@@ -226,6 +228,7 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "found.json"
     assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
     assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
@@ -258,6 +261,7 @@ def test_extract_catalysts_runs_the_second_reading_last_with_the_verifier_config
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_second_reading", second)
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=0))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", checks)
     assert main(["extract-catalysts", "--limit", "4"]) == 0  # skipped is not a failure
@@ -283,6 +287,7 @@ def test_the_second_readings_failures_fail_the_command(
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport(**second))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=0))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == expected
@@ -301,12 +306,103 @@ def test_a_bad_scores_file_stops_only_the_second_reading(
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_second_reading", broken)
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 1
     summary = json.loads(capsys.readouterr().out)
     assert (summary["matches"]["claims"], summary["checks"]["claims"]) == (3, 3)
     assert summary["second_reading"] == {"error": "JSONDecodeError: the second reading did not finish"}
+
+
+def test_extract_catalysts_decides_last_and_a_failed_decision_fails_only_that_step(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0018, part 5a: decisions read every check, so they run after the second reading."""
+    order: list[str] = []
+
+    def step(name: str, result: object) -> Any:
+        def run(*_args: object, **_options: object) -> object:
+            order.append(name)
+            return result
+
+        return run
+
+    def broken(*_args: object) -> DecisionReport:
+        order.append("decide")
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", step("match", MatchReport(claims=2)))
+    monkeypatch.setattr(cli, "run_checks", step("checks", CheckReport(claims=2)))
+    monkeypatch.setattr(cli, "check_advisory_meetings", step("advisory", AdvisoryReport(claims=2)))
+    monkeypatch.setattr(cli, "run_second_reading", step("second", SecondReadingReport()))
+    monkeypatch.setattr(cli, "decide_claims", step("decide", DecisionReport(claims=2, to_review=2)))
+    assert main(["extract-catalysts"]) == 0
+    assert order == ["match", "checks", "advisory", "second", "decide"]
+    assert json.loads(capsys.readouterr().out)["decisions"]["to_review"] == 2
+    monkeypatch.setattr(cli, "decide_claims", broken)
+    assert main(["extract-catalysts"]) == 1
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["checks"]["claims"] == 2  # earlier steps stand
+    assert summary["decisions"] == {"error": "OperationalError: the publish decisions did not finish"}
+
+
+@pytest.mark.parametrize("failing", ["resolve_claims", "run_checks", "check_advisory_meetings"])
+def test_extract_catalysts_decides_nothing_when_a_check_step_failed(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failing: str
+) -> None:
+    """Opus review of PR #52: a decision never rests on check rows this run did not renew."""
+    decided: list[object] = []
+
+    def broken(*_args: object) -> object:
+        raise OperationalError("SELECT", {}, Exception("connection lost"))
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_advisory_meetings", lambda *_args: AdvisoryReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *args: decided.append(args) or DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType, reportUnknownMemberType]
+    monkeypatch.setattr(cli, failing, broken)
+    main(["extract-catalysts"])
+    assert decided == []
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["decisions"] == {"skipped": "the checks did not finish, so nothing was decided"}
+
+
+def test_decide_claims_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen: list[object] = []
+
+    def decide(_factory: object, store: object, _now: object) -> DecisionReport:
+        seen.append(store)
+        report = DecisionReport(claims=3, to_publish=1, to_review=2)
+        report.reasons.update({"advisory_meeting_noticed has not run": 2})
+        return report
+
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://localhost/unused_test")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", decide)
+    assert main(["decide-claims", "--snapshot-dir", "var/test-snapshots"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert (printed["claims"], printed["to_publish"], printed["to_review"]) == (3, 1, 2)
+    assert printed["top_reasons"] == {"advisory_meeting_noticed has not run": 2}
+    assert len(seen) == 1
+
+
+def test_decide_claims_with_the_supabase_store_names_the_missing_setting(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://localhost/unused_test")
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    assert main(["decide-claims", "--snapshot-store", "supabase"]) == 2
+    assert "SUPABASE_URL" in capsys.readouterr().err
 
 
 def test_eval_extractor_needs_the_product_key(
@@ -394,6 +490,7 @@ def test_extract_catalysts_still_prints_its_counts_when_matching_fails(
     monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "resolve_claims", broken)
     monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 0
     assert "matching did not finish" in json.loads(capsys.readouterr().out)["matches"]["error"]
 
@@ -412,6 +509,7 @@ def test_extract_catalysts_keeps_the_match_counts_when_only_the_checks_fail(
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", broken)
     monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 0
     summary = json.loads(capsys.readouterr().out)
     assert summary["matches"]["claims"] == 2
@@ -459,6 +557,7 @@ def test_extract_catalysts_runs_the_company_check_after_the_rule_checks(
     monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["extract-catalysts"]) == 0
     assert json.loads(capsys.readouterr().out)["checks"]["company"]["documents_read"] == 1
     monkeypatch.setattr(cli, "check_company_named", _company_check_breaks)
@@ -466,3 +565,33 @@ def test_extract_catalysts_runs_the_company_check_after_the_rule_checks(
     checks = json.loads(capsys.readouterr().out)["checks"]
     assert (checks["claims_passing"], checks["advisory"]["claims"]) == (1, 1)
     assert checks["company"] == {"error": "OperationalError: the company check did not finish"}
+
+
+def test_alerts_solves_the_spending_could_not_be_read_alert_once_spending_reads(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    spend = {"extractor": cli.RoleSpend(Decimal("0.10"), Decimal("5.00"), Decimal("0.01"))}
+    monkeypatch.setattr(cli, "_spend_today", lambda: spend)
+    out = tmp_path / "plan.json"
+    assert main(["alerts", "--spend", "--run-url", "https://example.org/run/1", "--out", str(out)]) == 0
+    capsys.readouterr()
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    solved = {item["key"] for item in plan["solved"]}
+    assert "job-failed:spend-check" in solved
+    assert "spend-cap:extractor" in solved
+    assert plan["issues"] == []
+
+
+def test_alerts_raises_the_spending_could_not_be_read_alert_when_the_read_fails(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    def fail() -> dict[str, Any]:
+        raise OperationalError("SELECT 1", {}, Exception("no database"))
+
+    monkeypatch.setattr(cli, "_spend_today", fail)
+    out = tmp_path / "plan.json"
+    assert main(["alerts", "--spend", "--run-url", "https://example.org/run/1", "--out", str(out)]) == 0
+    capsys.readouterr()
+    plan = json.loads(out.read_text(encoding="utf-8"))
+    assert [issue["key"] for issue in plan["issues"]] == ["job-failed:spend-check"]
+    assert "job-failed:spend-check" not in {item["key"] for item in plan["solved"]}
