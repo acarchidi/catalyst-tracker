@@ -143,9 +143,13 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - **safe to re-run.** A claim a change row already cites is skipped, so a re-run with nothing new writes nothing, not even a check row. The job takes a database lock (`pg_advisory_xact_lock`), so a second run waits for the first and two runs never both create one catalyst; a test holds the lock from another session to show it. It writes everything in one transaction, so a failure leaves nothing half written;
       - **memory.** Both the decision job and the writer read claims grouped by document and hold only the current document's text (Claude review of PR #52);
       - the decision job's publish count is therefore not final; its help text says so (Claude review of PR #52);
+      - **no new catalyst with a passed window.** `window_not_past` is excused for a claim that fits a live catalyst when the run begins. An earlier write in the same run can make that claim a new event instead (for example by linking a trial to the catalyst), so the writer holds any claim it would create whose window has ended (Claude review of PR #59). An unclear drug role that ever reached the writer stops the whole run, so a guess is never stored;
+      - **the trial-link migration cannot be undone once links exist.** Its downgrade refuses while any `catalyst_trial` row exists, to keep each link's claim, so after the writer has run in production it is one-way;
       - **open items** (Opus review of PR #59):
         - O1: the title is the extractor's own words, written once by the creating claim. A better source never replaces it;
         - O4: a claim that loses to the live source writes nothing and keeps its publish decision. The spec wants losing claims attached and shown as conflicts; that needs the change-history item;
+        - a confirming source protects the dates only while it keeps passing; if its second reading is cleared (a verifier model change), a weaker claim can move them until it is read again. A durable confirmation record would fix this;
+        - a weaker claim naming another trial than a confirming claim's is counted as lower rank and neither published nor sent to review; it should be held or become its own catalyst;
       - prompt-injection fixtures prove that text in a source cannot change a stored value (part 5c).
 
       CP4 then runs (Opus review).

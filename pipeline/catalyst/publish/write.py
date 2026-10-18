@@ -31,7 +31,7 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from itertools import groupby
 from typing import Any
 from uuid import UUID
@@ -59,7 +59,15 @@ from catalyst.publish.live import (
     place,
     ranks_above,
 )
-from catalyst.publish.sanity import Candidate, drug_names, drug_role, others, safe_to_write, same_dates
+from catalyst.publish.sanity import (
+    PASSED,
+    Candidate,
+    drug_names,
+    drug_role,
+    others,
+    safe_to_write,
+    same_dates,
+)
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -307,9 +315,14 @@ def _write_links(
     claim_id = ready.claim.id
     drug = ready.candidate.value.get("drug")
     stated = drug if isinstance(drug, str) else None
-    role = drug_role(ready.claim.quote, stated, ready.candidate.other_drugs) or DrugRole.ALONE
+    role = drug_role(ready.claim.quote, stated, ready.candidate.other_drugs)
+    if role is None and key.drugs:
+        # `safe_to_write` holds an unclear role; reaching here is a bug, and a guess must never be
+        # stored as if a quote said it, so the whole run stops and writes nothing (Claude review).
+        raise RuntimeError(f"claim {claim_id}: the drug role is unclear and was not held")
     links = [
-        CatalystDrug(catalyst_id=catalyst_id, drug_id=d, role=role, claim_id=claim_id) for d in key.drugs
+        CatalystDrug(catalyst_id=catalyst_id, drug_id=d, role=role or DrugRole.ALONE, claim_id=claim_id)
+        for d in key.drugs
     ]
     if links:
         session.execute(insert(TABLES[CatalystDrug]).values([link.model_dump() for link in links]))
@@ -390,11 +403,21 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
     for item in sorted(ready, key=_Ready.order):
         where = place(item.key, catalysts)
         result = safe_to_write(item.candidate, where, today)
+        if result.outcome is CheckOutcome.PASS and where.catalyst is None and _ended(item, today):
+            # `window_not_past` may have been excused because the claim fitted a live catalyst when
+            # the run began; an earlier write in this run can make it a new event instead, and a new
+            # catalyst whose window has ended is never published (Claude review of PR #59).
+            result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, PASSED)
         if result.outcome is CheckOutcome.PASS:
             result = _apply(session, item, where.catalyst, catalysts, run) or result
         run.results.setdefault(item.claim.id, []).append(result)
         if result.outcome is CheckOutcome.FAIL:
             _hold(run, item, result.reason or "")
+
+
+def _ended(item: _Ready, today: date) -> bool:
+    end = item.candidate.value.get("window_end")
+    return isinstance(end, str) and date.fromisoformat(end) < today
 
 
 def _apply(

@@ -25,7 +25,7 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish import gate
 from catalyst.publish.run import decide_claims
-from catalyst.publish.sanity import ROLE_UNCLEAR, check_safe_to_write, drug_role
+from catalyst.publish.sanity import PASSED, ROLE_UNCLEAR, check_safe_to_write, drug_role
 from catalyst.publish.write import LOCK, publish_claims, ranks_above
 from catalyst.schemas import (
     Catalyst,
@@ -51,6 +51,7 @@ from catalyst.schemas import (
     TrialPhase,
 )
 from catalyst.snapshots import LocalSnapshotStore
+from catalyst.verify.rules import CheckResult
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
@@ -1102,6 +1103,30 @@ def test_n2_in_one_run_the_first_trial_takes_the_catalyst_and_the_other_is_a_new
     assert len({r.catalyst_id for r in world.rows(CatalystTrial)}) == 2  # never two trials on one
 
 
+def test_a_claim_excused_as_an_update_never_becomes_a_new_catalyst_with_a_passed_date(world: World) -> None:
+    """Claude review of PR #59: a claim's passed window is excused because it fits the live program catalyst.
+
+    Then A, written first, links RAINIER to that catalyst, so B (SYMMETRY) no longer fits and would
+    be created as a new, upcoming catalyst whose window has already ended.
+    """
+    program = world.claim(
+        "2026", trial=False, sentence="Topline data for pegozafermin in MASH are expected in 2026."
+    )
+    late = world.claim(
+        "third quarter of 2026",
+        published=datetime(2026, 9, 1, 20, tzinfo=UTC),
+        trial=world.other_trial,
+        sentence="Topline data from the Phase 3 SYMMETRY trial are expected in the third quarter of 2026.",
+    )
+    world.claim("fourth quarter of 2026", published=OCT_16)
+    _publish_in_order(world, program)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["catalysts_updated"]) == (0, 1)
+    (row,) = world.rows(Catalyst)
+    assert row.window_start.isoformat() == "2026-10-01"
+    assert _check(world, late, "safe_to_write") == ("fail", PASSED)
+
+
 @pytest.mark.parametrize(
     "quote",
     [
@@ -1139,3 +1164,24 @@ def test_o1_with_another_drug_on_file_waits_in_the_writer(world: World) -> None:
     claim = world.claim("second half of 2027", sentence=sentence)
     assert _publish(world)["held_by_writer"] == 1
     assert _check(world, claim, "safe_to_write") == ("fail", ROLE_UNCLEAR)
+
+
+def test_an_unclear_role_that_slips_past_the_hold_stops_the_run_and_writes_nothing(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A guessed role must never be stored as if a quote said it (Claude review of PR #59)."""
+    from catalyst.publish import write
+
+    def always_safe(*_args: object) -> CheckResult:
+        return CheckResult(gate.WRITER_CHECK, CheckOutcome.PASS)
+
+    monkeypatch.setattr(write, "safe_to_write", always_safe)
+    world.claim(
+        "second half of 2027",
+        trial=False,
+        sentence="Topline data for pegozafermin with semaglutide are expected in the second half of 2027.",
+    )
+    world.add(Drug(company_id=world.company, preferred_name="semaglutide"))
+    with pytest.raises(RuntimeError, match="the drug role is unclear"):
+        _publish(world)
+    assert world.counts() == (0, 0, 0, 0)
