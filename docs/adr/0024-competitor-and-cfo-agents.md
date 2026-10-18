@@ -43,7 +43,7 @@ Two rules from the spec still apply:
    - a short "why it fits".
 
    An idea becomes a roadmap item only when the owner approves it. A coding session then adds it through a pull request.
-5. **Delivery:** plain code, not the agent, files one GitHub issue a week, labelled `competitor-report`. GitHub emails the owner about new issues, so the owner needs no new account. This is the same channel the planned alerts item uses.
+5. **Delivery:** plain code, not the agent, files one GitHub issue a week, labelled `competitor-report`. GitHub emails the owner about new issues, so the owner needs no new account. This is the same channel the planned alerts item uses. Quoted competitor text in the issue sits in a block marked as untrusted outside text, never instructions, because coding sessions may read these issues.
 6. **Cost:**
    - It gets its own role, `researcher`, with a daily cap in `config/models.toml`, which the owner merges.
    - It runs once a week, and reads only the week's changed text.

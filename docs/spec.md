@@ -521,7 +521,7 @@ Foreign companies (ADR 0021): a US depositary share's market value needs its rat
 - [ ] How far back to backfill outcomes (2016 or 2010)
 - [ ] Hours per week you can give the review queue; this sets how fast coverage can grow
 - [ ] Business setup: entity, terms of service, privacy policy, Stripe, sales tax (deferred; needed before taking payment)
-- [ ] Distribution plan: public pages, newsletter, direct outreach, and listings chosen; social posts left out for now (owner decision 2026-10-17); your byline still to decide
+- [ ] Distribution plan: public pages, newsletter, direct outreach, and listings chosen; social posts left out for now (owner decision 2026-10-17), except the planned X feed of the most-watched ranking (Phase 9, ADR 0029); your byline still to decide
 - [ ] A physical postal address for commercial email (a registered PO box or private mailbox is enough), set up with the business
 - [ ] Whether $15 is the right long-term price once benchmarks ship
 

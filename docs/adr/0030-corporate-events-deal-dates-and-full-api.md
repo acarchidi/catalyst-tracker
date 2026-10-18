@@ -42,7 +42,7 @@ The owner then added a seventh: record in each company's history any company-spe
    - **Upcoming deal dates as catalysts:** a merger's expected closing window, the shareholder vote date, the tender offer's expiration date, the antitrust waiting period's end, and the outside date in the agreement. A collaboration also gets its expected effective date and any option-exercise deadline the filing states.
    - These are not trial or regulatory catalysts, so they appear in their own section and filter ("Corporate events"). They also feed the price statistics as their own event types.
    - **Both readers learn the new types** under new prompt versions, with gold-set entries for each type. Both are scored again before any of these publishes (checkpoint CP13).
-   - **Back-fill:** history is filled for covered companies from their past filings, at the 10-requests-per-second EDGAR limit, inside the daily model caps. It runs over several weeks rather than raising any cap.
+   - **Back-fill:** history is filled for covered companies from their past filings, at the 10-requests-per-second EDGAR limit, inside the daily model caps. It never raises a live role's cap: it gets its own daily cap, set by the owner in `config/models.toml`, or a narrower scope. At today's caps a full back-fill of long 10-K and 10-Q text would take months, so the owner chooses between a cap and a scope when this phase starts.
 3. **Growth blockers and their fixes ("commercial milestones").**
    - **What is recorded:** a statement by the company that names something limiting revenue or earnings growth, together with the step that fixes it and a timeline. Each record has:
      - the blocker, for example "supply constrained" or "no reimbursement in Germany";
@@ -80,6 +80,7 @@ The owner then added a seventh: record in each company's history any company-spe
    - Each one comes with its sources, as on the site.
    - It keeps the spec's design: OpenAPI, versioned paths, cursor paging, ETags, and rate limits by tier.
    - Access needs an API key per account, rate limits by plan, and usage metering. Bulk export is at most a daily file of changes, never a price series.
+   - It extends the read API of ADR 0025, and keeps its test that no field is a price or return series. Price-derived fields (event-window statistics, market value, scenario ranges) and the bulk file carry them only after the price vendor confirms in writing that this use is allowed, as for reports (ADR 0032).
    - **Price:** the spec's "about $50 a month" stands until the owner decides otherwise. Whether the API tier and ADR 0029's possible higher tier are one plan is decided together.
 6. **Every rule stays the same.**
    - Every value has a source document and a verbatim quote.

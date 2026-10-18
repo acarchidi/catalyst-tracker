@@ -39,7 +39,7 @@ The owner asked for three things:
      - as a share of the collaborator's own market value.
 
      This gives the same kind of upside and downside range as a scenario.
-   - **Private collaborator:** the estimated dollar value at stake, from disclosed terms. Where a valuation is publicly reported (for example a funding round), the same value is also shown as a share of it, with its source. There is no share price, so there is no price-move range.
+   - **Private collaborator:** the estimated dollar value at stake, from disclosed terms. Where a valuation appears in a primary source (a filing or the company's own release, for example announcing a funding round), the same value is also shown as a share of it, with that source. A valuation reported only in the news is a lead, never a source (spec: Sources), so it is left out. There is no share price, so there is no price-move range.
    - **Undisclosed terms:** the estimate is marked "terms not disclosed". It is never guessed.
 
 ## Alternatives

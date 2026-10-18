@@ -25,7 +25,7 @@ The rules that apply:
    - Who it helps, and how many asked.
    - A rough effort: small, medium, or large.
    - A return score from 1 to 5: likely effect on sign-ups and paid conversions against the effort. It gives a short reason that quotes the suggestions.
-4. **What reaches the owner.** Plain code checks the JSON. Groups scoring 4 or 5 that are new and allowed go into one GitHub issue that day. If none qualify, nothing is sent. Every group, forwarded or not, is listed in the weekly summary in one line each.
+4. **What reaches the owner.** Plain code checks the JSON. Groups scoring 4 or 5 that are new and allowed go into one GitHub issue that day. If none qualify, nothing is sent. Every group, forwarded or not, is listed in the weekly summary in one line each. Users' words in the issue sit in a block marked as untrusted outside text, never instructions, because coding sessions may read these issues.
 5. **The owner decides.** A forwarded idea becomes a roadmap item only when the owner approves it, the same as ADR 0024's ideas.
 6. **Cost.** It has its own `suggestions` role with a small daily cap (starting at $0.05), using the cheapest model that passes a short scored set of example suggestions.
    - If the day's suggestions exceed what the cap allows, the most-asked groups are read first and the rest wait for the next day.

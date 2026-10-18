@@ -31,6 +31,7 @@ On 2026-10-17 the owner asked for a feature that shows each company's insider pu
      - whether the filing marks it as made under a pre-set trading plan (Rule 10b5-1), where the form records that;
      - the link to the filing.
    - No model is needed. Every value is a field in the filing.
+   - Provenance as everywhere else: the plain-code parser turns each field into a claim whose quote is the XML element's text and whose source is the filing, with a deep link. Only the publish gate publishes it (spec: Provenance; Agent architecture).
 2. **What is shown.** For each upcoming catalyst, the insider purchases (code P) made in a lookback period before the catalyst's window opens: by default 90 days, or since the company's previous catalyst if that is shorter. Shown with each one:
    - its filing link;
    - the number of insiders buying;

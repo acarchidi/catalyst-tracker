@@ -76,7 +76,7 @@ On 2026-10-18 the owner asked for three things at the end of the roadmap:
 
 ## Consequences
 
-- Phase 9 needs the Phase 2 web app, the Phase 3 accounts and billing, and the Phase 2 alerts job (ADR 0023) first.
+- Phase 9 needs the Phase 2 web app, the Phase 3 accounts and billing, and the Phase 3 watchlist alerts first (roadmap: Phase 3, "Watchlists, alerts").
 - The owner's setup for this phase is one sitting: Twilio with its registration, a Telegram bot token, an X account, and an X developer account.
 - Running costs grow with use: text messages per paid user (capped), and X posts per day (capped).
 - Whether attention data is worth paying for is an assumption, not a finding. It can be tested later, once outcomes exist, by comparing the most-watched catalysts with the rest.
