@@ -11,12 +11,14 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
+import uvicorn
 from defusedxml.ElementTree import ParseError
 from sqlalchemy import create_engine
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
+from catalyst.api.http import create_app
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
@@ -113,6 +115,10 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
+    api = commands.add_parser(
+        "api", help="Serve the read-only data API on this computer only, at http://127.0.0.1:<port>/v1."
+    )
+    api.add_argument("--port", type=int, default=8000, help="Port on this computer (default 8000).")
     evaluate = commands.add_parser(
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
@@ -161,6 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
+        "api": _serve,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -315,6 +322,21 @@ def _verify_claims(_args: argparse.Namespace) -> int:
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
+    return 0
+
+
+def _serve(args: argparse.Namespace) -> int:
+    """Serve published data read-only through the HTTP API, on this computer only (ADR 0025)."""
+    try:
+        database = settings.database_url()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        uvicorn.run(create_app(sessionmaker(engine)), host="127.0.0.1", port=args.port, log_config=None)
+    finally:
+        engine.dispose()
     return 0
 
 
