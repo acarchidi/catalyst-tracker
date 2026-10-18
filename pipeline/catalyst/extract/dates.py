@@ -246,8 +246,8 @@ def _range(phrase: str, published: date) -> _Period | None:
         first = _period(f"{parts[0]} {year}", published) or _period(f"{parts[0]}, {year}", published)
     elif fixed and first is not None and not second_fixed:
         # "Q3 2026 to year-end", "November 2027 to December": the year is written once, at the
-        # start, and the last part takes it. "Q4 2026 to Q1" then runs backwards and gives no
-        # window; code does not guess the next year (Claude review of PR #40).
+        # start, and the last part takes it. "Q4 2026 to first quarter" then runs backwards and gives
+        # no window; code does not guess the next year (Claude review of PR #40).
         year = first[0].year
         second = _period(f"{parts[1]} {year}", published) or _period(f"{parts[1]}, {year}", published)
     if first is None or second is None:
