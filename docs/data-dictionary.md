@@ -212,13 +212,14 @@ Rules:
 
 ## `catalyst_trial`
 
-Links a catalyst to a trial it concerns.
+Links a catalyst to a trial it concerns. Each link names the claim whose quote names the trial, so a trial is never shown without one (ADR 0018, part 5b; ADR 0025).
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
 | `catalyst_id` | link to `catalyst` | yes | The catalyst. |
 | `trial_id` | link to `trial` | yes | The trial. |
+| `claim_id` | link to `claim` | yes | The claim whose quote names this trial for this catalyst. |
 
 Rules:
 

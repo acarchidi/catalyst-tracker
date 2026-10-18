@@ -247,13 +247,20 @@ class Catalyst(Entity):
 
 
 class CatalystTrial(Entity):
-    """Links a catalyst to a trial it concerns."""
+    """Links a catalyst to a trial it concerns.
+
+    Each link names the claim whose quote names the trial, so a trial is never shown without one
+    (ADR 0018, part 5b; ADR 0025).
+    """
 
     __tablename__ = "catalyst_trial"
     __unique__ = (("catalyst_id", "trial_id"),)
 
     catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst.")
     trial_id: Annotated[UUID, References("trial")] = Field(description="The trial.")
+    claim_id: Annotated[UUID, References("claim")] = Field(
+        description="The claim whose quote names this trial for this catalyst."
+    )
 
 
 class CatalystDrug(Entity):
