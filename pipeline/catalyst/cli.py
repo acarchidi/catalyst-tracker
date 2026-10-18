@@ -36,6 +36,7 @@ from catalyst.llm.config import load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
+from catalyst.publish.run import decide_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.snapshots import (
     LocalSnapshotStore,
@@ -115,6 +116,11 @@ def _parser() -> argparse.ArgumentParser:
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
     _store_arguments(verify_claims)
+    decide = commands.add_parser(
+        "decide-claims",
+        help="Decide, from the stored checks and copies, which extracted claims may publish (free).",
+    )
+    _store_arguments(decide)
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -171,6 +177,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
+        "decide-claims": _decide_claims,
         "api": _serve,
         "mcp": _serve,
     }
@@ -299,15 +306,37 @@ def _extract(args: argparse.Namespace) -> int:
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
+        decisions = _decide_after(sessionmaker(engine), store, checks)
     finally:
         engine.dispose()
     if args.out is not None:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
-    summary = report.summary() | {"matches": matches, "checks": checks, "second_reading": second}
+    summary = report.summary() | {
+        "matches": matches,
+        "checks": checks,
+        "second_reading": second,
+        "decisions": decisions,
+    }
     print(json.dumps(summary, indent=2))
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
-    return 1 if summary["documents_failed"] or summary["stopped_early"] or second_failed else 0
+    failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or "error" in decisions
+    return 1 if failed else 0
+
+
+def _decide_after(
+    session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
+) -> dict[str, Any]:
+    """Decide every claim after every check; earlier steps stand if this fails.
+
+    Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
+    """
+    if "error" in checks or "error" in checks.get("advisory", {}):
+        return {"skipped": "the checks did not finish, so nothing was decided"}
+    try:
+        return decide_claims(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
 
 
 def _resolve(_args: argparse.Namespace) -> int:
@@ -342,6 +371,22 @@ def _verify_claims(args: argparse.Namespace) -> int:
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))
+    return 0
+
+
+def _decide_claims(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = decide_claims(sessionmaker(engine), store, _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
     return 0
 
 
