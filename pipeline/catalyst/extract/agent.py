@@ -4,6 +4,10 @@ The model reads one press release and proposes catalysts, each with a date phras
 It has no tools and no database access. Plain code then checks each proposal: the quote must be
 the source's own words, the date phrase must sit inside the quote, and code, not the model,
 turns the phrase into a window. A proposal that fails a check keeps the reason, never a guess.
+
+Text in the source may try to steer the model (ADR 0018, part 5c). The model reads only the
+visible text; a quote must also be visible; no quote, date words, or name may hold invisible
+characters; and every proposal from a source that addresses models is flagged for a person.
 """
 
 from __future__ import annotations
@@ -11,13 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
 from typing import Any
 from uuid import UUID
 
 from catalyst.extract.dates import DateWindow, parse_window
+from catalyst.extract.injection import hidden_letters, instruction_markers, invisible_characters
 from catalyst.extract.text import TEXT_VERSION, QuoteSpan, find_quote
 from catalyst.llm.client import ModelClient
 from catalyst.llm.prompts import load_prompt
@@ -37,6 +42,11 @@ class Problem(StrEnum):
     DATE_NOT_IN_QUOTE = "the date words are not in the quote"
     NO_WINDOW = "the date words name no window"
     DATE_PASSED = "the window ended before the document was published"
+    QUOTE_HIDDEN = "the quote is text the page hides from readers"
+    INVISIBLE_CHARACTERS = "the quote, date words, or names hold invisible or direction-changing characters"
+    NON_ASCII_DIGITS = "the date words hold a digit from another script, which may read as another number"
+    SOURCE_HIDES_TEXT = "the source hides words from readers, so a person must read it"
+    SOURCE_INSTRUCTS_MODELS = "the source holds text written to steer a model, so a person must read it"
 
 
 @dataclass(frozen=True)
@@ -63,6 +73,7 @@ class Extraction:
     model: str
     prompt_id: str
     prompt_version: str
+    instructions: tuple[str, ...] = ()  # model-steering text found in the source, if any
 
 
 def model_input(text: str, published: date) -> str:
@@ -90,13 +101,25 @@ def claim_field(value: dict[str, Any]) -> str:
     return f"catalyst:{digest}"
 
 
-def check_proposal(item: dict[str, Any], text: str, published: date) -> ExtractedCatalyst:
-    """Check one proposal as the model gave it: find its quote, its date words, and its window."""
+def check_proposal(
+    item: dict[str, Any], text: str, published: date, visible: str | None = None
+) -> ExtractedCatalyst:
+    """Check one proposal as the model gave it: find its quote, its date words, and its window.
+
+    `visible` is the copy's visible text (`visible_text`); when given, the quote must be in it too.
+    """
     catalyst_type = CatalystType(item["catalyst_type"])
     date_text = str(item["date_text"])
     problems: list[Problem] = []
     window: DateWindow | None = None
     span = find_quote(text, str(item["quote"]))
+    if span is not None and visible is not None and find_quote(visible, span.quote) is None:
+        problems.append(Problem.QUOTE_HIDDEN)
+    names = (date_text, item["title"], item["drug"], item["indication"])
+    if invisible_characters(span.quote if span else None, *names):
+        problems.append(Problem.INVISIBLE_CHARACTERS)
+    if any(ch.isdigit() and not ch.isascii() for ch in date_text):
+        problems.append(Problem.NON_ASCII_DIGITS)
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)
     elif not has_words(span.quote, date_text):
@@ -126,22 +149,36 @@ def extract_catalysts(
     text: str,
     published: date,
     *,
+    visible: str | None = None,
     role: str = ROLE,
     prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
 ) -> Extraction:
     """Ask a reader for the catalysts in `text` (published on `published`) and check each one.
 
-    The extractor is the default; the verifier's second reading uses its own role and prompt.
+    `text` is the copy's `document_text`, where quotes are placed. `visible` is its
+    `visible_text`: the reader sees only that, and every quote must be in it. None means the
+    whole text is visible (plain text). The extractor is the default; the verifier's second
+    reading uses its own role and prompt. When the text addresses models, or the page hides words
+    from readers, every proposal is flagged, since no code can tell which of them the text changed.
     """
     prompt = load_prompt(*prompt_ref)
-    result = client.run(role, prompt, model_input(text, published))
+    shown = text if visible is None else visible
+    result = client.run(role, prompt, model_input(shown, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
+    catalysts = tuple(check_proposal(item, text, published, visible) for item in items)
+    instructions = instruction_markers(text)
+    flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
+    if visible is not None and hidden_letters(text, visible):
+        flags.append(Problem.SOURCE_HIDES_TEXT)
+    if flags:
+        catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)
     return Extraction(
-        catalysts=tuple(check_proposal(item, text, published) for item in items),
+        catalysts=catalysts,
         provider=result.provider,
         model=result.model,
         prompt_id=result.prompt_id,
         prompt_version=result.prompt_version,
+        instructions=instructions,
     )
 
 
