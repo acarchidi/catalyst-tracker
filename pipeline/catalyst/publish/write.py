@@ -12,6 +12,8 @@ Recomputed here, because they are plain code over stored rows and can go stale:
 - `drug_named_near_quote` (part 3e), against the stored copy this job reads anyway, since new
   drug records and the release's later claims can change it; when the copy cannot be read, its
   stored row stands and the quote match holds the claim;
+- `type_named_near_quote` (part 5d), which reads the copy only for a quote that names no kind of
+  event;
 - `safe_to_write` (`catalyst.publish.sanity`), against the catalysts as this run leaves them;
 - the quote match against the stored copy.
 
@@ -22,6 +24,9 @@ matches and registry phases the rules read are stored inputs, renewed by their o
 
 The recomputed outcomes that differ from the stored ones are stored, so the decision job and the
 review queue see what the writer saw, including every reason it held a claim.
+
+The title it writes is composed in code from checked fields (`catalyst.publish.title`), never the
+extractor's own words; its change row cites the claim whose checked fields it names (part 5d).
 
 Safe to re-run: a claim a change row already cites is done, and the job holds a database lock
 while it runs, so two runs never both create one catalyst. Everything is written in one
@@ -39,7 +44,7 @@ from itertools import groupby
 from typing import Any
 from uuid import UUID
 
-from pydantic import JsonValue, ValidationError
+from pydantic import JsonValue
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -67,10 +72,12 @@ from catalyst.publish.sanity import (
     Candidate,
     drug_names,
     drug_role,
+    load_ties,
     others,
     safe_to_write,
     same_dates,
 )
+from catalyst.publish.title import TitleNames, load_title_names
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -89,7 +96,7 @@ from catalyst.schemas import (
     SourceTier,
 )
 from catalyst.snapshots import SnapshotStore
-from catalyst.verify import advisory, independent, second
+from catalyst.verify import advisory, event_type, independent, second
 from catalyst.verify.advisory import advisory_results
 from catalyst.verify.drug import DrugFacts, load_drug_facts
 from catalyst.verify.rules import CheckResult
@@ -145,6 +152,7 @@ class _Ready:
     claim: Claim
     candidate: Candidate
     key: Key
+    title: str | None  # composed from checked fields; None when a matched record has no name on file
 
     def order(self) -> tuple[object, ...]:
         """Sort best first: rank, then the later reading, then the id, so ties break the same way."""
@@ -247,6 +255,8 @@ def _recheck(
     read_now = _read_now(session, verifier_model)
     names_on_file = drug_names(session)
     drugs = load_drug_facts(session)
+    ties = load_ties(session, matches, live.cited)
+    titles = load_title_names(session)
     names = list(TABLES[Claim].c.keys())
     ready: list[_Ready] = []
     for _, group in groupby(rows, key=lambda row: row.source_document_id):
@@ -258,7 +268,7 @@ def _recheck(
             claim = Claim.model_validate({name: getattr(row, name) for name in names})
             key = claim_key(claim.value, matches.get(claim.id, []))
             results = [*fresh.get(claim.id, []), *([noticed[claim.id]] if claim.id in noticed else [])]
-            results += _drug_result(drugs, claim, copy)
+            results += [*_drug_result(drugs, claim, copy), _type_result(claim, copy)]
             run.results[claim.id] = results
             checks = _checks(claim.id, results, stored[claim.id], claim.source_document_id in read_now, at)
             if live.is_live(claim.id, key):
@@ -270,7 +280,7 @@ def _recheck(
                 continue
             rank = Rank(SourceTier(row.source_tier), row.published_at)
             candidate = Candidate(
-                claim_value(claim.value), claim.quote, key, rank, others(names_on_file, key)
+                claim_value(claim.value), claim.quote, key, rank, others(names_on_file, key), claim.id in ties
             )
             if key is None:  # no single company: `safe_to_write` says why
                 result = safe_to_write(candidate, Place(), at.astimezone(NEW_YORK).date())
@@ -278,7 +288,7 @@ def _recheck(
                 report.held_by_writer += 1
                 report.reasons[result.reason or ""] += 1
                 continue
-            ready.append(_Ready(claim, candidate, key))
+            ready.append(_Ready(claim, candidate, key, _title(titles, key)))
         del copy
     return ready
 
@@ -294,18 +304,40 @@ def _drug_result(drugs: DrugFacts, claim: Claim, copy: str | gate.UnreadableCopy
     return [drugs.check(claim.id, claim.source_document_id, claim.value, span, copy)]
 
 
+def _type_result(claim: Claim, copy: str | gate.UnreadableCopy) -> CheckResult:
+    """Check again that the quote states the claim's type (part 5d); the copy only for a bare row."""
+    text = None if isinstance(copy, gate.UnreadableCopy) else copy
+    kind = claim_value(claim.value).get("catalyst_type")
+    return event_type.type_named(text, claim.quote, claim.quote_start, claim.quote_end, kind)
+
+
+def _title(titles: TitleNames, key: Key) -> str | None:
+    """Compose the title from the claim's checked fields, or None when one has no name on file."""
+    try:
+        return titles.title(key.catalyst_type, key.drugs, key.trials)
+    except (KeyError, ValueError):
+        return None
+
+
 def _hold(run: _Run, ready: _Ready, reason: str) -> None:
     run.report.held_by_writer += 1
     run.report.reasons[reason] += 1
     log_event(_log, "claim_held_by_writer", claim_id=str(ready.claim.id), reason=reason)
 
 
-def _candidate(ready: _Ready, catalyst_id: UUID | None = None) -> Catalyst:
+def _candidate(ready: _Ready, catalyst_id: UUID | None = None, title: str | None = None) -> Catalyst:
+    """Build the catalyst the claim states; a ValueError when its values make none (no title, say).
+
+    `title` is the live catalyst's, for a move: the title is written once, by the creating claim.
+    """
+    title = title or ready.title
+    if title is None:
+        raise ValueError("a matched drug or trial has no name on file for the title")
     value = ready.candidate.value
     fields: dict[str, Any] = {
         "catalyst_type": ready.key.catalyst_type,
         "company_id": ready.key.company_id,
-        "title": value.get("title"),
+        "title": title,
         "window_start": value.get("window_start"),
         "window_end": value.get("window_end"),
         "window_precision": value.get("window_precision"),
@@ -369,7 +401,7 @@ def _link_trials(session: Session, catalyst_id: UUID, ready: _Ready, report: Pub
 def _create(session: Session, ready: _Ready, run: _Run) -> LiveCatalyst | None:
     try:
         new = _candidate(ready)
-    except ValidationError:
+    except ValueError:  # pydantic's ValidationError is one too
         return None
     at, report = run.at, run.report
     session.execute(insert(TABLES[Catalyst]).values(**new.model_dump()))
@@ -392,8 +424,8 @@ def _move(
 ) -> LiveCatalyst | None:
     """Change a live catalyst's date fields to the claim's, with a change row citing the claim for each."""
     try:
-        moved = _candidate(ready, live.row.id)
-    except ValidationError:
+        moved = _candidate(ready, live.row.id, live.row.title)
+    except ValueError:  # pydantic's ValidationError is one too
         return None
     # The read API takes the newest row of each field as its value, so a change always comes later.
     at = max(run.at, live.last_learned + timedelta(microseconds=1))

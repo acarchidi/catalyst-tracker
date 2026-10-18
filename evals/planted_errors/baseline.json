@@ -20,7 +20,7 @@
     "pdufa_outside_review": 1.0,
     "drug_in_release": 0.759,
     "drug_elsewhere": 0.993,
-    "wrong_type": 0.077,
+    "wrong_type": 0.973,
     "wrong_company": 1.0,
     "wrong_trial": 1.0,
     "wrong_phase": 1.0,

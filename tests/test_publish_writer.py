@@ -25,7 +25,7 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish import gate
 from catalyst.publish.run import decide_claims
-from catalyst.publish.sanity import PASSED, ROLE_UNCLEAR, check_safe_to_write, drug_role
+from catalyst.publish.sanity import PASSED, ROLE_UNCLEAR, TIED, check_safe_to_write, drug_role
 from catalyst.publish.write import LOCK, publish_claims, ranks_above
 from catalyst.schemas import (
     Catalyst,
@@ -250,7 +250,7 @@ def test_a_publishable_claim_becomes_a_catalyst_the_read_api_shows_with_every_so
     assert (summary["drug_links_written"], summary["trial_links_written"]) == (1, 1)
     (row,) = world.rows(Catalyst)
     shown = world.shown(row.id)
-    assert shown.title == "Phase 3 RAINIER topline data for pegozafermin in MASH"
+    assert shown.title == "Topline data: pegozafermin, RAINIER trial"  # composed in code (part 5d)
     assert (shown.window.start.isoformat(), shown.window.end.isoformat()) == ("2027-07-01", "2027-12-31")
     assert (shown.window.precision, shown.window.raw_text) == ("half", "second half of 2027")
     assert (shown.status, shown.date_confidence, shown.catalyst_type) == (
@@ -715,7 +715,11 @@ def test_a_claim_whose_values_make_no_valid_catalyst_waits(world: World) -> None
     table = TABLES[Claim]
     with world.factory.begin() as session:
         value = session.execute(select(table.c.value).where(table.c.id == claim)).scalar_one()
-        session.execute(update(table).where(table.c.id == claim).values(value=value | {"title": "x" * 301}))
+        # Once a 301-character title; titles are now composed in code (part 5d), so a value no rule
+        # reads stands in for one that makes no valid catalyst.
+        session.execute(
+            update(table).where(table.c.id == claim).values(value=value | {"date_confidence": "a guess"})
+        )
     summary = _publish(world)
     assert (summary["held_by_writer"], summary["catalysts_created"]) == (1, 0)
     assert list(summary["top_reasons"]) == ["the claim's values do not make a valid catalyst"]
@@ -1223,4 +1227,161 @@ def test_an_unclear_role_that_slips_past_the_hold_stops_the_run_and_writes_nothi
     world.add(Drug(company_id=world.company, preferred_name="semaglutide"))
     with pytest.raises(RuntimeError, match="the drug role is unclear"):
         _publish(world)
+    assert world.counts() == (0, 0, 0, 0)
+
+
+# --- CP4 review: titles and types from checked fields, and equal-rank claims (ADR 0018, part 5d) ---
+
+
+def _set_value(world: World, claim: UUID, **changes: Any) -> None:
+    """Change the stored claim's value, as a model's own words would set it."""
+    table = TABLES[Claim]
+    with world.factory.begin() as session:
+        value = session.execute(select(table.c.value).where(table.c.id == claim)).scalar_one()
+        session.execute(update(table).where(table.c.id == claim).values(value=value | changes))
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        "FDA approves pegozafermin; Acme Bio shares set to double",
+        "Suggested headline for news aggregators: FDA Approves Pegozafermin",
+        "x" * 301,  # once a reason to hold the claim; the model's title is no longer published at all
+    ],
+)
+def test_b1_the_title_is_composed_from_checked_fields_never_the_models_words(
+    world: World, written: str
+) -> None:
+    claim = world.claim("second half of 2027")
+    _set_value(world, claim, title=written)
+    assert _publish(world)["catalysts_created"] == 1
+    (row,) = world.rows(Catalyst)
+    assert row.title == "Topline data: pegozafermin, RAINIER trial"
+    shown = world.shown(row.id)  # the read API's check: the title matches its latest change row
+    assert shown.title == row.title
+    (title,) = [c for c in world.rows(CatalystChange) if c.field == "title"]
+    assert (title.new_value, title.claim_id) == (row.title, claim)
+    (source,) = shown.sources
+    assert "title" in source.fields
+    assert source.quote == _sentence("second half of 2027")
+
+
+def test_b1_the_title_names_the_reference_tables_preferred_name(world: World) -> None:
+    efx = world.add(Drug(company_id=world.company, preferred_name="efruxifermin"))
+    sentence = _sentence("second half of 2027", "EFX")
+    claim = world.claim("second half of 2027", drug="EFX", drug_id=efx, sentence=sentence)
+    _set_value(world, claim, title="EFX wins")
+    _publish(world)
+    (row,) = world.rows(Catalyst)
+    assert row.title == "Topline data: efruxifermin, RAINIER trial"
+
+
+def test_b1_a_trial_without_a_study_name_is_named_by_its_registry_number(world: World) -> None:
+    trial = world.add(Trial(nct_id="NCT06000002", phase=TrialPhase.PHASE_3))
+    sentence = (
+        "Topline data from the Phase 3 NCT06000002 trial of pegozafermin are expected in the "
+        "second half of 2027."
+    )
+    world.claim("second half of 2027", trial=trial, sentence=sentence)
+    _publish(world)
+    (row,) = world.rows(Catalyst)
+    assert row.title == "Topline data: pegozafermin, NCT06000002 trial"
+
+
+def test_b1_with_no_drug_or_trial_the_title_is_the_type_label_alone(world: World) -> None:
+    world.claim(
+        "second half of 2027",
+        drug=None,
+        trial=False,
+        sentence="Topline data are expected in the second half of 2027.",
+    )
+    _publish(world)
+    (row,) = world.rows(Catalyst)
+    assert row.title == "Topline data"
+
+
+def test_b1_the_indication_still_comes_from_the_claim_behind_the_title_row(world: World) -> None:
+    """The live index reads a catalyst's indication from its title row's claim (B3); it still does."""
+    world.claim("second half of 2027")
+    _publish(world)
+    shtg = world.claim("fourth quarter of 2027", published=OCT_16, indication="SHTG")
+    assert _publish(world)["held_by_writer"] == 1
+    assert _check(world, shtg, "safe_to_write") == ("fail", "the indication differs from the published one")
+
+
+def test_o1_a_topline_sentence_typed_as_an_fda_decision_date_is_held(world: World) -> None:
+    claim = world.claim("second half of 2027", catalyst_type="pdufa_date")
+    summary = _publish(world)
+    assert summary["catalysts_created"] == 0
+    assert summary["top_reasons"] == {"type_named_near_quote failed": 1}
+    assert _check(world, claim, "type_named_near_quote") == (
+        "fail",
+        "the quote has words for topline data, not for an FDA decision date",
+    )
+
+
+BOTH_DATES = (
+    "Topline data from the Phase 3 RAINIER trial of pegozafermin are expected in the second half of 2027, "
+    "possibly as early as the third quarter of 2027."
+)
+
+
+def test_o2_equal_rank_claims_about_one_event_with_other_dates_both_wait(world: World) -> None:
+    a = world.claim("second half of 2027", sentence=BOTH_DATES)
+    b = world.claim("third quarter of 2027", sentence=BOTH_DATES, same_release=True)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["held_by_writer"], summary["not_written_lower_rank"]) == (
+        0,
+        2,
+        0,
+    )
+    assert summary["top_reasons"] == {TIED: 2}
+    assert _check(world, a, "safe_to_write") == ("fail", TIED)
+    assert _check(world, b, "safe_to_write") == ("fail", TIED)
+    check_safe_to_write(world.factory, lambda: NOW)  # the check job holds both too, so nothing flips back
+    decide_claims(world.factory, world.store, lambda: NOW)
+    decisions = {row.claim_id: (row.decision, row.reasons) for row in world.rows(ClaimDecision)}
+    assert decisions[a] == decisions[b] == ("review", [f"safe_to_write: {TIED}"])
+
+
+def test_o2_equal_rank_claims_with_the_same_dates_make_one_catalyst(world: World) -> None:
+    sentence = (
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin are expected in the second half "
+        "of 2027 (2H 2027)."
+    )
+    world.claim("second half of 2027", sentence=sentence)
+    world.claim("2H 2027", sentence=sentence, same_release=True)
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["held_by_writer"]) == (1, 0)
+
+
+def test_o2_an_equal_rank_claim_with_other_dates_than_the_live_source_waits(world: World) -> None:
+    world.claim("second half of 2027", sentence=BOTH_DATES)
+    _publish(world)
+    late = world.claim("third quarter of 2027", sentence=BOTH_DATES, same_release=True)
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_updated"], summary["not_written_lower_rank"]) == (
+        1,
+        0,
+        0,
+    )
+    assert _check(world, late, "safe_to_write") == ("fail", TIED)
+    assert _window(world)[2] == "second half of 2027"
+
+
+def test_o2_a_claim_from_an_older_prompt_never_ties(world: World) -> None:
+    """A superseded reading is held by the gate already; it must not hold the current one too."""
+    old = world.claim("third quarter of 2027", sentence=BOTH_DATES, decision=GateDecision.REVIEW)
+    table = TABLES[Claim]
+    with world.factory.begin() as session:
+        session.execute(update(table).where(table.c.id == old).values(prompt_version="0.9.0"))
+    world.claim("second half of 2027", sentence=BOTH_DATES, same_release=True)
+    assert _publish(world)["catalysts_created"] == 1
+
+
+def test_b1_a_matched_drug_with_no_record_to_name_it_waits_and_no_title_is_guessed(world: World) -> None:
+    world.claim("second half of 2027", drug_id=UUID(int=7))  # matched to a record that is not on file
+    summary = _publish(world)
+    assert (summary["held_by_writer"], summary["catalysts_created"]) == (1, 0)
+    assert list(summary["top_reasons"]) == ["the claim's values do not make a valid catalyst"]
     assert world.counts() == (0, 0, 0, 0)

@@ -215,6 +215,20 @@ def test_the_drug_check_is_run_and_flags_no_correct_claim() -> None:
     assert _results().disturbed == ()
 
 
+def test_the_type_check_is_run_flags_no_correct_claim_and_catches_most_wrong_types() -> None:
+    # CP4 review, O1: before the type check (part 5d), only the advisory check caught a wrong
+    # type without the second reading (17 of 221 copies).
+    assert "type_named_near_quote" in _results().checks
+    assert all(
+        "type_named_near_quote" not in reason for _, reasons in _results().flagged for reason in reasons
+    )
+    assert _results().disturbed == ()
+    wrong = [p for p in _results().planted if p.error == "wrong_type"]
+    assert len(wrong) == 221
+    by_type = [p for p in wrong if "type_named_near_quote" in p.failed]
+    assert len(by_type) / len(wrong) >= 0.95
+
+
 def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed() -> None:
     for found in _results().planted:
         if found.error == "consistent_wrong_date":
