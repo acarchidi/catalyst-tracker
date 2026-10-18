@@ -1,4 +1,4 @@
-# 0030 — Corporate events, deal dates, growth blockers, past catalysts with their price moves, and the full API
+# 0030 — Corporate events, safety events, read-through to competitors, deal dates, growth blockers, past catalysts with their price moves, and the full API
 
 - **Status:** accepted (planned; nothing is built now)
 - **Date:** 2026-10-18
@@ -14,6 +14,8 @@ On 2026-10-18 the owner asked for five things:
 5. All of it added to the end of the roadmap.
 
 Later the same day the owner added a sixth: track what management says is holding back revenue or earnings growth, and how and when it will be fixed. Examples are adding manufacturing capacity to meet demand for a drug on the market or about to be approved, entering new countries, new payment arrangements with insurers, and licensing production to outside manufacturers. Any statement that names a blocker and gives a rough timeline for fixing it should be tracked.
+
+The owner then added a seventh: record in each company's history any company-specific or industry event that would move its share price. One example is reports of side effects or deaths that pause or stop a trial. And when one company's trial news makes the market sell its competitors' shares, record that event in the competitors' histories too.
 
 **What the spec already has:**
 - Historical outcomes: free sees the last 90 days, paid sees the full archive. The outcome agent is a Phase 1 item.
@@ -52,13 +54,34 @@ Later the same day the owner added a sixth: track what management says is holdin
    - **Tracking over time:** every later statement about the same blocker is a change in its history: on track, moved, done, or dropped. A timeline that slips is shown and can be alerted on, like any slipped catalyst. A blocker the company stops mentioning is marked "no update since" with the date of the last mention, never "fixed".
    - **What is never added:** our own view of whether the fix will work, or a guess at a timeline the company did not give. A blocker with no timeline is recorded with "no timeline given" and does not appear on the calendar.
    - These appear on the calendar under their own type, "Commercial milestones", and in the "Corporate events" section's filters. Both readers learn them under CP13 with the other new types.
-4. **The full API.** The public REST API tier moves from "Later" into this phase.
+4. **Safety events and read-through to competitors.**
+   - **Safety and trial-halt events**, recorded in the company's history and on its trials. These include:
+     - a clinical hold, partial hold, or lifted hold;
+     - a trial paused, stopped early, or ended, with the reason as stated (safety, futility, efficacy, business);
+     - a data monitoring committee's recommendation;
+     - patient deaths or serious side effects the company reports;
+     - a new boxed warning, a safety label change, a recall, or an FDA safety communication;
+     - a market withdrawal.
+   - **Sources:**
+     - the company's releases and filings;
+     - ClinicalTrials.gov status changes ("Suspended", "Terminated", "Withdrawn") with the registry's stated reason;
+     - FDA safety communications, label changes, and recalls (openFDA, already a source).
+   - **News reports are leads only** (spec: Source ranking). A news story about deaths starts a search for the company's or regulator's own statement. Until one exists, nothing is recorded.
+   - **Adverse-event report counts** from FDA's reporting system (openFDA) are shown only as context, labeled "unverified reports; a report does not show the drug caused the event". They are never a catalyst.
+   - **Read-through to competitors:** when a company's event lands, each competitor's history gets a "peer event" entry if it meets two conditions:
+     - **It is a competitor:** it shares the indication, or the drug target or mechanism, according to our reference tables. The match is shown.
+     - **The market moved it:** its abnormal return against XBI on day 0 or day +1 is beyond a threshold set in config. The starting threshold is twice that stock's own typical daily abnormal move over the past 60 trading days.
+   - **What a peer entry records:** the original event with its source, the competitor's measured move, and the label "same-day move; the cause is not established". We record that the shares moved when the event landed. We never claim the event caused the move.
+   - A competitor that did not move gets no entry. The original event's page lists every competitor that did, with its move.
+   - **Price data:** peer entries need the price license (Phase 3). Without it, safety events are still recorded, but peer entries are not.
+   - Safety events also count as their own event type in the price statistics and base rates.
+5. **The full API.** The public REST API tier moves from "Later" into this phase.
    - It offers every published dataset: catalysts, history, outcomes, corporate events, deal dates, trials, collaborators, benchmarks, market size, scenarios, price statistics, runway, insider purchases (Phase 7), and devices (Phase 8).
    - Each one comes with its sources, as on the site.
    - It keeps the spec's design: OpenAPI, versioned paths, cursor paging, ETags, and rate limits by tier.
    - Access needs an API key per account, rate limits by plan, and usage metering. Bulk export is at most a daily file of changes, never a price series.
    - **Price:** the spec's "about $50 a month" stands until the owner decides otherwise. Whether the API tier and ADR 0029's possible higher tier are one plan is decided together.
-5. **Every rule stays the same.**
+6. **Every rule stays the same.**
    - Every value has a source document and a verbatim quote.
    - The readers have no tools.
    - Only the publish gate writes live data.
