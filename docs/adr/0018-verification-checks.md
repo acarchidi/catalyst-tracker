@@ -106,9 +106,32 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - the decision is kept in `claim_decision`: one row per extractor claim, with publish or review, the list of reasons, and when it was decided. A re-run updates the row in place. The database refuses a review row with no reason, and a publish row with one. Row-level security is on with no policy, so only the server's own code reads or writes it. The rows can always be rebuilt from the stored checks and copies, so the migration's downgrade may drop them;
       - the job `catalyst decide-claims` (free, no model) decides every extractor claim, reads each copy once per run, and reports how many claims will publish, how many wait for review, how many copies could not be read, and the ten most common reasons. It also runs last in `catalyst extract-catalysts`, after every check. If matching, the rule checks, or the advisory check failed in that run, it decides nothing and says so, so no decision rests on outcomes the run did not renew. If it fails itself, the earlier steps stand and the command fails;
       - the decision reads outcomes as they were stored. A decision made long after its checks ran can rely on an old `window_not_past` or `independent_source` outcome. The catalyst writer (5b) therefore re-runs the checks and decides in one pass before it writes anything;
-      - claims that pass the publish rule become catalysts, with drug and trial links (part 5b);
-      - each link's claim must be about that catalyst and field (from the PR #23 review);
-      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item (part 5b or 5c; part 5a still requires it for every claim);
+      - **the catalyst writer** (part 5b, `catalyst.publish.write`, also `catalyst publish-claims`) is the only job that writes live catalysts. It is plain code and makes no model calls. It runs last in `catalyst extract-catalysts`, after the decisions, under its own key (`published`); when the decisions did not finish it writes nothing and says so, and when it fails itself the earlier steps stand and the command fails;
+      - **it checks again before it writes.** For each claim the decision job marked to publish, it recomputes, as of today in New York:
+        - every rule check (`catalyst.verify.rules.RULES`);
+        - `independent_source`, since it depends on other documents' claims;
+        - `advisory_meeting_noticed`, since a notice may since have been amended or cancelled;
+        - the quote match against the stored copy.
+
+        Every other check on the gate's list is read as stored. Today that is only `second_reading_agrees`, which needs a model call; its own job removes outcomes no current reading supports. The list itself is read from `catalyst.publish.gate` (`REQUIRED_CHECKS`, `MAY_NOT_APPLY`), never copied, so a check added there is read as stored until the writer recomputes it. The entity matches and registry phases the rules read are stored inputs, renewed by their own jobs. Then `decide` runs again, and only a fresh publish writes;
+      - **`window_not_past` applies only before first publication.** A claim is about a live catalyst when a change row already cites it, or when it states the same event as an open published catalyst (below). For such a claim, both the writer and the decision job treat `window_not_past` as not applicable: the date passing is a change for the outcome tracker, not a review item. Nothing is ever unpublished or deleted;
+      - **which catalyst a claim is about.** Two statements are one event when they share the company, the catalyst type, the matched drugs, and the matched trials. Resolved catalysts are left out, so a new event of the same kind (a new FDA date after a refusal) becomes a new catalyst;
+      - **what it writes, the way the read API reads it (ADR 0025):**
+        - a new event becomes a catalyst with status upcoming, and a first-value change row, citing the claim, for every value it sets. `window_raw_text` is the claim's date words. The indication stays empty until indications are matched;
+        - each matched drug gets a `catalyst_drug` link naming the claim, and one `drugs` change row lists the links. The extractor names one drug and no role yet, so the link is `in_combination` when the quote says "combination", and `alone` otherwise;
+        - each matched trial gets a `catalyst_trial` link naming the claim. A migration adds the required `claim_id` column; it refuses to run while a trial link exists that would lack or lose its claim. The read API does not show trials yet (ADR 0025, rule 3);
+        - so every link's claim is about that catalyst and field: it is the claim whose change rows set the catalyst, and whose match names that drug or trial (PR #23 review);
+      - **which claim wins** (spec: Which claim wins). Several new claims about one new event: the best-ranked creates it. A claim about a live event moves its date only when it outranks the claim behind the current window: a higher source tier, or the same tier and published later. A move writes a change row, citing the new claim, for each date field that changes (`window_*`, `date_confidence`), always timed after the catalyst's earlier rows. The same window in other words writes nothing. The title, type, company, and links stay as first written. A claim that does not outrank it writes nothing, and keeps its publish decision for the conflicts display;
+      - **these wait for a person instead:**
+        - a claim whose window does not overlap the live one's: it may be a slip or another event, and plain code cannot tell;
+        - a move that takes either end of the window more than 6 months, unless the new window lies inside the old one (spec: Change sanity);
+        - a claim that matches more than one open published catalyst;
+        - a claim whose values make no valid catalyst (for example a title over 300 characters).
+
+        The writer stores each held claim's reasons, and those of a claim the fresh checks hold, as its review decision, so the review queue shows the newest reason. The decision job's next run decides it again from stored rows, and the writer holds it again;
+      - **safe to re-run.** A claim a change row already cites is skipped, so a re-run with nothing new writes nothing. The job takes a database lock (`pg_advisory_xact_lock`), so two runs never both create one catalyst, and writes everything in one transaction, so a failure leaves nothing half written;
+      - **memory.** Both the decision job and the writer read claims grouped by document and hold only the current document's text (Claude review of PR #52);
+      - the decision job's publish count is therefore not final; its help text says so (Claude review of PR #52);
       - prompt-injection fixtures prove that text in a source cannot change a stored value (part 5c).
 
       CP4 then runs (Opus review).

@@ -6,8 +6,9 @@ rule checks pass, and a second source agrees or the source is a regulator or SEC
 with no stored row has not passed (ADR 0018). The quote is matched again here, against the
 stored copy, rather than read from a row (spec: Provenance).
 
-Left to later parts: `window_not_past` applies only before first publication (5b, with the
-catalyst writer); prompt-injection fixtures (5c).
+`window_not_past` applies only before first publication; `catalyst.publish.live` marks it not
+applicable for a claim about a live catalyst (5b). Left to a later part: prompt-injection
+fixtures (5c).
 """
 
 from __future__ import annotations

@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Any, cast
@@ -282,48 +282,59 @@ def company_of(owners: set[UUID]) -> UUID | None:
     return next(iter(owners)) if len(owners) == 1 else None
 
 
+def advisory_results(
+    session: Session, store: SnapshotStore, only: Collection[UUID] | None = None
+) -> dict[UUID, CheckResult]:
+    """Compute, without storing, `advisory_meeting_noticed` for every extractor claim, or for `only` these.
+
+    The stored notices are read once per call, not once per claim (Opus review of PR #49), and only
+    when a claim is an advisory meeting.
+    """
+    claim, links = TABLES[Claim], TABLES[CompanyDocument]
+    companies: dict[UUID, set[UUID]] = {}
+    for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
+        companies.setdefault(row.source_document_id, set()).add(row.company_id)
+    references = load_reference_data(session)
+    query = select(claim.c.id, claim.c.value, claim.c.source_document_id).where(
+        claim.c.agent == ROLE, claim.c.field.startswith("catalyst:")
+    )
+    loaded: StoredNotices | None = None
+    results: dict[UUID, CheckResult] = {}
+    for row in session.execute(query).all():
+        if only is not None and row.id not in only:
+            continue
+        value = _value(row.value)
+        kind, drug = value.get("catalyst_type"), value.get("drug")
+        subject = AdvisoryClaim(
+            catalyst_type=kind if isinstance(kind, str) else None,
+            drug=drug if isinstance(drug, str) else None,
+            window=_window(value),
+        )
+        company = company_of(companies.get(row.source_document_id, set()))
+        if subject.catalyst_type == ADVISORY_TYPE and subject.window is not None:
+            loaded = loaded or load_notices(session, store)
+            try:
+                found = notices_in(loaded, *subject.window)
+            except (ValueError, OverflowError):
+                results[row.id] = CheckResult(CHECK, Outcome.FAIL, "the claim's window cannot be looked up")
+                continue
+            results[row.id] = advisory_notice(
+                subject, found, _same_drug(references, company), _other_company(references, company)
+            )
+        else:
+            results[row.id] = advisory_notice(subject, NoticesInWindow(), _same_drug(references, company))
+    return results
+
+
 def check_advisory_meetings(
     session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
 ) -> AdvisoryReport:
-    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run.
-
-    The stored notices are read once per run, not once per claim (Opus review of PR #49).
-    """
-    claim, links = TABLES[Claim], TABLES[CompanyDocument]
+    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run."""
     report = AdvisoryReport()
     at = now()
     with session_factory.begin() as session:
-        companies: dict[UUID, set[UUID]] = {}
-        for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
-            companies.setdefault(row.source_document_id, set()).add(row.company_id)
-        references = load_reference_data(session)
-        query = select(claim.c.id, claim.c.value, claim.c.source_document_id).where(
-            claim.c.agent == ROLE, claim.c.field.startswith("catalyst:")
-        )
-        rows = session.execute(query).all()
-        loaded: StoredNotices | None = None
-        for row in rows:
-            value = _value(row.value)
-            kind, drug = value.get("catalyst_type"), value.get("drug")
-            subject = AdvisoryClaim(
-                catalyst_type=kind if isinstance(kind, str) else None,
-                drug=drug if isinstance(drug, str) else None,
-                window=_window(value),
-            )
-            company = company_of(companies.get(row.source_document_id, set()))
-            if subject.catalyst_type == ADVISORY_TYPE and subject.window is not None:
-                loaded = loaded or load_notices(session, store)
-                try:
-                    found = notices_in(loaded, *subject.window)
-                except (ValueError, OverflowError):
-                    result = CheckResult(CHECK, Outcome.FAIL, "the claim's window cannot be looked up")
-                else:
-                    result = advisory_notice(
-                        subject, found, _same_drug(references, company), _other_company(references, company)
-                    )
-            else:
-                result = advisory_notice(subject, NoticesInWindow(), _same_drug(references, company))
-            store_check(session, row.id, result, at)
+        for claim_id, result in advisory_results(session, store).items():
+            store_check(session, claim_id, result, at)
             report.claims += 1
             key = f"{result.check}:{result.outcome.value}"
             report.outcomes[key] = report.outcomes.get(key, 0) + 1

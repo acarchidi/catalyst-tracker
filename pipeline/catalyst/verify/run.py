@@ -55,7 +55,8 @@ class CheckReport:
         return {"claims": self.claims, "claims_passing": self.claims_passing, "outcomes": dict(self.outcomes)}
 
 
-def _matches(session: Session) -> dict[UUID, list[Match]]:
+def load_matches(session: Session) -> dict[UUID, list[Match]]:
+    """Return every claim's stored entity matches, as the rule checks read them."""
     match = TABLES[EntityMatch]
     found: defaultdict[UUID, list[Match]] = defaultdict(list)
     query = select(match.c.claim_id, match.c.entity_type, match.c.status, match.c.matched_id)
@@ -185,6 +186,20 @@ def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datet
     session.execute(statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes))
 
 
+def check_results(
+    session: Session, today: date, matches: dict[UUID, list[Match]]
+) -> dict[UUID, list[CheckResult]]:
+    """Compute, without storing, every rule check and the independent-source check for every claim.
+
+    The catalyst writer calls this too, so it never trusts outcomes stored before today (ADR 0018, 5b).
+    """
+    facts_list = _facts(session, matches)
+    rules = {facts.id: rule_checks(facts, today) for facts in facts_list}
+    passed = {i for i, results in rules.items() if all(r.outcome is not Outcome.FAIL for r in results)}
+    independent = independent_sources(_statements(session, matches, passed))
+    return {facts.id: [*rules[facts.id], independent[facts.id]] for facts in facts_list}
+
+
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
     """Run every rule check and the independent-source check on every extractor claim.
 
@@ -196,16 +211,10 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
     at = now()
     today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
-        matches = _matches(session)
-        facts_list = _facts(session, matches)
-        rules = {facts.id: rule_checks(facts, today) for facts in facts_list}
-        passed = {i for i, results in rules.items() if all(r.outcome is not Outcome.FAIL for r in results)}
-        independent = independent_sources(_statements(session, matches, passed))
-        for facts in facts_list:
+        for claim_id, results in check_results(session, today, load_matches(session)).items():
             report.claims += 1
-            results = [*rules[facts.id], independent[facts.id]]
             for result in results:
-                store_check(session, facts.id, result, at)
+                store_check(session, claim_id, result, at)
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
             if all(result.outcome is not Outcome.FAIL for result in results):
                 report.claims_passing += 1

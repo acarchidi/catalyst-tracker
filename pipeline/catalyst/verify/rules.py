@@ -220,7 +220,7 @@ def _phase_matches_registry(facts: ClaimFacts, _today: date) -> CheckResult:
     return _passed("phase_matches_registry")
 
 
-def _months_after(start: date, months: int) -> date:
+def months_after(start: date, months: int) -> date:
     """Return the same day `months` later, or that month's last day if it is shorter (Oct 31 → Jan 31)."""
     month = start.month - 1 + months
     year, month = start.year + month // 12, month % 12 + 1
@@ -239,7 +239,7 @@ def _pdufa_date_plausible(facts: ClaimFacts, _today: date) -> CheckResult:
         return _failed("pdufa_date_plausible", "the decision date has no window")
     if end <= facts.published:
         return _failed("pdufa_date_plausible", "the decision date is not after the release")
-    latest = _months_after(facts.published, PDUFA_MONTHS)
+    latest = months_after(facts.published, PDUFA_MONTHS)
     if start > latest:
         return _failed(
             "pdufa_date_plausible",
