@@ -98,6 +98,30 @@ def test_date_words_missing_from_the_quote_fail_even_if_the_extractor_saw_no_pro
     assert (outcome, reason) == (Outcome.FAIL, "the date words 'Q4 2026' are not in the quote")
 
 
+@pytest.mark.parametrize(
+    ("quote", "date_text"),
+    [
+        ("Topline data are expected in the second half of 2027.", "second half"),
+        ("The PDUFA date is December 1, 2027.", "December 1"),
+        ("Enrollment completes by year-end 2027.", "year-end"),
+        ("Data are due in Q4 '27.", "Q4"),
+    ],
+    ids=["half", "day", "year-end", "quarter"],
+)
+def test_date_words_that_leave_out_the_year_after_them_fail(quote: str, date_text: str) -> None:
+    """Words cut short read in the release's own year: "second half" of "second half of 2027" (part 5c)."""
+    outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
+    assert (outcome, reason) == (
+        Outcome.FAIL,
+        f"the date words '{date_text}' leave out the year that follows them in the quote",
+    )
+
+
+def test_date_words_pass_when_one_place_in_the_quote_has_them_whole() -> None:
+    facts = _facts("Q4 2026 data, then the Q4 readout.", date_text="Q4", window_start="2026-10-01")
+    assert _outcomes(facts)["date_words_in_quote"][0] is Outcome.PASS
+
+
 def test_date_words_that_name_no_window_fail() -> None:
     facts = _facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon")
     outcome, reason = _outcomes(facts)["window_matches_words"]

@@ -18,7 +18,7 @@ from typing import Any
 
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE, ExtractedCatalyst, extract_catalysts
 from catalyst.extract.dates import DateWindow, parse_window
-from catalyst.extract.text import QuoteSpan, document_text, find_quote
+from catalyst.extract.text import QuoteSpan, document_text, find_quote, visible_text
 from catalyst.llm.client import ModelClient
 from catalyst.llm.config import RoleConfig
 from catalyst.llm.prompts import Prompt
@@ -182,8 +182,12 @@ def evaluate(
     """
     results: list[DocumentScore] = []
     for document in gold:
-        text = document_text((copies / f"{document.sha256}.htm").read_bytes(), document.content_type)
-        extraction = extract_catalysts(client, text, document.published, role=role, prompt_ref=prompt_ref)
+        content = (copies / f"{document.sha256}.htm").read_bytes()
+        text = document_text(content, document.content_type)
+        visible = visible_text(content, document.content_type)
+        extraction = extract_catalysts(
+            client, text, document.published, visible=visible, role=role, prompt_ref=prompt_ref
+        )
         results.append(
             score_document(text, document.published, list(document.catalysts), list(extraction.catalysts))
         )

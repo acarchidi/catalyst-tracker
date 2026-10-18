@@ -104,12 +104,31 @@ def _extractor_checks(facts: ClaimFacts, _today: date) -> CheckResult:
 
 # The next two redo the extractor's date checks in this module, so they hold even if a stored
 # value was never checked or was changed later (review of PR #29).
+# A year written straight after the date words: ", 2027", " of 2027", " 2027", " '27".
+_YEAR_AFTER = re.compile(r"(?:\s*,\s*|\s+of\s+|\s+)(?:\d{4}|'\d{2})(?!\w)", re.IGNORECASE)
+
+
+def _whole_somewhere(quote: str, words: str) -> bool:
+    """Say whether the date words appear in the quote at least once without a year just after them.
+
+    Words cut short ("second half" of "second half of 2027") read in the release's own year, so
+    they would give another window than the quote states (part 5c).
+    """
+    pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, words.split())) + r"(?!\w)"
+    return any(_YEAR_AFTER.match(quote, found.end()) is None for found in re.finditer(pattern, quote))
+
+
 def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
     text = _date_text(facts)
     if text is None:
         return _failed("date_words_in_quote", "the claim has no date words")
     if not has_words(facts.quote, text):
         return _failed("date_words_in_quote", f"the date words '{text}' are not in the quote")
+    if not _whole_somewhere(facts.quote, text):
+        return _failed(
+            "date_words_in_quote",
+            f"the date words '{text}' leave out the year that follows them in the quote",
+        )
     return _passed("date_words_in_quote")
 
 

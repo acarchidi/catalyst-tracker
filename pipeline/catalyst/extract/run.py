@@ -30,9 +30,9 @@ from catalyst.extract.agent import (
     extract_catalysts,
     proposal_value,
 )
-from catalyst.extract.text import document_text
+from catalyst.extract.text import document_text, visible_text
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
-from catalyst.logs import log_event
+from catalyst.logs import log_alert, log_event
 from catalyst.schemas import Claim, Company, CompanyDocument, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
 
@@ -152,8 +152,10 @@ def extract_documents(
         result = DocumentResult(row.source_key, row.url, row.company, published)
         report.documents.append(result)
         try:
-            text = document_text(store.get(row.snapshot_key), row.content_type)
-            extraction = extract_catalysts(client, text, published)
+            content = store.get(row.snapshot_key)
+            text = document_text(content, row.content_type)
+            visible = visible_text(content, row.content_type)
+            extraction = extract_catalysts(client, text, published, visible=visible)
         except SpendCapReachedError as error:
             report.documents.pop()
             report.stopped = str(error)
@@ -161,6 +163,11 @@ def extract_documents(
         except (ModelError, SnapshotStoreError, httpx.HTTPError) as error:
             result.error = f"{type(error).__name__}: {error}"
             continue
+        if extraction.instructions:
+            # A source that tries to steer the model: every claim from it waits for a person.
+            log_alert(
+                _log, "source_instructs_models", source_key=row.source_key, found=extraction.instructions[0]
+            )
         result.catalysts = [_shown(c) for c in extraction.catalysts]
         result.claims_stored = _store(session_factory, catalyst_claims(extraction, UUID(str(row.id)), now()))
         log_event(_log, "document_extracted", source_key=row.source_key, catalysts=len(result.catalysts))

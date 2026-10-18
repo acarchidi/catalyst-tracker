@@ -25,7 +25,7 @@ from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE, catalyst_claims, extract_catalysts
 from catalyst.extract.evaluate import VERIFY_EVALS, gate_problems
 from catalyst.extract.run import NEW_YORK
-from catalyst.extract.text import document_text
+from catalyst.extract.text import document_text, visible_text
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.config import ModelConfig
 from catalyst.llm.prompts import load_prompt
@@ -231,9 +231,14 @@ def run_second_reading(
     for row in documents:
         published = row.published_at.astimezone(NEW_YORK).date()
         try:
-            text = document_text(store.get(row.snapshot_key), row.content_type)
+            content = store.get(row.snapshot_key)
             reading = extract_catalysts(
-                client, text, published, role=VERIFIER_ROLE, prompt_ref=VERIFIER_PROMPT
+                client,
+                document_text(content, row.content_type),
+                published,
+                visible=visible_text(content, row.content_type),
+                role=VERIFIER_ROLE,
+                prompt_ref=VERIFIER_PROMPT,
             )
         except SpendCapReachedError as error:
             report.stopped = str(error)
