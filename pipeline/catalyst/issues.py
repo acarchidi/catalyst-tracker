@@ -3,7 +3,7 @@
 Each issue opened here ends with a hidden marker that names its key and how many runs in a row
 raised it. A repeat comments on the open issue and counts up; a solved alert is closed with a
 comment; a weekly summary edits its own week's issue and closes older ones. Issues without a
-marker are never touched.
+marker at its end, or written by anyone but the workflow, are never touched.
 """
 
 from __future__ import annotations
@@ -15,7 +15,10 @@ from typing import Any
 import httpx
 
 API = "https://api.github.com"
-_MARKER = re.compile(r"<!-- catalyst-issue key=(\S+) runs=(\d+) -->")
+# The marker counts only as the body's last line, so one quoted inside other text never matches.
+_MARKER = re.compile(r"<!-- catalyst-issue key=(\S+) runs=(\d+) -->\s*\Z")
+# Issues opened with the run's GITHUB_TOKEN are written by this account; nobody else's are touched.
+BOT_LOGIN = "github-actions[bot]"
 _PAGE = 100
 _LABEL_EXISTS = 422  # GitHub answers 422 when asked to create a label that exists
 _LABELS = {
@@ -133,11 +136,16 @@ def _open_issues(client: httpx.Client, repo: str, label: str, headers: dict[str,
         response = client.get(f"/repos/{repo}/issues", params=params, headers=headers)
         response.raise_for_status()
         listed: list[dict[str, Any]] = response.json()
-        # The issues list includes pull requests; those are never ours.
-        issues += [OpenIssue(i["number"], i.get("body") or "") for i in listed if "pull_request" not in i]
+        # The issues list includes pull requests, and issues people wrote; those are never ours.
+        issues += [OpenIssue(i["number"], i.get("body") or "") for i in listed if _ours(i)]
         if len(listed) < _PAGE:
             return issues
         page += 1
+
+
+def _ours(listed: dict[str, Any]) -> bool:
+    user: dict[str, Any] = listed.get("user") or {}
+    return "pull_request" not in listed and user.get("login") == BOT_LOGIN
 
 
 def _ensure_label(client: httpx.Client, repo: str, label: str, headers: dict[str, str]) -> None:

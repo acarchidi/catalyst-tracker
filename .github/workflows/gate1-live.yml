@@ -21,6 +21,9 @@ jobs:
   gate1:
     name: Gate 1 live run
     runs-on: ubuntu-latest
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # each step has its own limit and they add up to well under 150 minutes (10 + 60 + 15 + 45
+    # + 5 + 5 = 140, plus setup): a step that times out fails, and the alert says so.
     timeout-minutes: 150
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -34,6 +37,7 @@ jobs:
 
       - name: Bring the live database up to date
         id: migrate
+        timeout-minutes: 10
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -41,6 +45,7 @@ jobs:
 
       - name: Collect the 50 Gate 1 companies
         id: collect
+        timeout-minutes: 60
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -61,6 +66,7 @@ jobs:
       - name: Check every stored copy against its fingerprint
         id: verify
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        timeout-minutes: 15
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -77,6 +83,7 @@ jobs:
       - name: Check every source link
         id: links
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        timeout-minutes: 45  # about 35 minutes for every ClinicalTrials.gov link (ADR 0010)
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -91,6 +98,7 @@ jobs:
       - name: Ten records for the owner to click
         id: sample
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -105,6 +113,7 @@ jobs:
       - name: Build alerts from this run
         id: alerts
         if: ${{ !cancelled() }}
+        timeout-minutes: 5
         env:
           MIGRATE: ${{ steps.migrate.outcome }}
           COLLECT: ${{ steps.collect.outcome }}

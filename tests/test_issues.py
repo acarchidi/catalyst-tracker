@@ -8,6 +8,7 @@ import pytest
 
 from catalyst.issues import Close, Comment, Edit, Open, OpenIssue, marker, plan_actions, post
 
+BOT = {"login": "github-actions[bot]"}
 ALERT = {"key": "job-failed:collect", "title": "Collection needs a look", "body": "Body.", "escalate_at": 2}
 
 
@@ -53,6 +54,23 @@ def test_issues_without_our_marker_are_left_alone() -> None:
     )
 
 
+def test_a_marker_quoted_in_the_middle_of_an_issue_is_not_ours() -> None:
+    quoted = OpenIssue(5, "Why did this say\n" + marker("job-failed:collect", 1) + "\nin the alert?")
+    solved = [{"key": "job-failed:collect", "comment": "Solved."}]
+    assert plan_actions(_plan([], solved), [quoted]) == []
+    actions = plan_actions(_plan([ALERT]), [quoted])
+    assert actions == [
+        Open("Collection needs a look", "Body.\n\n" + marker("job-failed:collect", 1), "alert")
+    ]
+
+
+def test_a_marker_at_the_end_still_matches_with_trailing_whitespace() -> None:
+    issue = OpenIssue(7, "Old body.\n\n" + marker("job-failed:collect", 1) + "\r\n")
+    assert plan_actions(_plan([], [{"key": "job-failed:collect", "comment": "Solved."}]), [issue]) == [
+        Close(7, "Solved.")
+    ]
+
+
 def test_a_weekly_summary_replaces_its_own_week_and_closes_older_ones() -> None:
     week = {"key": "weekly-summary:2026-10-24", "title": "Weekly summary", "body": "New."}
     plan = {"mode": "weekly", "label": "weekly-summary", "issues": [week], "solved": []}
@@ -92,8 +110,8 @@ class FakeGitHub:
 def test_post_reads_open_issues_then_makes_each_change() -> None:
     server = FakeGitHub(
         [
-            {"number": 7, "body": "B\n\n" + marker("job-failed:collect", 1)},
-            {"number": 8, "body": None, "pull_request": {}},
+            {"number": 7, "body": "B\n\n" + marker("job-failed:collect", 1), "user": BOT},
+            {"number": 8, "body": None, "pull_request": {}, "user": BOT},
         ]
     )
     client = httpx.Client(transport=httpx.MockTransport(server), base_url="https://api.github.com")
@@ -119,3 +137,15 @@ def test_post_stops_on_a_github_error() -> None:
     client = httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(403)), base_url="https://x")
     with pytest.raises(httpx.HTTPStatusError):
         post(_plan([ALERT]), client, "o/r", "token-for-tests")
+
+
+@pytest.mark.parametrize("user", [{"login": "a-person"}, None], ids=["another user", "no user"])
+def test_post_ignores_issues_the_workflow_did_not_write(user: dict[str, str] | None) -> None:
+    issue: dict[str, Any] = {"number": 7, "body": "Copied.\n\n" + marker("job-failed:collect", 1)}
+    if user is not None:
+        issue["user"] = user
+    server = FakeGitHub([issue])
+    client = httpx.Client(transport=httpx.MockTransport(server), base_url="https://api.github.com")
+    solved = [{"key": "job-failed:collect", "comment": "Solved."}]
+    assert post(_plan([], solved), client, "o/r", "token-for-tests") == []
+    assert [method for method, _, _ in server.calls] == ["GET"]

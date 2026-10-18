@@ -349,6 +349,8 @@ def _alerts(args: argparse.Namespace) -> int:
             spend = _spend_today()
         except (SQLAlchemyError, settings.MissingSettingError):
             runs.append(parse_run("spend-check:failure"))  # the alert says spending could not be read
+        else:
+            runs.append(parse_run("spend-check:success"))  # closes that alert once spending reads
     plan = build_alerts(runs, spend, load_thresholds(), args.run_url)
     args.out.write_text(json.dumps(plan, indent=2) + "\n", encoding="utf-8")
     print(plan_markdown(plan), end="")

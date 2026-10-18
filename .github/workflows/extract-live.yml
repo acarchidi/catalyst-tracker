@@ -42,6 +42,8 @@ jobs:
   extract:
     name: Extract catalysts
     runs-on: ubuntu-latest
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # the long step has its own, lower limit: a step that times out fails, and the alert says so.
     timeout-minutes: 60
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -56,6 +58,7 @@ jobs:
       - name: Extract catalysts from the newest press releases
         id: extract
         if: ${{ inputs.mode == 'extract' }}
+        timeout-minutes: 45
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -85,6 +88,7 @@ jobs:
       - name: Build alerts from this run
         id: alerts
         if: ${{ !cancelled() && inputs.mode == 'extract' }}
+        timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}

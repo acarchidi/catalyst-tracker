@@ -16,7 +16,7 @@ Some alert inputs come from runs that read web text. An error message can carry 
 
 1. **Delivery is GitHub issues.** GitHub emails the repository owner about new issues and comments by default, so no new account or key is needed.
    - An alert is an issue labelled `alert`. A weekly summary is an issue labelled `weekly-summary`, one per week. The poster creates both labels the first time.
-   - Each issue ends with a hidden marker: `<!-- catalyst-issue key=... runs=N -->`. Issues without it are never touched.
+   - Each issue ends with a hidden marker: `<!-- catalyst-issue key=... runs=N -->`. Issues that do not end with it, or that the workflow (`github-actions[bot]`) did not open, are never touched.
    - A repeat of an open alert's key adds a comment and counts up `runs`. Once a job has failed `failed_runs_in_a_row` runs in a row (2 to start), the comment says so in bold.
    - A later clean run of the same job closes its alert, with a comment that links the clean run.
    - A weekly summary re-run on the same day edits that day's issue. Posting a new week's summary closes the older ones.
@@ -36,7 +36,7 @@ Some alert inputs come from runs that read web text. An error message can carry 
    - the error rate. Until the weekly sample checker exists, it says "No sample yet".
 5. **Commands and workflows.**
    - `catalyst alerts` and `catalyst weekly-summary` print the issue bodies and write a plan file. `catalyst post-issues` posts the plan through the GitHub REST API, using the run's own `GITHUB_TOKEN`.
-   - The live workflows (`extract-live.yml`, `gate1-live.yml`) build alerts at the end of the job, even after a failure. A separate job posts them. Only that job has `issues: write`, and it holds no other secret.
+   - The live workflows (`extract-live.yml`, `gate1-live.yml`) build alerts at the end of the job, even after a failure. Each long step has its own time limit, under the job's, so a step that runs too long fails and is reported; a job that hits its own limit is cancelled and reports nothing. A separate job posts them. Only that job has `issues: write`, and it holds no other secret.
    - `weekly-summary.yml` runs on Saturdays at 22:00 UTC (6pm New York time in summer, 5pm in winter), and by hand.
    - Built in two pull requests: the alerts and the poster first, then the weekly summary.
 
@@ -53,4 +53,6 @@ Some alert inputs come from runs that read web text. An error message can carry 
 - A run that fails before its alert step can run (for example, when installing dependencies fails) posts nothing. GitHub's failed-run email to whoever started it still arrives.
 - Alerts read only numbers, so text in a source cannot change an alert. A false alarm costs one email. Changing a threshold is an owner-merged change.
 - Today, check failures appear only in the weekly summary. A check-failure alert waits for run history.
-- These issues are messages to the owner about the pipeline. They are not the product's alerts to readers (spec: Watchlists and alerts), which carry catalyst data and the "not financial advice" notice.- When the weekly sample checker lands, the summary's error-rate line reads its results instead of "No sample yet".
+- These issues are messages to the owner about the pipeline. They are not the product's alerts to readers (spec: Watchlists and alerts), which carry catalyst data and the "not financial advice" notice.
+- When the weekly sample checker lands, the summary's error-rate line reads its results instead of "No sample yet".
+- A change that takes two requests (a comment, then an edit or a close) can fail after the comment. The next run then repeats that comment. This is accepted: one extra email, and the next run puts the issue right.
