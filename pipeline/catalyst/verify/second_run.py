@@ -128,7 +128,9 @@ def _clean(row: Any) -> bool:
     return _value(row.value).get("problems") == []
 
 
-def _same_drug(references: ReferenceData, company: UUID | None) -> Callable[[str, str], bool]:
+def same_drug_rule(references: ReferenceData, company: UUID | None) -> Callable[[str, str], bool]:
+    """Say whether two names are one drug of the document's one company in the reference tables."""
+
     def same(a: str, b: str) -> bool:
         if company is None:
             return False
@@ -192,7 +194,9 @@ def _compare_all(session: Session, model: str, at: datetime, report: SecondReadi
     for (document, *_), readings in first.items():
         owners = companies.get(document, set())
         company = next(iter(owners)) if len(owners) == 1 else None
-        for claim_id, result in compare(readings, second[document], _same_drug(references, company)).items():
+        for claim_id, result in compare(
+            readings, second[document], same_drug_rule(references, company)
+        ).items():
             store_check(session, claim_id, result, at)
             report.claims_compared += 1
             report.claims_agreeing += result.outcome is Outcome.PASS
