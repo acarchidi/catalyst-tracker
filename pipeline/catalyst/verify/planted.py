@@ -22,7 +22,8 @@ from typing import Any
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from catalyst.collectors.coverage import normalize_name
-from catalyst.extract.agent import check_proposal, proposal_value
+from catalyst.extract.agent import check_proposal, has_words, proposal_value
+from catalyst.extract.dates import parse_window
 from catalyst.extract.evaluate import EVALS, REPOSITORY, GoldDocument, gold_fingerprint, load_gold
 from catalyst.extract.text import TEXT_VERSION, QuoteSpan, document_text, find_quote
 from catalyst.references import trial_from_study
@@ -34,6 +35,18 @@ SEED = 2026
 FOLDER = REPOSITORY / "evals" / "planted_errors"
 _CODE = re.compile(r"[A-Z]{1,6}[\s\-]?\d{2,6}[A-Z]?")  # a code name such as SPY072 or ABP-450
 _SENTENCE = re.compile(r"\S[^\n]*?(?:[.!?](?=\s)|$)", re.MULTILINE)
+_MONTH = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?"
+    r"|Sept?(?:ember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)"
+)
+_YEAR = r"20\d{2}"
+_DATE_PHRASE = re.compile(  # the date phrases a release writes; a bare year last
+    rf"\b(?:{_MONTH}\s+\d{{1,2}},\s+{_YEAR}|{_MONTH}\s+{_YEAR}"
+    rf"|(?:first|second|third|fourth)\s+quarter\s+(?:of\s+)?{_YEAR}|Q[1-4]\s+{_YEAR}"
+    rf"|(?:first|second)\s+half\s+(?:of\s+)?{_YEAR}|H[12]\s+{_YEAR}|[12]H\s?{_YEAR}"
+    rf"|(?:year-end|mid-|late|early)\s?{_YEAR}|{_YEAR})\b",
+    re.IGNORECASE,
+)
 _STEP = {"day": 1, "month": 1, "quarter": 3, "half": 6, "year": 12}  # months in one window
 
 
@@ -222,54 +235,92 @@ def _shifted(record: Record, months: int = 0, days: int = 0) -> Record:
     return _with(record, window_start=start.isoformat(), window_end=end.isoformat())
 
 
-def _wrong_window(record: Record, _corpus: Corpus, rng: Random) -> Record:
-    """Move the window a period or a year later than its date words; move a day 1 to 30 days."""
-    step = _STEP[record.value["window_precision"]]
+def _wrong_window(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
+    """Move the window 1 or 2 periods or a year later than its date words; a day 1, 7, or 30 days."""
     if record.value["window_precision"] == "day":
-        return _shifted(record, days=rng.randint(1, 30))
-    return _shifted(record, months=rng.choice(sorted({step, 2 * step, 12})))
+        return [_shifted(record, days=days) for days in (1, 7, 30)]
+    step = _STEP[record.value["window_precision"]]
+    return [_shifted(record, months=months) for months in sorted({step, 2 * step, 12})]
 
 
-def _past_window(record: Record, _corpus: Corpus, _rng: Random) -> Record:
+def _past_window(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
     """Move the window a year (or more) earlier, so it ended before the release came out."""
     months = -12
     while _window(_shifted(record, months))[1] >= record.published:
         months -= 12
-    return _shifted(record, months)
+    return [_shifted(record, months)]
 
 
-def _pdufa_outside(record: Record, _corpus: Corpus, _rng: Random) -> Record | None:
+def _pdufa_outside(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
     """Move an FDA decision date a year or more later, beyond 15 months after the release."""
     if record.value["catalyst_type"] != CatalystType.PDUFA_DATE.value:
-        return None
+        return []
     latest, months = _move(record.published, PDUFA_MONTHS), 12
     while _window(_shifted(record, months))[0] <= latest:
         months += 12
-    return _shifted(record, months)
+    return [_shifted(record, months)]
 
 
-def _wrong_drug(record: Record, corpus: Corpus, rng: Random) -> Record:
-    current = name_key(record.value["drug"] or "")
-    return _with(record, drug=rng.choice([d for d in corpus.drugs if name_key(d) != current]))
+def date_phrases(text: str) -> list[str]:
+    """Return the date phrases written in a text, in order: "Q4 2026", "September 26, 2026", "mid-2027"."""
+    return [m.group(0) for m in _DATE_PHRASE.finditer(text)]
 
 
-def _wrong_type(record: Record, _corpus: Corpus, rng: Random) -> Record:
-    others = [t.value for t in CatalystType if t.value != record.value["catalyst_type"]]
-    return _with(record, catalyst_type=rng.choice(others))
+def _consistent_date(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
+    """Take another date phrase of the same quote, and store the window it gives, as the extractor would."""
+    planted: dict[tuple[str, str, str], Record] = {}
+    for words in date_phrases(record.quote):
+        window = parse_window(words, record.published)
+        if window is None:
+            continue
+        key = (window.start.isoformat(), window.end.isoformat(), window.precision.value)
+        if key != tuple(record.value[k] for k in ("window_start", "window_end", "window_precision")):
+            planted.setdefault(
+                key,
+                _with(
+                    record, date_text=words, window_start=key[0], window_end=key[1], window_precision=key[2]
+                ),
+            )
+    return list(planted.values())
 
 
-def _wrong_company(record: Record, corpus: Corpus, rng: Random) -> Record:
+def _drugs(corpus: Corpus, same_release: Record, *, inside: bool) -> list[str]:
+    """Return the gold set's drug names inside (or outside) the record's release, one per name."""
+    names = {
+        name_key(r.value["drug"]): r.value["drug"]
+        for r in corpus.records
+        if r.value["drug"] and (r.document == same_release.document) == inside
+    }
+    names.pop(name_key(same_release.value["drug"] or ""), None)
+    return [names[key] for key in sorted(names)]
+
+
+def _drug_in_release(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
+    return [_with(record, drug=drug) for drug in _drugs(corpus, record, inside=True)]
+
+
+def _drug_elsewhere(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
+    return [_with(record, drug=drug) for drug in _drugs(corpus, record, inside=False)]
+
+
+def _wrong_type(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
+    return [
+        _with(record, catalyst_type=t.value) for t in CatalystType if t.value != record.value["catalyst_type"]
+    ]
+
+
+def _wrong_company(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
     others = sorted((n, c) for c, n in corpus.companies.items() if c != record.company_id)
-    return replace(record, company_id=rng.choice(others)[1])
+    return [replace(record, company_id=company) for _, company in others]
 
 
-def _wrong_trial(record: Record, corpus: Corpus, rng: Random) -> Record | None:
+def _wrong_trial(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
     linked = trial_links(record, corpus)
     others = [t for t in corpus.company_trials.get(record.company_id, ()) if t not in linked]
-    return replace(record, trials=(rng.choice(others),)) if others else None
+    return [replace(record, trials=(trial,)) for trial in others]
 
 
-def _wrong_phase(record: Record, corpus: Corpus, rng: Random) -> Record | None:
+def _wrong_phase(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
     stated = stated_phases(record.quote)
     unlike = [
         t
@@ -277,22 +328,50 @@ def _wrong_phase(record: Record, corpus: Corpus, rng: Random) -> Record | None:
         if (p := corpus.phases[t]) not in (None, TrialPhase.NOT_APPLICABLE)
         and not any(phases_overlap(said, p) for said in stated)
     ]
-    return replace(record, trials=(rng.choice(unlike),)) if stated and unlike else None
+    return [replace(record, trials=(trial,)) for trial in unlike] if stated else []
 
 
-def _quote_swap(record: Record, corpus: Corpus, rng: Random) -> Record | None:
-    """Swap the quote for another sentence of the release (40 characters or more, apart from it)."""
+def _sentences(record: Record, corpus: Corpus) -> list[QuoteSpan]:
+    """Return every other sentence of the release, 40 characters or more, apart from the true quote."""
     text = corpus.texts[record.document]
-    spans = [
-        span
+    spans = {
+        (span.start, span.end): span
         for match in _SENTENCE.finditer(text)
         if len(match.group(0)) >= 40 and (span := find_quote(text, match.group(0))) is not None
         if span.end <= record.quote_start or span.start >= record.quote_end
-    ]
-    if not spans:
-        return None
-    quote, start, end = _span(rng.choice(spans))
+    }
+    return [spans[key] for key in sorted(spans)]
+
+
+def _quoted(record: Record, span: QuoteSpan) -> Record:
+    quote, start, end = _span(span)
     return replace(record, quote=quote, quote_start=start, quote_end=end)
+
+
+def _quote_swap(record: Record, corpus: Corpus, rng: Random) -> list[Record]:
+    """Swap the quote for one sentence of the release, picked at random with the seed."""
+    spans = _sentences(record, corpus)
+    return [_quoted(record, rng.choice(spans))] if spans else []
+
+
+def _quote_same_date(record: Record, corpus: Corpus, _rng: Random) -> list[Record]:
+    """Swap the quote for a sentence of another gold event of the release that holds the same date words.
+
+    A sentence that names the claim's own drug may restate the same event, so it is not used.
+    """
+    words, drug = record.value["date_text"], name_key(record.value["drug"] or "")
+    events = [
+        (r.quote_start, r.quote_end)
+        for r in (*corpus.records, *corpus.left_out)
+        if r.document == record.document and r.id != record.id
+    ]
+    return [
+        _quoted(record, span)
+        for span in _sentences(record, corpus)
+        if has_words(span.quote, words)
+        and not (drug and drug in name_key(span.quote))
+        and any(span.start < end and start < span.end for start, end in events)
+    ]
 
 
 @dataclass(frozen=True)
@@ -302,52 +381,75 @@ class ErrorType:
     name: str
     label: str
     changes: frozenset[str]
-    mutate: Callable[[Record, Corpus, Random], Record | None]
+    mutate: Callable[[Record, Corpus, Random], list[Record]]
     blind_spot: str
+    note: str = ""
 
 
-def _error(name: str, label: str, changes: str, mutate: Any, blind_spot: str) -> ErrorType:
-    return ErrorType(name, label, frozenset({changes}), mutate, blind_spot)
+def _error(name: str, label: str, changes: str, mutate: Any, blind_spot: str, note: str = "") -> ErrorType:
+    return ErrorType(name, label, frozenset(changes.split()), mutate, blind_spot, note)
 
 
+_NO_COMPANY_CHECK = (
+    "no check compares the linked company with the company that put out the release, and the second "
+    "reading does not read the company. Only a company's own code name (such as SPY072) gives the error "
+    "away; a generic or brand name matches under any company."
+)
 ERRORS: tuple[ErrorType, ...] = (
-    _error("wrong_window", "Wrong quarter, half, month, or year", "window", _wrong_window,
-           "the stored window still matches the date words."),
+    _error("wrong_window", "Wrong quarter, half, month, or year (date words left as they were)", "window",
+           _wrong_window, "the stored window still matches the date words.",
+           "Only the stored window changes, so it no longer matches its own date words; a rule catches "
+           "that by construction. The next row is the harder case."),
+    _error("consistent_wrong_date", "Another date from the same quote, stored consistently",
+           "window date_words", _consistent_date,
+           "the new date words are in the quote and give exactly the stored window, so every rule passes; "
+           "only the second reading can tell which date belongs to the event.",
+           "Only the second reading catches these (a rule only when the other date has passed), and in "
+           "this test it never misreads."),
     _error("past_window", "Date moved into the past", "window", _past_window,
            "the stored window still matches the date words."),
     _error("pdufa_outside_review", "FDA decision date outside its review window", "window", _pdufa_outside,
            "the date still falls within 15 months of the release."),
-    _error("wrong_drug", "Wrong drug", "drug", _wrong_drug,
-           "the second reading names the same drug."),
+    _error("drug_in_release", "Wrong drug (another in the same release)", "drug", _drug_in_release,
+           "the other drug is the same company's, so it matches; only the second reading compares drugs.",
+           "No rule catches these; only the second reading does, and in this test it never misreads."),
+    _error("drug_elsewhere", "Wrong drug (another company's drug)", "drug", _drug_elsewhere,
+           "the drug name is a generic or brand name, which matches under any company."),
     _error("wrong_type", "Wrong event type", "type", _wrong_type,
-           "the second reading gives the same type."),
-    _error("wrong_company", "Wrong company", "company", _wrong_company,
-           "no check compares the linked company with the company that put out the release, and the "
-           "second reading does not read the company. Only a company's own code name (such as SPY072) "
-           "gives the error away; a generic or brand name matches under any company."),
+           "no rule reads the type, except the FDA-date and advisory-meeting checks for those two types."),
+    _error("wrong_company", "Wrong company", "company", _wrong_company, _NO_COMPANY_CHECK),
     _error("wrong_trial", "Wrong trial (another of the company's trials)", "trials", _wrong_trial,
            "only the phase check reads the linked trial, so the error shows only when the quote states "
            "a phase that the other trial does not have. The second reading does not compare trials "
-           "(ADR 0018, part 2); part 3's cross-source checks should close this gap."),
+           "(ADR 0018, part 2)."),
     _error("wrong_phase", "Wrong phase (registry phase contradicts the quote)", "trials", _wrong_phase,
-           "the phase check found no contradiction."),
-    _error("quote_swap", "Quote that does not support the value", "quote", _quote_swap,
-           "the other sentence also holds the date words, and the second reading pairs two readings in "
-           "different sentences when their type, window, and drug agree."),
+           "the phase check found no contradiction.",
+           "Built to be exactly what the phase check looks for, so this row shows that the check works, "
+           "not how often such errors are caught."),
+    _error("quote_swap", "Quote from an unrelated sentence", "quote", _quote_swap,
+           "the other sentence also holds the date words."),
+    _error("quote_same_date", "Quote from another event with the same date words", "quote", _quote_same_date,
+           "the other sentence holds the same date words, so the date check passes, and the second reading "
+           "pairs two readings in different sentences when their type, window, and drug agree. No check "
+           "asks whether the quote names the claim's drug."),
 )  # fmt: skip
 
 
-def plant(error: ErrorType, record: Record, corpus: Corpus, seed: int = SEED) -> Record | None:
-    """Return a copy of `record` with one error of this type, or None if this record cannot have it."""
-    planted = error.mutate(record, corpus, Random(f"{seed}:{error.name}:{record.id}"))  # noqa: S311 (a fixed seed, not a secret)
-    return replace(planted, id=uuid5(record.id, error.name)) if planted else None
+def plant(error: ErrorType, record: Record, corpus: Corpus, seed: int = SEED) -> tuple[Record, ...]:
+    """Return every copy of `record` with one error of this type; none if this record cannot have it."""
+    rng = Random(f"{seed}:{error.name}:{record.id}")  # noqa: S311 (a fixed seed, not a secret)
+    return tuple(
+        replace(copy, id=uuid5(record.id, f"{error.name}:{n}"))
+        for n, copy in enumerate(error.mutate(record, corpus, rng))
+    )
 
 
 def parts(record: Record, corpus: Corpus) -> dict[str, object]:
     """Split a stored record into the parts a mutation may change, so a test can see which changed."""
-    named = ("window_start", "window_end", "window_precision", "drug", "catalyst_type")
+    named = ("window_start", "window_end", "window_precision", "drug", "catalyst_type", "date_text")
     return {
         "window": tuple(record.value[k] for k in named[:3]),
+        "date_words": record.value["date_text"],
         "drug": record.value["drug"],
         "type": record.value["catalyst_type"],
         "company": record.company_id,

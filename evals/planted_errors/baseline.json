@@ -1,25 +1,59 @@
 {
   "catch_rate": {
     "wrong_window": 1.0,
+    "consistent_wrong_date": 1.0,
     "past_window": 1.0,
     "pdufa_outside_review": 1.0,
-    "wrong_drug": 1.0,
+    "drug_in_release": 1.0,
+    "drug_elsewhere": 1.0,
     "wrong_type": 1.0,
     "wrong_company": 0.471,
-    "wrong_trial": 0.059,
+    "wrong_trial": 0.334,
     "wrong_phase": 1.0,
-    "quote_swap": 1.0
+    "quote_swap": 1.0,
+    "quote_same_date": 0.0
   },
   "rule_catch_rate": {
     "wrong_window": 1.0,
+    "consistent_wrong_date": 0.091,
     "past_window": 1.0,
     "pdufa_outside_review": 1.0,
-    "wrong_drug": 0.176,
-    "wrong_type": 0.0,
+    "drug_in_release": 0.0,
+    "drug_elsewhere": 0.227,
+    "wrong_type": 0.077,
     "wrong_company": 0.471,
-    "wrong_trial": 0.059,
+    "wrong_trial": 0.334,
     "wrong_phase": 1.0,
-    "quote_swap": 1.0
+    "quote_swap": 1.0,
+    "quote_same_date": 0.0
+  },
+  "correct_rate": {
+    "wrong_window": 1.0,
+    "consistent_wrong_date": 1.0,
+    "past_window": 1.0,
+    "pdufa_outside_review": 1.0,
+    "drug_in_release": 1.0,
+    "drug_elsewhere": 1.0,
+    "wrong_type": 1.0,
+    "wrong_company": 0.0,
+    "wrong_trial": 0.0,
+    "wrong_phase": 0.0,
+    "quote_swap": 0.0,
+    "quote_same_date": 0.0
+  },
+  "planted": {
+    "wrong_window": 48,
+    "consistent_wrong_date": 11,
+    "past_window": 17,
+    "pdufa_outside_review": 1,
+    "drug_in_release": 29,
+    "drug_elsewhere": 150,
+    "wrong_type": 221,
+    "wrong_company": 153,
+    "wrong_trial": 383,
+    "wrong_phase": 128,
+    "quote_swap": 17,
+    "quote_same_date": 5
   },
   "clean_wrongly_flagged": 2,
   "clean_neighbours_wrongly_flagged": 0

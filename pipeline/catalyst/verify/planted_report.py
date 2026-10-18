@@ -17,6 +17,8 @@ from uuid import UUID, uuid5
 from catalyst.resolve import Status
 from catalyst.resolve_claims import known_drug
 from catalyst.schemas import SourceTier
+from catalyst.verify.advisory import AdvisoryClaim, advisory_notice
+from catalyst.verify.fedreg_notice import StoredNotices, notices_in
 from catalyst.verify.independent import Statement, address, independent_sources
 from catalyst.verify.planted import ERRORS, SEED, Corpus, Record, parts, plant, trial_links
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
@@ -122,9 +124,20 @@ def _independent_source(records: Sequence[Record], corpus: Corpus) -> dict[UUID,
     return {r.id: [found[r.id]] for r in records}
 
 
-# Every check on main. PR #49 adds `advisory_meeting_noticed`: once it merges, it joins this list
-# as one more line, and the floor test then counts what it catches.
-CHECKS: tuple[Check, ...] = (_rule_checks, _second_reading, _independent_source)
+def _advisory_meeting(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[CheckResult]]:
+    """Run `catalyst.verify.advisory`; no Federal Register notice is stored for the gold releases."""
+    same = same_drug_rule(corpus.references, corpus.owners[records[0].document])
+    found: dict[UUID, list[CheckResult]] = {}
+    for r in records:
+        v = r.value
+        window = (date.fromisoformat(v["window_start"]), date.fromisoformat(v["window_end"]))
+        claim = AdvisoryClaim(catalyst_type=v["catalyst_type"], drug=v["drug"], window=window)
+        found[r.id] = [advisory_notice(claim, notices_in(StoredNotices(), *window), same)]
+    return found
+
+
+# Every check on main; a new check is one more line here.
+CHECKS: tuple[Check, ...] = (_rule_checks, _second_reading, _independent_source, _advisory_meeting)
 
 
 @dataclass(frozen=True)
@@ -167,6 +180,7 @@ class Results:
     disturbed: tuple[tuple[Record, tuple[str, ...]], ...]
     checks: tuple[str, ...]
     fingerprints: Mapping[str, str]
+    seed: int
 
 
 def _fields(reading: Reading) -> str:
@@ -247,8 +261,7 @@ def run(corpus: Corpus, *, seed: int = SEED, checks: Sequence[Check] = CHECKS) -
     neighbours = 0
     for error in ERRORS:
         for original in corpus.records:
-            record = None if alone[original.id] else plant(error, original, corpus, seed)
-            if record is not None:
+            for record in () if alone[original.id] else plant(error, original, corpus, seed):
                 found, beside, moved = _check_planted(error.name, record, original, corpus, checks, alone)
                 planted.append(found)
                 neighbours += len(beside)
@@ -267,6 +280,7 @@ def run(corpus: Corpus, *, seed: int = SEED, checks: Sequence[Check] = CHECKS) -
         tuple(disturbed),
         tuple(sorted(names)),
         corpus.fingerprints,
+        seed,
     )
 
 
@@ -296,7 +310,7 @@ def scores(results: Results) -> dict[str, Any]:
         "neighbours_wrongly_flagged": len(results.disturbed),
     }
     return {
-        "seed": SEED,
+        "seed": results.seed,
         **results.fingerprints,
         "checks": list(results.checks),
         "errors": errors,
@@ -311,7 +325,12 @@ def _rate(part: int, whole: int) -> float:
 def floor_problems(counted: Mapping[str, Any], baseline: Mapping[str, Any]) -> list[str]:
     """Return every way the counts fall below `baseline.json`; empty when they hold the floor."""
     problems: list[str] = []
-    for measure, key in (("catch_rate", "caught"), ("rule_catch_rate", "caught_by_rules")):
+    measures = (
+        ("catch_rate", "caught"),
+        ("rule_catch_rate", "caught_by_rules"),
+        ("correct_rate", "corrected"),
+    )
+    for measure, key in measures:
         floors: Mapping[str, float] = baseline.get(measure, {})
         for name, row in counted["errors"].items():
             rate = _rate(row[key], row["planted"])
@@ -319,6 +338,12 @@ def floor_problems(counted: Mapping[str, Any], baseline: Mapping[str, Any]) -> l
                 problems.append(f"baseline.json names no {measure} floor for {name}")
             elif rate < floors[name]:
                 problems.append(f"{name}: {measure} fell to {rate}, below the floor {floors[name]}")
+    least: Mapping[str, int] = baseline.get("planted", {})
+    for name, row in counted["errors"].items():
+        if row["planted"] < least.get(name, 1):
+            problems.append(
+                f"{name}: only {row['planted']} copies planted, below the floor {least.get(name, 1)}"
+            )
     for key in ("wrongly_flagged", "neighbours_wrongly_flagged"):
         limit = baseline.get(f"clean_{key}")
         if limit is None or counted["clean"][key] > limit:
@@ -343,13 +368,14 @@ def _change(found: Planted, corpus: Corpus) -> str:
         )
     if before["quote"] != after["quote"]:
         return f'quote swapped for "{found.record.quote[:90]}"'
-    changed = [name for name in ("window", "drug", "type") if before[name] != after[name]]
+    changed = [name for name in ("date_words", "window", "drug", "type") if before[name] != after[name]]
     return "; ".join(f"{name} {before[name]} became {after[name]}" for name in changed)
 
 
 def _table(counted: Mapping[str, Any]) -> list[str]:
     rows = [
-        "| Error planted | Planted | Caught | Caught without the second reading | Corrected | Missed |",
+        "| Error planted | Planted | Caught | Caught without the second reading | Corrected (best case) "
+        "| Missed |",
         "| --- | ---: | ---: | ---: | ---: | ---: |",
     ]
     totals: dict[str, int] = dict.fromkeys(("planted", "caught", "caught_by_rules", "corrected", "missed"), 0)
@@ -362,14 +388,32 @@ def _table(counted: Mapping[str, Any]) -> list[str]:
 
 
 def _missed(results: Results, corpus: Corpus) -> list[str]:
+    """List each missed error type once with its reason, and each event it was missed on, with an example."""
     lines = ["## Missed cases", ""]
     for error in ERRORS:
-        missed = [p for p in results.planted if p.error == error.name and not p.caught]
+        found = [p for p in results.planted if p.error == error.name]
+        missed = [p for p in found if not p.caught]
         if missed:
-            lines += [f"**{error.label}** ({len(missed)} missed). Why: {error.blind_spot}", ""]
-            lines += [f"- {_event(p.original, corpus)}: {_change(p, corpus)}" for p in missed]
+            lines += [
+                f"**{error.label}** ({len(missed)} of {len(found)} missed). Why: {error.blind_spot}",
+                "",
+            ]
+            for original in dict.fromkeys(p.original.id for p in missed):
+                mine = [p for p in found if p.original.id == original]
+                lost = [p for p in mine if not p.caught]
+                lines.append(
+                    f"- {_event(lost[0].original, corpus)}: {len(lost)} of {len(mine)} missed, "
+                    f"for example {_change(lost[0], corpus)}"
+                )
             lines.append("")
     return lines if len(lines) > 2 else [*lines, "None.", ""]
+
+
+def _plain(record: Record, reason: str) -> str:
+    """Say a known check failure in plain words."""
+    if reason.startswith(SECOND_READING) and not record.value["drug"]:
+        return "no drug is named (the trial tests several), so the second reading cannot confirm it"
+    return reason
 
 
 def _sec_note(corpus: Corpus) -> str:
@@ -389,21 +433,27 @@ def render_report(results: Results, corpus: Corpus) -> str:
         f"- {_event(r, corpus)}: left out; the extractor flags it ({r.value['problems'][0]})."
         for r in corpus.left_out
     ]
-    left += [f"- {_event(r, corpus)}: {'; '.join(reasons)}." for r, reasons in results.flagged]
+    left += [
+        f"- {_event(r, corpus)}: {'; '.join(_plain(r, x) for x in reasons)}."
+        for r, reasons in results.flagged
+    ]
     total = len(corpus.records) + len(corpus.left_out)
     lines = [
         "# Planted-error test",
         "",
         f"We took the {total} hand-checked catalysts in the gold set, made copies with one realistic error "
         "each, and ran every check we have on each copy among the correct claims of its own press release. "
-        "Plain code, no AI, the same result every run.",
+        "Where an error has several forms (every other trial, company, drug, or type), each form is its own "
+        f"copy. Plain code, no AI, the same result every run (seed {results.seed}).",
         "",
         *_table(counted),
         "",
         "- **Caught**: at least one check failed the copy, so it goes to the review queue, not the site.",
         "- **Caught without the second reading**: a rule check failed it too.",
-        "- **Corrected**: the second reading gave the right value, with its own quote.",
+        "- **Corrected (best case)**: the second reading gave the right value, with its own quote. The "
+        "stand-in reads every event right, so its quote is the original's by construction.",
         "- **Missed**: every check passed the copy, so it would have published.",
+        *[f"- **{e.label}**: {e.note}" for e in ERRORS if e.note],
         "",
         "The second reading in this test is a stand-in that always reads the release correctly, so "
         '"caught" and "corrected" are best cases; the real second reading can misread too.',

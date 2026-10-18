@@ -10,6 +10,7 @@ records may be wrongly flagged than it allows.
 import json
 from collections.abc import Sequence
 from dataclasses import replace
+from datetime import date
 from functools import cache
 from pathlib import Path
 from uuid import UUID
@@ -100,7 +101,7 @@ def test_a_record_flagged_when_correct_gets_no_planted_error_and_is_reported() -
     assert flagged == {(None, "2027")}
     assert len(_results().flagged) == 2
     assert not any(found.original.value["drug"] is None for found in _results().planted)
-    assert "second_reading_agrees: " in render_report(_results(), _corpus())
+    assert "no drug is named (the trial tests several)" in render_report(_results(), _corpus())
 
 
 def test_every_missed_case_is_listed_with_the_reason() -> None:
@@ -109,7 +110,11 @@ def test_every_missed_case_is_listed_with_the_reason() -> None:
     for error in ERRORS:
         if any(p.error == error.name for p in missed):
             assert error.blind_spot in report
-    assert report.count("\n- ") >= len(missed)
+    # One line per event an error type was missed on, with how many of its copies were missed.
+    for error, original in {(p.error, p.original.id) for p in missed}:
+        found = [p for p in _results().planted if p.error == error and p.original.id == original]
+        lost = sum(not p.caught for p in found)
+        assert f": {lost} of {len(found)} missed, for example " in report
 
 
 def test_scores_count_every_planted_record_once() -> None:
@@ -130,10 +135,12 @@ def test_a_drop_below_the_floor_or_more_wrongly_flagged_clean_records_is_refused
         "clean_neighbours_wrongly_flagged": 0,
     }
     problems = floor_problems(counted, floor)
-    assert "wrong_trial: catch_rate fell to 0.059, below the floor 1.0" in problems
+    assert "quote_same_date: catch_rate fell to 0.0, below the floor 1.0" in problems
     assert "2 clean records wrongly flagged, above the floor 0" in problems
     missing = floor_problems(counted, {})
-    assert len(missing) == 2 * len(ERRORS) + 2
+    assert len(missing) == 3 * len(ERRORS) + 2
+    too_few = floor_problems(counted, {**floor, "planted": {"pdufa_outside_review": 2}})
+    assert "pdufa_outside_review: only 1 copies planted, below the floor 2" in too_few
 
 
 # The CI gate (AGENTS.md: CI blocks a drop). The floor is owner-only once it joins OWNER_PATHS.
@@ -165,11 +172,32 @@ def test_every_gold_release_is_an_sec_filing_so_the_independent_source_check_pas
 def test_a_planted_copy_never_vouches_for_its_original_or_itself() -> None:
     corpus = _corpus()
     original = _record("LIVMARLI", "Q4 2026")
-    copy = plant(next(e for e in ERRORS if e.name == "wrong_trial"), original, corpus)
-    assert copy is not None
+    copy = plant(next(e for e in ERRORS if e.name == "wrong_trial"), original, corpus)[0]
     statements = [
         replace(statement_of(r, corpus, clean=True), tier=SourceTier.COMPANY_SITE) for r in (original, copy)
     ]
     found = independent_sources(statements)
     assert found[original.id].outcome is Outcome.FAIL
     assert found[copy.id].outcome is Outcome.FAIL
+
+
+def test_the_seed_used_is_carried_into_the_scores() -> None:
+    assert scores(_results())["seed"] == 2026
+    assert scores(run(_corpus(), seed=7))["seed"] == 7
+
+
+def test_a_quote_from_another_event_with_the_same_date_words_is_missed_and_listed() -> None:
+    # The honest finding of the Opus review of PR #51: no check asks whether the quote names the
+    # claim's drug, and the second reading pairs readings in different sentences.
+    same = [p for p in _results().planted if p.error == "quote_same_date"]
+    assert same
+    assert not any(p.caught for p in same)
+    assert "Quote from another event with the same date words** (" in render_report(_results(), _corpus())
+
+
+def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed() -> None:
+    for found in _results().planted:
+        if found.error == "consistent_wrong_date":
+            assert "date_words_in_quote" not in found.failed
+            ended = date.fromisoformat(found.record.value["window_end"]) < found.record.published
+            assert ("window_matches_words" in found.failed) is ended
