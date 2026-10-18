@@ -71,7 +71,7 @@ All launch sources are free public feeds, and plain code (not AI agents) collect
 
 **Cadence.** Run 1 at 08:30 ET catches pre-market releases before the 09:30 open. Run 2 at 17:30 ET catches post-close releases. A light Saturday run catches weekend filings. Schedules run on New York time, so they follow daylight saving. Every source document's publication time is logged, so the run times can be tuned from real data after month one. Target: verified facts publish within 2 hours of each run.
 
-**Catalyst types.** PDUFA dates, advisory committees, topline readouts (phase 2 and later, including Phase 4 post-marketing studies whether run by the company or independently, plus notable phase 1; ADR 0028), conference presentations, regulatory submissions and acceptances, EMA CHMP opinions, complete response letters, label expansions, enrollment completion, offerings and shelf filings, and M&A. Earnings dates are shown as context only.
+**Catalyst types.** PDUFA dates, advisory committees, topline readouts (phase 2 and later, including Phase 4 post-marketing studies whether run by the company or independently, plus notable phase 1; ADR 0028), conference presentations, regulatory submissions and acceptances, EMA CHMP opinions, complete response letters, label expansions, enrollment completion, offerings and shelf filings, and M&A. From Phase 10, corporate events from filings (executive arrivals and departures, major financings, collaborations and deals) and upcoming deal dates (closing window, shareholder vote, tender expiration, antitrust waiting-period end) appear in their own "Corporate events" section (ADR 0030). Earnings dates are shown as context only.
 
 ## Data model
 
@@ -153,6 +153,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Build overseer | A GitHub Actions job on every pull-request event and once a day: checks that each pull request does the next roadmap item and follows `AGENTS.md`, finds stuck or drifting work, and keeps a pinned "Build status" issue listing what each building agent is doing (owner decision 2026-10-17; ADR 0019) | Repository, pull requests, CI results (read-only; the model answers in JSON and a plain-code script acts) | Push code, approve, or merge; the script may comment, fail the "Overseer" check, add or remove only its own `overseer-hold` label, re-run a failed CI job once, and open an issue for a decision that is yours |
 | Competitor research (after v1) | Weekly report on competitors' changed public pages and new entrants, plus ranked feature ideas for the owner (ADR 0024) | Changed text from dated copies of competitors' public pages, collected by plain code | Browse, call tools, or add roadmap items; ideas wait for the owner |
 | CFO (after v1) | Monthly profit and loss, cost per subscriber, churn, runway, and budget versus actual, explained in plain English; drafts cost and price proposals (ADR 0024) | Numbers computed by plain code from Stripe (read-only key), model spend, and owner-entered costs | Pay, refund, change prices or caps, move money, or connect to a bank |
+| Suggestions reviewer (after v1) | Daily: scores grouped user feature suggestions against the roadmap and spec and forwards only new, allowed, high-return ideas to you in one issue; nothing on a day with none (owner request 2026-10-18; ADR 0031) | Suggestion text grouped by plain code, the roadmap, the spec | Any tool; change the roadmap; reply to users |
 | Research assistant (user-facing) | Helps users find features and data | Published data through the public API | Web browsing; advice; anything a user could not see themselves |
 
 **Prompt-injection defenses:** extractors output only schema-valid JSON; every value must match a verbatim quote found in the stored source; secrets never enter any prompt; each agent has its own least-privilege credentials.
@@ -305,7 +306,7 @@ One server-rendered page per catalyst, drug, company, and indication, with struc
 
 ## Machine access
 
-One API sits under everything: the web app, the MCP server, and the research assistant all call it. Anything a person can see, an AI agent can query the same way. MCP ships in v1 for all users; the public REST API tier (about $50/month) is on the roadmap.
+One API sits under everything: the web app, the MCP server, and the research assistant all call it. Anything a person can see, an AI agent can query the same way. MCP ships in v1 for all users; the public REST API tier (about $50/month) offers every published dataset in Phase 10 (ADR 0030).
 
 **REST API**
 
