@@ -209,9 +209,24 @@ WIRE_QUOTE = "The merger is expected to close in Q4 2026."
 SITE_QUOTE = "We expect the acquisition to close in the fourth quarter of 2026."
 
 
-def _deal(session_factory: sessionmaker[Session], document: UUID, quote: str, **value: Any) -> UUID:
-    date_text = "Q4 2026" if "Q4 2026" in quote else "fourth quarter of 2026"
-    return _claim(session_factory, document, quote, **(DEAL | {"date_text": date_text} | value))
+def _deal(
+    session_factory: sessionmaker[Session],
+    document: UUID,
+    quote: str,
+    *,
+    date_text: str | None = None,
+    extracted_at: datetime = PUBLISHED,
+) -> UUID:
+    written = date_text or ("Q4 2026" if "Q4 2026" in quote else "fourth quarter of 2026")
+    return _claim(
+        session_factory,
+        document,
+        quote,
+        extracted_at=extracted_at,
+        catalyst_type=DEAL["catalyst_type"],
+        drug=None,
+        date_text=written,
+    )
 
 
 def _run(session_factory: sessionmaker[Session]) -> CheckReport:
