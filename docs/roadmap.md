@@ -108,6 +108,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-18 | ADR 0023: owner alerts are GitHub issues built and posted by plain code (no model, no new account): a failed or stopped live job, or a role near its cap (90% or less than one call left); a repeat comments on the open issue, a clean run closes it; alert text uses only names and counts chosen in code; thresholds in `config/orchestrator.toml` (owner-only) |
 | 2026-10-17 | Owner decision: personal trading and disclosure policies and outside contracts are the owner's own affairs, not project items; removed from the spec's compliance table and open decisions, and never raised again |
 | 2026-10-17 | ADR 0022: spending controls recorded; an owner-merged pull request's skipped review now fails instead of passing, so the robot can never count an unreviewed commit (separate review of PR #35); the analyst's cap covers one worst-case call |
 | 2026-10-17 | Spending lowered (owner decisions): the product's daily model caps total $6 (from $13.50); the Claude review no longer runs on pull requests the owner merges by hand, since a separate reviewer checks those in the coding session; roadmap gains the product name and domain, hosting (Vercel Pro once public, because the free plan is non-commercial), and the payment steps of the $15 subscription |
