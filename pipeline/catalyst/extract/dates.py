@@ -208,7 +208,6 @@ _SHARED_NOUN = re.compile(
     r"(?P<rest>(?:quarter|half)(?: of)?(?: .+)?)$"
 )
 _JOINER = re.compile(r"\s*[\u2013\u2014/]\s*|\s+(?:or|to|through|and)\s+|\s+-\s+")
-_TRAILING_YEAR = re.compile(r"(\d{4}|'\d{2})$")
 
 
 def _span(first: _Period, second: _Period) -> _Period | None:
@@ -237,13 +236,14 @@ def _range(phrase: str, published: date) -> _Period | None:
         parts = _JOINER.split(phrase.removeprefix("between "))
         if len(parts) != 2 or (" and " in phrase) != between:
             return None
-    second = _period(parts[1], published)
+    second, second_fixed = _read(parts[1], published)
     first, fixed = _read(parts[0], published)
-    year = _TRAILING_YEAR.search(parts[1])
-    if not fixed and year is not None:
-        # "Q3 to Q4 2027", "November 16 to December 2, 2027": the year is written once, at the end,
-        # and the first part takes it, never the document's year (review of PR #40).
-        first = _period(f"{parts[0]} {year[1]}", published) or _period(f"{parts[0]}, {year[1]}", published)
+    if not fixed and second is not None and second_fixed:
+        # "Q3 to Q4 2027", "November 16 to December 2, 2027", "first to second quarter of next
+        # year": the year is written once, at the end, and the first part takes it, never the
+        # document's year (reviews of PR #40).
+        year = second[0].year
+        first = _period(f"{parts[0]} {year}", published) or _period(f"{parts[0]}, {year}", published)
     if first is None or second is None:
         return None
     return _span(first, second)

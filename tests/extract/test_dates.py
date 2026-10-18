@@ -279,6 +279,15 @@ EARLY_2026 = date(2026, 3, 1)
             _window(date(2027, 11, 16), date(2027, 12, 2), DatePrecision.MONTH),
         ),
         ("Q3 to Q4 2027", _window(date(2027, 7, 1), date(2027, 12, 31), DatePrecision.QUARTER)),
+        # A year written in words at the end applies too (second review of PR #40).
+        (
+            "first quarter to second quarter of next year",
+            _window(date(2027, 1, 1), date(2027, 6, 30), DatePrecision.QUARTER),
+        ),
+        (
+            "first half or second half next year",
+            _window(date(2027, 1, 1), date(2027, 12, 31), DatePrecision.HALF),
+        ),
         # "this quarter" names its own year, so it keeps it.
         ("this quarter or Q1 2027", _window(date(2026, 1, 1), date(2027, 3, 31), DatePrecision.QUARTER)),
     ],
@@ -293,6 +302,7 @@ def test_a_year_written_only_at_the_end_applies_to_the_first_part(
     "text",
     [
         "year-end or first quarter 2028",  # year-end of 2027 or 2028? Code does not guess.
+        "year-end or first quarter next year",  # the same rule with the year in words
         "2027-2028",  # an unspaced ASCII hyphen joins only days, as in "November 16-19"
         "Q4 2026-Q1 2027",
     ],
