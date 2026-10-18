@@ -14,9 +14,10 @@ Anything missing, malformed, or unexpected in the answer means a fail with a pla
 and no action but that message. Standard library only: the workflow runs it with `python3 -I`.
 
 Commands:
-  budget --config TOML --runs RUNS_JSON --run-id ID --run-attempt N
+  budget --config TOML --runs RUNS_JSON --run-id ID --run-attempt N --created-at TIME --today DATE
       Print GitHub step outputs `allowed=true|false` and, when not allowed, `skip=MESSAGE`.
-      Every attempt of every run counts, this run's earlier attempts included.
+      Every attempt of every run counts, this run's earlier attempts included. A re-run of a run
+      created on an earlier day (UTC) never calls the model: today's run list leaves it out.
   judge REPORT_PATH
       Write the plain-English report; exit 0 only on a pass.
   act
@@ -88,9 +89,12 @@ CUT_NOTE = "_The rest was cut off here, because GitHub does not take a text this
 # Text from the model or an author is shown, never obeyed by GitHub (see `clean`).
 INVISIBLE = re.compile(
     r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u00ad\u061c\u180e\u200b-\u200f\u202a-\u202e"
-    r"\u2060-\u206f\ufeff\ufff9-\ufffb]"
+    r"\u2060-\u206f\ufe00-\ufe0f\ufeff\ufff9-\ufffb\U000e0000-\U000e007f\U000e0100-\U000e01ef]"
 )
-SECRET = re.compile(r"(?:sk-ant-|gh[pousr]_|github_pat_)[A-Za-z0-9_-]{8,}")
+SECRET = re.compile(
+    r"(?:sk-ant-|gh[pousr]_|github_pat_|sb_secret_|sb_publishable_)[A-Za-z0-9_-]{8,}"
+    r"|eyJ[A-Za-z0-9_-]{5,}\.eyJ[A-Za-z0-9_-]{5,}\.[A-Za-z0-9_-]{5,}"  # a JWT, such as a Supabase key
+)
 URL = re.compile(r"(?:https?://|www\.)[^\s`<>]+", re.IGNORECASE)
 CROSS_REF = re.compile(r"([\w.-]+/[\w.-]+)#(?=\d)")
 MENTION = re.compile(r"@(?=[A-Za-z0-9])")
@@ -198,7 +202,7 @@ def _flag(value: Any, where: str) -> bool:
 
 def _finding(value: Any, where: str) -> Finding:
     data = _object(value, FINDING_KEYS, where)
-    if data["check"] not in CHECKS:
+    if not isinstance(data["check"], str) or data["check"] not in CHECKS:
         raise InvalidError(f"{where} names a check that is not on the list")
     return Finding(data["check"], _text(data["problem"], f"{where}.problem", LONG))
 
@@ -409,14 +413,35 @@ def runs_used(runs: Sequence[dict[str, Any]], current_run_id: int, current_attem
     return others + max(current_attempt, 1) - 1
 
 
+def _created_today(created_at: Any, today: str) -> bool:
+    """Whether a run's creation time (ISO 8601, UTC) falls on `today` (YYYY-MM-DD)."""
+    return (
+        isinstance(created_at, str)
+        and bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}T\S+", created_at))
+        and (created_at[:10] == today)
+    )
+
+
 def budget(
-    config: str | None, runs: Sequence[dict[str, Any]], current_run_id: int, current_attempt: int = 1
+    config: str | None,
+    runs: Sequence[dict[str, Any]],
+    current_run_id: int,
+    current_attempt: int = 1,
+    *,
+    created_at: Any = "",
+    today: str = "",
 ) -> tuple[bool, str]:
     """Return whether this run may call the model, and a plain one-line message."""
     try:
         limit = load_limit(config)
     except InvalidError as exc:
         return False, f"The overseer did not run: {exc}."
+    if current_attempt > 1 and not _created_today(created_at, today):
+        # Today's run list holds only runs created today, so this run's attempts are not in it.
+        return False, (
+            "This is a re-run of an overseer run from an earlier day (UTC), so the overseer did not "
+            "run: the daily limit cannot count it. Push a commit, or start the workflow by hand."
+        )
     used = runs_used(runs, current_run_id, current_attempt)
     if used >= limit:
         return False, (
@@ -767,6 +792,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--runs", type=Path, required=True)
     b.add_argument("--run-id", type=int, required=True)
     b.add_argument("--run-attempt", type=int, required=True)
+    b.add_argument("--created-at", required=True)
+    b.add_argument("--today", required=True)
     j = sub.add_parser("judge")
     j.add_argument("report", type=Path)
     sub.add_parser("act")
@@ -775,7 +802,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "budget":
         config = args.config.read_text(encoding="utf-8") if args.config.is_file() else None
         runs = json.loads(args.runs.read_text(encoding="utf-8"))
-        allowed, message = budget(config, runs, args.run_id, args.run_attempt)
+        allowed, message = budget(
+            config, runs, args.run_id, args.run_attempt, created_at=args.created_at, today=args.today
+        )
         print(f"allowed={'true' if allowed else 'false'}")
         print(f"message={message}")
         if not allowed:

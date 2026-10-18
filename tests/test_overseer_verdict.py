@@ -214,6 +214,9 @@ def bad_results() -> list[Any]:
         result(pull(rerun_ci="yes")),
         result(pull(hold=True)),  # hold is for the daily sweep only
         result(pull(blocking=[finding("vibes")])),  # not one of the agreed checks
+        result(pull(blocking=[finding() | {"check": ["stuck"]}])),  # a list cannot be looked up
+        result(pull(blocking=[finding() | {"check": {}}])),
+        result(pull(blocking=[finding() | {"check": None}])),
         result(pull(blocking=[{"check": "one-item"}])),
         result(pull(blocking=["a problem"])),
         result(pull(blocking=[finding()] * 21)),
@@ -377,6 +380,29 @@ def test_api_key_shaped_text_is_redacted() -> None:
     assert out.count("redacted") == 2
 
 
+@pytest.mark.parametrize(
+    "char", ["\U000e0041", "\U000e0001", "\U000e007f", "\ufe00", "\ufe0f", "\U000e0100", "\U000e01ef"]
+)
+def test_tag_characters_and_variation_selectors_are_removed(char: str) -> None:
+    assert ov.clean(f"abc{char}def") == "abcdef"
+
+
+@pytest.mark.parametrize(
+    "secret",
+    [
+        "sb_" + "secret_" + "Ab12Cd34Ef56Gh78Ij90",
+        "sb_" + "publishable_" + "Ab12Cd34Ef56Gh78Ij90",
+        "ey" + "JhbGciOiJIUzI1NiJ9." + "ey" + "JzdWIiOiIxMjM0NTY3ODkwIn0." + "SflKxwRJSMeKKF2QT4fwpM",
+    ],
+    ids=["supabase-secret", "supabase-publishable", "jwt"],
+)
+def test_supabase_keys_and_jwts_are_redacted(secret: str) -> None:
+    out = ov.clean(f"key: {secret} end")
+    assert secret not in out
+    assert "redacted" in out
+    assert out.endswith(" end")
+
+
 def test_a_backslash_cannot_undo_the_escaping() -> None:
     out = ov.clean("\\[x\\](y) \\<b>")
     assert "<b>" not in out
@@ -446,15 +472,51 @@ def test_an_odd_attempt_number_counts_as_one(attempt: Any) -> None:
 def test_re_running_one_run_cannot_get_past_the_limit() -> None:
     # One pull-request run re-run again and again: each attempt calls the model.
     one_run = [{"id": 50, "run_attempt": 8, "conclusion": None, "actor": "acarchidi"}]
-    allowed, _ = ov.budget("daily_run_limit = 8\n", one_run, current_run_id=50, current_attempt=8)
+    when = {"created_at": "2026-10-18T09:00:00Z", "today": "2026-10-18"}
+    allowed, _ = ov.budget("daily_run_limit = 8\n", one_run, current_run_id=50, current_attempt=8, **when)
     assert allowed  # attempts 1 to 7 used; this is the 8th
     one_run[0]["run_attempt"] = 9
-    allowed, message = ov.budget("daily_run_limit = 8\n", one_run, current_run_id=50, current_attempt=9)
+    allowed, message = ov.budget(
+        "daily_run_limit = 8\n", one_run, current_run_id=50, current_attempt=9, **when
+    )
     assert not allowed
     assert "daily limit of 8" in message
     other = [{"id": 1, "run_attempt": 8, "conclusion": "success", "actor": "acarchidi"}]
     allowed, _ = ov.budget("daily_run_limit = 8\n", other, current_run_id=50, current_attempt=1)
     assert not allowed
+
+
+@pytest.mark.parametrize(
+    "created_at", ["2026-10-17T23:59:59Z", "2026-09-01T10:00:00Z", "", "yesterday", None, 17]
+)
+def test_a_re_run_of_an_older_run_does_not_call_the_model(created_at: Any) -> None:
+    # Today's run list leaves out runs created on earlier days, so their re-runs would not count.
+    allowed, message = ov.budget(
+        "daily_run_limit = 8\n",
+        [],
+        current_run_id=50,
+        current_attempt=2,
+        created_at=created_at,
+        today="2026-10-18",
+    )
+    assert not allowed
+    assert "earlier day" in message
+
+
+def test_a_first_attempt_or_a_re_run_from_today_may_go_ahead() -> None:
+    allowed, _ = ov.budget(
+        "daily_run_limit = 8\n", [], current_run_id=50, current_attempt=1, created_at="", today="2026-10-18"
+    )
+    assert allowed
+    allowed, _ = ov.budget(
+        "daily_run_limit = 8\n",
+        [],
+        current_run_id=50,
+        current_attempt=2,
+        created_at="2026-10-18T00:00:01Z",
+        today="2026-10-18",
+    )
+    assert allowed
 
 
 def test_a_missing_limit_file_uses_the_default_of_8() -> None:
@@ -866,7 +928,8 @@ def test_the_budget_command_prints_step_outputs(tmp_path: Path) -> None:
     config.write_text("daily_run_limit = 1\n", encoding="utf-8")
     listing = tmp_path / "runs.json"
     listing.write_text(json.dumps(runs("success")), encoding="utf-8")
-    common = ["--runs", str(listing), "--run-id", "99", "--run-attempt", "1"]
+    when = ["--created-at", "2026-10-18T09:00:00Z", "--today", "2026-10-18"]
+    common = ["--runs", str(listing), "--run-id", "99", "--run-attempt", "1", *when]
     done = run_cli("budget", "--config", str(config), *common)
     assert done.returncode == 0
     assert "allowed=false" in done.stdout.splitlines()
@@ -876,12 +939,38 @@ def test_the_budget_command_prints_step_outputs(tmp_path: Path) -> None:
     # This run's own earlier attempts count.
     listing.write_text("[]", encoding="utf-8")
     done = run_cli(
-        "budget", "--config", str(config), "--runs", str(listing), "--run-id", "99", "--run-attempt", "2"
+        "budget",
+        "--config",
+        str(config),
+        "--runs",
+        str(listing),
+        "--run-id",
+        "99",
+        "--run-attempt",
+        "2",
+        *when,
     )
     assert "allowed=false" in done.stdout.splitlines()
-    # The attempt number is required, so the workflow cannot leave it out by mistake.
-    done = run_cli("budget", "--config", str(config), "--runs", str(listing), "--run-id", "99")
-    assert done.returncode != 0
+    # A re-run of yesterday's run does not call the model.
+    old = ["--created-at", "2026-10-17T09:00:00Z", "--today", "2026-10-18"]
+    done = run_cli(
+        "budget",
+        "--config",
+        str(tmp_path / "absent.toml"),
+        "--runs",
+        str(listing),
+        "--run-id",
+        "99",
+        "--run-attempt",
+        "2",
+        *old,
+    )
+    assert "allowed=false" in done.stdout.splitlines()
+    # Each setting is required, so the workflow cannot leave one out by mistake.
+    full = ["--config", str(config), "--runs", str(listing), "--run-id", "99", "--run-attempt", "1", *when]
+    for flag in ("--run-attempt", "--created-at", "--today"):
+        i = full.index(flag)
+        assert run_cli("budget", *full[:i], *full[i + 2 :]).returncode != 0
 
 
 def test_the_act_command_in_dry_run_mode_needs_no_github(tmp_path: Path) -> None:
@@ -942,12 +1031,25 @@ def test_the_workflow_counts_every_attempt_of_every_run() -> None:
     assert "{id, run_attempt, conclusion, actor: .actor.login}" in text
     assert "RUN_ATTEMPT: ${{ github.run_attempt }}" in text
     assert '--run-attempt "$RUN_ATTEMPT"' in text
+    assert 'gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at' in text
+    assert '--created-at "$created_at" --today "$today"' in text
+    assert '-f created=">=$today"' in text
+
+
+def test_the_workflow_reads_main_only_through_the_remote_branch() -> None:
+    # A tag named origin/main would win over the branch, so main is resolved once by full name.
+    text = workflow()
+    assert "origin/main:" not in text
+    assert "git rev-parse origin/main" not in text
+    assert text.count('git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}"') == 2
+    assert re.findall(r"git show \"(\S+?):", text)
+    assert set(re.findall(r"git show \"(\S+?):", text)) == {"$MAIN_SHA"}
 
 
 def test_the_workflow_runs_the_script_from_main() -> None:
     text = workflow()
     # Both jobs take the script from main; neither runs the pull request's copy by path.
-    assert text.count('git show "origin/main:scripts/overseer_verdict.py"') == 2
+    assert text.count('git show "$MAIN_SHA:scripts/overseer_verdict.py"') == 2
     assert "python3 -I scripts/overseer_verdict.py" not in text
     assert text.count('python3 -I "$RUNNER_TEMP/overseer_verdict.py"') == 3
 
@@ -957,3 +1059,16 @@ def test_the_model_judges_against_mains_rules() -> None:
     for name in ("AGENTS.md", "docs/roadmap.md", "docs/quality-gates.md"):
         assert name in text.split("for f in ", 1)[1].split("\n", 1)[0]
         assert f".overseer/main/{name}" in text
+
+
+def test_the_overseer_folder_cannot_come_from_the_pull_request() -> None:
+    # A pull request could commit .overseer/main/AGENTS.md as a link to /dev/null.
+    steps = workflow().split("      - name: ")
+    writers = [step for step in steps if "dir=.overseer" in step]
+    assert len(writers) == 1
+    run = writers[0].split("run: |", 1)[1]
+    assert run.index('git ls-files -- "$dir"') < run.index('rm -rf -- "$dir"') < run.index('mkdir -p "$dir')
+    assert "set -o noclobber" in run
+    assert 'find "$dir" ! -type f ! -type d' in run
+    others = [step for step in steps if "dir=.overseer" not in step]
+    assert not [step for step in others if re.search(r'> *"?\.overseer', step)]

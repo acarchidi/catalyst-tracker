@@ -83,21 +83,28 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Take the overseer script and the rules from main
+      - name: Take the overseer script from main
+        id: main
         run: |
           set -euo pipefail
-          if git cat-file -e "origin/main:scripts/overseer_verdict.py" 2>/dev/null; then
-            git show "origin/main:scripts/overseer_verdict.py" > "$RUNNER_TEMP/overseer_verdict.py"
-          else
+          # Main by its full name: checkout fetches tags too, and a tag named origin/main would
+          # win over the branch. Any git error stops the run.
+          if ! MAIN_SHA=$(git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}"); then
+            echo "Could not find main's latest commit, so the overseer did not run."
+            exit 1
+          fi
+          echo "sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+          listed=$(git ls-tree --name-only "$MAIN_SHA" -- scripts/overseer_verdict.py)
+          if [ "$listed" = "scripts/overseer_verdict.py" ]; then
+            git show "$MAIN_SHA:scripts/overseer_verdict.py" > "$RUNNER_TEMP/overseer_verdict.py"
+          elif [ -z "$listed" ]; then
+            # Only until this script first reaches main; step 2 removes this fallback (ADR 0019).
             echo "scripts/overseer_verdict.py is not on main yet, so this run uses the checked-out copy."
             cp scripts/overseer_verdict.py "$RUNNER_TEMP/overseer_verdict.py"
+          else
+            echo "Unexpected listing for scripts/overseer_verdict.py on main, so the overseer did not run."
+            exit 1
           fi
-          # On a pull-request run the working tree holds the pull request's copies of the rules;
-          # the model judges by main's.
-          for f in AGENTS.md docs/roadmap.md docs/quality-gates.md .github/pull_request_template.md scripts/merge_gate.py; do
-            mkdir -p ".overseer/main/$(dirname "$f")"
-            git show "origin/main:$f" > ".overseer/main/$f"
-          done
 
       - name: Decide what this run checks
         id: scope
@@ -146,17 +153,27 @@ jobs:
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
+          MAIN_SHA: ${{ steps.main.outputs.sha }}
         run: |
           set -euo pipefail
           # The limit comes from main, never from the pull request being checked. Before this
           # file reaches main, the script's default (8) applies.
-          git show "origin/main:config/overseer.toml" > "$RUNNER_TEMP/overseer.toml" 2>/dev/null \
-            || rm -f "$RUNNER_TEMP/overseer.toml"
+          listed=$(git ls-tree --name-only "$MAIN_SHA" -- config/overseer.toml)
+          if [ "$listed" = "config/overseer.toml" ]; then
+            git show "$MAIN_SHA:config/overseer.toml" > "$RUNNER_TEMP/overseer.toml"
+          else
+            rm -f "$RUNNER_TEMP/overseer.toml"
+          fi
+          # "Today" is the UTC day. A re-run keeps its run's creation time, so a re-run of an
+          # older run is not in today's list; the script refuses those.
+          today=$(date -u +%F)
+          created_at=$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at)
           gh api -X GET "repos/$REPO/actions/workflows/overseer.yml/runs" \
-            -f created=">=$(date -u +%F)" -f per_page=100 --paginate \
+            -f created=">=$today" -f per_page=100 --paginate \
             --jq '.workflow_runs[] | {id, run_attempt, conclusion, actor: .actor.login}' | jq -s . > "$RUNNER_TEMP/runs.json"
           python3 -I "$RUNNER_TEMP/overseer_verdict.py" budget --config "$RUNNER_TEMP/overseer.toml" \
-            --runs "$RUNNER_TEMP/runs.json" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" | tee -a "$GITHUB_OUTPUT"
+            --runs "$RUNNER_TEMP/runs.json" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
+            --created-at "$created_at" --today "$today" | tee -a "$GITHUB_OUTPUT"
 
       - name: Collect the pull requests for the overseer to read
         id: gather
@@ -164,22 +181,40 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
+          MAIN_SHA: ${{ steps.main.outputs.sha }}
         run: |
           set -euo pipefail
           dir=.overseer
-          mkdir -p "$dir"
+          # A pull request must not supply this folder: a link in it could hide main's rules.
+          if [ -n "$(git ls-files -- "$dir")" ]; then
+            echo "The pull request adds files under $dir/, which the overseer writes itself."
+            exit 1
+          fi
+          rm -rf -- "$dir"
+          mkdir -p "$dir/main"
+          set -o noclobber  # never write over an existing file or through a link
+          # On a pull-request run the working tree holds the pull request's copies of the rules;
+          # the model judges by main's.
+          for f in AGENTS.md docs/roadmap.md docs/quality-gates.md .github/pull_request_template.md scripts/merge_gate.py; do
+            mkdir -p "$dir/main/$(dirname "$f")"
+            git show "$MAIN_SHA:$f" > "$dir/main/$f"
+          done
           gh pr list --repo "$REPO" --state open --limit 100 \
             --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,createdAt,updatedAt,labels,files,statusCheckRollup \
             | jq '[.[] | select((.author.login // "") | test("dependabot") | not)]' > "$dir/open-pull-requests.json"
           since=$(date -u -d '14 days ago' +%F)
           gh pr list --repo "$REPO" --state merged --limit 100 --search "merged:>=$since" \
             --json number,title,mergedAt,headRefName,files > "$dir/merged-pull-requests.json"
-          git rev-parse origin/main > "$dir/main-sha.txt"
+          echo "$MAIN_SHA" > "$dir/main-sha.txt"
           # How far each open pull request's branch is from main, for the stacking check.
           jq -r '.[] | "\(.number) \(.headRefOid)"' "$dir/open-pull-requests.json" | while read -r number sha; do
-            gh api "repos/$REPO/compare/main...$sha" \
+            gh api "repos/$REPO/compare/$MAIN_SHA...$sha" \
               --jq "{number: $number, behind_main_by: .behind_by, ahead_of_main_by: .ahead_by, merge_base: .merge_base_commit.sha}"
           done | jq -s . > "$dir/branches.json"
+          if [ -n "$(find "$dir" ! -type f ! -type d)" ]; then
+            echo "Something other than a plain file appeared in $dir/, so the overseer did not run."
+            exit 1
+          fi
           echo "open=$(jq -r '[.[].number] | map(tostring) | join(" ")' "$dir/open-pull-requests.json")" >> "$GITHUB_OUTPUT"
 
       - name: Oversee
@@ -221,8 +256,8 @@ jobs:
 
             Checks. Each blocking finding names its check and a concrete way the work goes wrong:
             - one-item: the pull request does exactly one roadmap item, either the first unticked
-              one in .overseer/main/docs/roadmap.md or a fix or request from the owner that the roadmap or a
-              decision-log line records.
+              one in .overseer/main/docs/roadmap.md or a fix or request from the owner that the
+              roadmap or a decision-log line records.
             - off-roadmap: nothing is built that the roadmap does not list.
             - stacked: the pull request targets main and is not built on another open pull
               request's commits. A branch that is only behind because main moved on is fine.
@@ -301,13 +336,26 @@ jobs:
           persist-credentials: false
 
       - name: Take the overseer script from main
+        id: main
         run: |
           set -euo pipefail
-          if git cat-file -e "origin/main:scripts/overseer_verdict.py" 2>/dev/null; then
-            git show "origin/main:scripts/overseer_verdict.py" > "$RUNNER_TEMP/overseer_verdict.py"
-          else
+          # Main by its full name: checkout fetches tags too, and a tag named origin/main would
+          # win over the branch. Any git error stops the run.
+          if ! MAIN_SHA=$(git rev-parse --verify --quiet "refs/remotes/origin/main^{commit}"); then
+            echo "Could not find main's latest commit, so the overseer did not run."
+            exit 1
+          fi
+          echo "sha=$MAIN_SHA" >> "$GITHUB_OUTPUT"
+          listed=$(git ls-tree --name-only "$MAIN_SHA" -- scripts/overseer_verdict.py)
+          if [ "$listed" = "scripts/overseer_verdict.py" ]; then
+            git show "$MAIN_SHA:scripts/overseer_verdict.py" > "$RUNNER_TEMP/overseer_verdict.py"
+          elif [ -z "$listed" ]; then
+            # Only until this script first reaches main; step 2 removes this fallback (ADR 0019).
             echo "scripts/overseer_verdict.py is not on main yet, so this run uses the checked-out copy."
             cp scripts/overseer_verdict.py "$RUNNER_TEMP/overseer_verdict.py"
+          else
+            echo "Unexpected listing for scripts/overseer_verdict.py on main, so the overseer did not run."
+            exit 1
           fi
 
       - name: Do the allowed actions
