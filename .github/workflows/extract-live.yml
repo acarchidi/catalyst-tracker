@@ -7,6 +7,11 @@ name: Extract catalysts (live)
 # - evaluate: on the 12 recorded releases of the gold set, to earn a prompt's scores
 #   (ADR 0014): the extractor's, or the verifier's second reading (ADR 0018, part 2). The
 #   scores go to the job summary for the coding session to commit.
+# - export: writes every published catalyst, and the claims the publish gate held with their
+#   reasons, to one JSON file for the owner's private prototype page (owner request
+#   2026-10-18). No model call. The file goes to the run log only while the repository is
+#   private.
+# Extract and export first bring the live database up to date, so the checks' tables exist.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 # After an extraction, plain code turns the run's summary and today's spend into alert issues
@@ -18,7 +23,7 @@ on:
       mode:
         description: "extract (newest press releases) or evaluate (score on the gold set)"
         type: choice
-        options: [extract, evaluate]
+        options: [extract, evaluate, export]
         default: extract
       limit:
         description: "Most press releases to read in this run"
@@ -55,6 +60,15 @@ jobs:
       - name: Install locked dependencies
         run: uv sync --locked
 
+      - name: Bring the live database up to date
+        id: migrate
+        if: ${{ inputs.mode == 'extract' || inputs.mode == 'export' }}
+        timeout-minutes: 10
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: uv run alembic upgrade head
+
       - name: Extract catalysts from the newest press releases
         id: extract
         if: ${{ inputs.mode == 'extract' }}
@@ -83,6 +97,27 @@ jobs:
             echo "::endgroup::"
           fi
           exit "$status"
+
+      # Free: no model call.
+      - name: Export published and held catalysts
+        if: ${{ inputs.mode == 'export' }}
+        timeout-minutes: 10
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+        run: |
+          set -o pipefail
+          uv run catalyst export-catalysts --out "$RUNNER_TEMP/export.json" --include-held \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          # Held claims are unchecked: the file goes to the run log only while the repository is
+          # private, never to a public log (AGENTS.md).
+          if [ "$REPOSITORY_PRIVATE" = "true" ]; then
+            echo "::group::Export (JSON)"
+            cat "$RUNNER_TEMP/export.json"
+            echo
+            echo "::endgroup::"
+          fi
 
       # Free: no model call. Runs even when the extraction failed, so the failure is reported.
       - name: Build alerts from this run
