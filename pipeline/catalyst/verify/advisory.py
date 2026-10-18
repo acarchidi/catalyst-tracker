@@ -193,7 +193,7 @@ def _doubt(
 
     if any(doubts(s) for s in found.amendments):
         return "a later amendment names this drug and does not put the meeting in this window"
-    if any(doubts(s) for s in found.undated):
+    if any(doubts(s) for s in [*found.undated, *found.later]):
         return "a later notice for this meeting does not confirm it in this window"
     if found.unreadable:
         return f"{len(found.unreadable)} stored notice(s) could not be read, so a change may be missed"
