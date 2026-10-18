@@ -560,6 +560,9 @@ class NoticesInWindow:
     # Every readable amendment, whatever its publication date or meeting days: matching one to the
     # notice it amends by title can miss, so a check can look at them all (Opus review of PR #49).
     amendments: list[StoredNotice] = field(default_factory=list[StoredNotice])
+    # Every other readable notice, whatever its dates: a meeting can be re-announced by a fresh
+    # "Notice of Meeting" for another day, which is not an amendment (Claude review of PR #49).
+    later: list[StoredNotice] = field(default_factory=list[StoredNotice])
 
 
 @dataclass
@@ -636,6 +639,7 @@ def notices_in(loaded: StoredNotices, window_start: date, window_end: date) -> N
             found.undated.append(stored)
         elif meeting.value.start <= window_end and meeting.value.end >= window_start:
             found.matching.append(stored)
+    found.later = [s for s in loaded.readable if not any(s is m for m in found.matching)]
     return found
 
 
