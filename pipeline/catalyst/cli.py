@@ -280,9 +280,18 @@ def _extract(args: argparse.Namespace) -> int:
         else:
             try:
                 checks = run_checks(sessionmaker(engine), _utc_now).summary()
-                checks["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
             except SQLAlchemyError as error:
                 checks = {"error": f"{type(error).__name__}: checks did not finish"}
+            else:
+                # Its own step, so a problem in it keeps the rule checks' summary (Opus review of PR #49).
+                try:
+                    checks["advisory"] = check_advisory_meetings(
+                        sessionmaker(engine), store, _utc_now
+                    ).summary()
+                except (SQLAlchemyError, ValueError, OSError) as error:
+                    checks["advisory"] = {
+                        "error": f"{type(error).__name__}: the advisory check did not finish"
+                    }
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(

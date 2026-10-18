@@ -8,8 +8,9 @@ the real recorded notices (ADR 0018, part 3).
 import json
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from uuid import UUID
+from uuid import UUID, uuid4
 
+import pytest
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -19,7 +20,13 @@ from catalyst.collectors.sources import fedreg
 from catalyst.db.tables import TABLES
 from catalyst.schemas import Claim, ClaimCheck, ClaimSubject, SourceDocument
 from catalyst.snapshots import LocalSnapshotStore
-from catalyst.verify.advisory import CHECK, AdvisoryClaim, advisory_notice, check_advisory_meetings
+from catalyst.verify.advisory import (
+    CHECK,
+    AdvisoryClaim,
+    advisory_notice,
+    check_advisory_meetings,
+    company_of,
+)
 from catalyst.verify.fedreg_notice import NoticesInWindow, StoredNotice, read_notice
 from catalyst.verify.rules import Outcome
 from conftest import RecordedServer
@@ -151,7 +158,7 @@ def test_a_claim_with_no_window_or_no_drug_fails_with_its_reason() -> None:
 
 def test_a_notice_whose_date_cannot_be_read_says_so() -> None:
     """2026-15016 (Capricor, deramiocel) is an amendment whose DATES section is empty."""
-    claim = _claim(drug="deramiocel")
+    claim = _claim(drug="Deramiocel (Human Allogeneic Cardiosphere-Derived Cells)")
     assert _outcome(claim, _found(undated=("2026-15016",))) == (
         Outcome.FAIL,
         "a notice names this drug, but its meeting date cannot be read",
@@ -187,17 +194,17 @@ def test_a_later_amendment_for_the_same_drug_sends_the_claim_to_review() -> None
     """
     original = _stored("2026-19700")
     later = _undated_amendment_for_atropine(original.document.published_at + timedelta(days=5))
-    found = NoticesInWindow(matching=[original], undated=[later])
+    found = NoticesInWindow(matching=[original], undated=[later], amendments=[later])
     assert _outcome(_claim(), found) == (
         Outcome.FAIL,
-        "a later amendment names this drug, and its new date cannot be read",
+        "a later amendment names this drug and does not put the meeting in this window",
     )
 
 
 def test_an_earlier_amendment_does_not_block_a_later_dated_notice() -> None:
     original = _stored("2026-19700")
     earlier = _undated_amendment_for_atropine(original.document.published_at - timedelta(days=5))
-    found = NoticesInWindow(matching=[original], undated=[earlier])
+    found = NoticesInWindow(matching=[original], undated=[earlier], amendments=[earlier])
     assert _outcome(_claim(), found)[0] is Outcome.PASS
 
 
@@ -258,3 +265,111 @@ def test_the_job_stores_an_outcome_for_every_extracted_claim(
     assert outcomes == {claims[0].id: "pass", claims[1].id: "not_applicable"}
     again = check_advisory_meetings(session_factory, store, lambda: datetime(2026, 10, 18, tzinfo=UTC))
     assert again.outcomes == report.outcomes
+
+
+def _atropine_notice(
+    *, title: str | None = None, dates: str | None = None, days_later: int = 0
+) -> StoredNotice:
+    """2026-19700 as recorded, with its title or DATES changed where a test says (invented values)."""
+    original = _stored("2026-19700")
+    content = json.loads(COLLECTED["2026-19700"].content)
+    if title is not None:
+        content["title"] = title
+    if dates is not None:
+        content["dates"] = dates
+    published = original.document.published_at + timedelta(days=days_later)
+    return StoredNotice(
+        original.document.model_copy(update={"published_at": published}),
+        read_notice(json.dumps(content).encode()),
+    )
+
+
+def test_a_later_dated_amendment_that_moves_the_meeting_fails_even_with_another_title() -> None:
+    """Opus review of PR #49: the title lost a comma, so the original was not marked replaced."""
+    moved = _atropine_notice(
+        title="Dermatologic and Ophthalmic Drugs Advisory Committee; Amendment of Notice-New Drug "
+        "Application (NDA) 219694, for Atropine Sulfate Ophthalmic Solution 0.01%",
+        dates="The meeting will be held on December 4, 2026, from 9 a.m. to 5 p.m. Eastern Time.",
+        days_later=10,
+    )
+    assert moved.notice.amendment is not None
+    found = NoticesInWindow(matching=[_stored("2026-19700")], amendments=[moved])
+    assert _outcome(_claim(), found) == (
+        Outcome.FAIL,
+        "a later amendment names this drug and does not put the meeting in this window",
+    )
+
+
+def test_a_notice_that_could_not_be_read_blocks_a_pass() -> None:
+    found = NoticesInWindow(matching=[_stored("2026-19700")], unreadable=["fedreg:2026-99999"])
+    assert _outcome(_claim(), found) == (
+        Outcome.FAIL,
+        "1 stored notice(s) could not be read, so a change may be missed",
+    )
+
+
+def test_a_same_day_amendment_counts_as_later() -> None:
+    same_day = _undated_amendment_for_atropine(_stored("2026-19700").document.published_at)
+    found = NoticesInWindow(matching=[_stored("2026-19700")], undated=[same_day], amendments=[same_day])
+    assert _outcome(_claim(), found)[0] is Outcome.FAIL
+
+
+def test_a_later_undated_notice_that_is_not_an_amendment_does_not_block() -> None:
+    plain = _atropine_notice(dates="", days_later=3)
+    assert plain.notice.amendment is None
+    found = NoticesInWindow(matching=[_stored("2026-19700")], undated=[plain])
+    assert _outcome(_claim(), found)[0] is Outcome.PASS
+
+
+@pytest.mark.parametrize(
+    ("claim", "notice"),
+    [
+        ("insulin", "Insulin Efsitora Alfa"),
+        ("semaglutide", "Cagrilintide and Semaglutide"),
+        ("adalimumab", "adalimumab-aaty"),
+        ("Keytruda", "Keytruda Qlex"),
+        ("nivolumab", "nivolumab and relatlimab-rmbw"),
+        ("lin ear", "nonlinear thing"),
+    ],
+)
+def test_a_name_inside_another_products_name_is_another_product(claim: str, notice: str) -> None:
+    title = (
+        "Oncologic Drugs Advisory Committee; Notice of Meeting; Request for Comments-Biologics License "
+        f"Application (BLA) 761999, for {notice}, submitted by Example, Inc."
+    )
+    stored = _atropine_notice(title=title)
+    assert [p.value for p in stored.notice.products] == [notice]
+    assert _outcome(_claim(drug=claim), NoticesInWindow(matching=[stored]))[0] is Outcome.FAIL
+
+
+def test_a_meeting_must_lie_inside_the_window_not_just_overlap() -> None:
+    two_days = _atropine_notice(
+        dates="The meeting will be held on October 29 and 30, 2026, from 9 a.m. to 5 p.m."
+    )
+    assert two_days.notice.meeting is not None
+    assert _outcome(_claim(), NoticesInWindow(matching=[two_days]))[0] is Outcome.FAIL
+    assert _outcome(_claim(window=FOURTH_QUARTER), NoticesInWindow(matching=[two_days]))[0] is Outcome.PASS
+
+
+def test_a_sponsor_matched_to_another_company_fails() -> None:
+    galleri = _claim(drug="Galleri", window=(date(2026, 9, 23), date(2026, 9, 23)))
+    found = _found("2026-16245")
+    result = advisory_notice(galleri, found, _never, lambda sponsor: sponsor == "GRAIL, Inc.")
+    assert (result.outcome, result.reason) == (
+        Outcome.FAIL,
+        "the notice names another company as the sponsor",
+    )
+
+
+def test_two_unknown_names_are_never_one_drug_in_the_tables() -> None:
+    from catalyst.resolve import ReferenceData
+    from catalyst.verify.advisory import _same_drug  # pyright: ignore[reportPrivateUsage]
+
+    assert _same_drug(ReferenceData([], [], []), uuid4())("foo", "bar") is False
+
+
+def test_a_document_with_several_companies_has_no_single_company() -> None:
+    assert company_of({uuid4(), uuid4()}) is None
+    only = uuid4()
+    assert company_of({only}) == only
+    assert company_of(set()) is None

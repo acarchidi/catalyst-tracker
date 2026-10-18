@@ -1,16 +1,23 @@
 """An advisory committee meeting needs a Federal Register notice (spec: Verification; ADR 0018, part 3).
 
 A claimed advisory committee passes only when a stored notice, not replaced by an amendment, has
-its meeting inside the claim's window and names the same drug: the same name apart from case,
-spaces, and punctuation; one name inside the other when the shorter has at least five letters;
-or one drug in the reference tables. A later amendment that names the drug but whose new date
-cannot be read sends the claim to review, because matching an amendment to its notice by title
-can miss (Claude review of PR #43). Every other catalyst type is not applicable.
+its meeting inside the claim's window and names the same drug, and no other stored notice casts
+doubt on it. Names agree when they are the same apart from case, spaces, and punctuation; when
+the longer one only adds dosage-form words ("atropine" and "Atropine Sulfate Ophthalmic Solution,
+0.01%"); or when the reference tables call them one drug. A longer name that adds anything else
+("insulin" and "Insulin Efsitora Alfa", "adalimumab" and "adalimumab-aaty") is another product.
+
+It fails when a later amendment names the drug and does not put the meeting inside the window,
+when any stored notice could not be read, or when the notice names a sponsor that the reference
+tables match to another company (Opus review of PR #49). Every other catalyst type is not
+applicable.
 """
 
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -27,7 +34,13 @@ from catalyst.references import load_reference_data
 from catalyst.resolve import ReferenceData, Status
 from catalyst.schemas import Claim, CompanyDocument
 from catalyst.snapshots import SnapshotStore
-from catalyst.verify.fedreg_notice import NoticesInWindow, StoredNotice, notices_for
+from catalyst.verify.fedreg_notice import (
+    NoticesInWindow,
+    StoredNotice,
+    StoredNotices,
+    load_notices,
+    notices_in,
+)
 from catalyst.verify.rules import CheckResult, Outcome
 from catalyst.verify.run import store_check
 from catalyst.verify.second import name_key
@@ -48,12 +61,91 @@ class AdvisoryClaim:
     window: tuple[date, date] | None
 
 
+_FORM_WORDS = frozenset(
+    [
+        "sulfate",
+        "sulphate",
+        "hydrochloride",
+        "hcl",
+        "sodium",
+        "potassium",
+        "calcium",
+        "magnesium",
+        "acetate",
+        "citrate",
+        "maleate",
+        "mesylate",
+        "tartrate",
+        "phosphate",
+        "succinate",
+        "besylate",
+        "bromide",
+        "chloride",
+        "fumarate",
+        "ophthalmic",
+        "solution",
+        "suspension",
+        "emulsion",
+        "injection",
+        "injectable",
+        "tablet",
+        "tablets",
+        "capsule",
+        "capsules",
+        "oral",
+        "topical",
+        "cream",
+        "ointment",
+        "gel",
+        "spray",
+        "nasal",
+        "inhalation",
+        "powder",
+        "for",
+        "extended",
+        "delayed",
+        "release",
+        "film",
+        "coated",
+        "subcutaneous",
+        "intravenous",
+        "kit",
+        "drops",
+        "mg",
+        "mcg",
+        "ml",
+        "g",
+        "units",
+    ]
+)
+_WORD = re.compile(r"[0-9]+(?:\.[0-9]+)?[a-z]*|[a-z]+")
+_DOSE = re.compile(r"[0-9]+(?:\.[0-9]+)?(?:mg|mcg|ml|g|iu)?")
+
+
+def _words(name: str) -> list[str]:
+    return _WORD.findall(unicodedata.normalize("NFKC", name).casefold())
+
+
+def _adds_only_form_words(shorter: list[str], longer: list[str]) -> bool:
+    """Say whether `longer` is `shorter` plus salt, dosage-form, and strength words only."""
+    for start in range(len(longer) - len(shorter) + 1):
+        if longer[start : start + len(shorter)] == shorter:
+            extra = longer[:start] + longer[start + len(shorter) :]
+            return all(w in _FORM_WORDS or _DOSE.fullmatch(w) for w in extra)
+    return False
+
+
 def _names_agree(claim: str, notice: str, same_drug: Callable[[str, str], bool]) -> bool:
     a, b = name_key(claim), name_key(notice)
     if not a or not b:
         return False
-    shorter, longer = (a, b) if len(a) <= len(b) else (b, a)
-    return a == b or (len(shorter) >= _SHORTEST_PART and shorter in longer) or same_drug(claim, notice)
+    if a == b or same_drug(claim, notice):
+        return True
+    first, second = _words(claim), _words(notice)
+    shorter, longer = (first, second) if len(first) <= len(second) else (second, first)
+    return (
+        bool(shorter) and len("".join(shorter)) >= _SHORTEST_PART and _adds_only_form_words(shorter, longer)
+    )
 
 
 def _names_drug(stored: StoredNotice, drug: str, same_drug: Callable[[str, str], bool]) -> bool:
@@ -66,9 +158,15 @@ def _inside(window: tuple[date, date], stored: StoredNotice) -> bool:
 
 
 def advisory_notice(
-    claim: AdvisoryClaim, found: NoticesInWindow, same_drug: Callable[[str, str], bool]
+    claim: AdvisoryClaim,
+    found: NoticesInWindow,
+    same_drug: Callable[[str, str], bool],
+    other_company: Callable[[str], bool] = lambda _sponsor: False,
 ) -> CheckResult:
-    """Return the outcome for one claim, given the stored notices for its window."""
+    """Return the outcome for one claim, given the stored notices for its window.
+
+    `other_company` says whether a sponsor's name matches a company other than the claim's own.
+    """
     if claim.catalyst_type != ADVISORY_TYPE:
         return CheckResult(CHECK, Outcome.NOT_APPLICABLE)
     if claim.window is None:
@@ -77,15 +175,26 @@ def advisory_notice(
         return CheckResult(CHECK, Outcome.FAIL, "the claim names no drug, so no notice can confirm it")
     drug, window = claim.drug, claim.window
     matches = [s for s in found.matching if _inside(window, s) and _names_drug(s, drug, same_drug)]
-    undated = [s for s in found.undated if _names_drug(s, drug, same_drug)]
     if matches:
         newest = max(s.document.published_at for s in matches)
-        later = [s for s in undated if s.notice.amendment is not None and s.document.published_at > newest]
-        if later:
-            reason = "a later amendment names this drug, and its new date cannot be read"
+        moved = [
+            s
+            for s in found.amendments
+            if s.document.published_at >= newest
+            and not any(s is m for m in matches)
+            and _names_drug(s, drug, same_drug)
+            and not _inside(window, s)
+        ]
+        if moved:
+            reason = "a later amendment names this drug and does not put the meeting in this window"
             return CheckResult(CHECK, Outcome.FAIL, reason)
+        if found.unreadable:
+            reason = f"{len(found.unreadable)} stored notice(s) could not be read, so a change may be missed"
+            return CheckResult(CHECK, Outcome.FAIL, reason)
+        if any(other_company(sponsor.value) for m in matches for sponsor in m.notice.sponsors):
+            return CheckResult(CHECK, Outcome.FAIL, "the notice names another company as the sponsor")
         return CheckResult(CHECK, Outcome.PASS)
-    if undated:
+    if any(_names_drug(s, drug, same_drug) for s in found.undated):
         return CheckResult(
             CHECK, Outcome.FAIL, "a notice names this drug, but its meeting date cannot be read"
         )
@@ -126,15 +235,31 @@ def _same_drug(references: ReferenceData, company: UUID | None) -> Callable[[str
         if company is None:
             return False
         first, second = references.resolve_drug(a, company), references.resolve_drug(b, company)
-        return first.status is second.status is Status.RESOLVED and first.id == second.id
+        return first.status is Status.RESOLVED and second.status is Status.RESOLVED and first.id == second.id
 
     return same
+
+
+def _other_company(references: ReferenceData, company: UUID | None) -> Callable[[str], bool]:
+    def other(sponsor: str) -> bool:
+        found = references.resolve_company(name=sponsor)
+        return company is not None and found.status is Status.RESOLVED and found.id != company
+
+    return other
+
+
+def company_of(owners: set[UUID]) -> UUID | None:
+    """Return a document's company, or None when it is linked to none or to several."""
+    return next(iter(owners)) if len(owners) == 1 else None
 
 
 def check_advisory_meetings(
     session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
 ) -> AdvisoryReport:
-    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run."""
+    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run.
+
+    The stored notices are read once per run, not once per claim (Opus review of PR #49).
+    """
     claim, links = TABLES[Claim], TABLES[CompanyDocument]
     report = AdvisoryReport()
     at = now()
@@ -146,7 +271,9 @@ def check_advisory_meetings(
         query = select(claim.c.id, claim.c.value, claim.c.source_document_id).where(
             claim.c.agent == ROLE, claim.c.field.startswith("catalyst:")
         )
-        for row in session.execute(query).all():
+        rows = session.execute(query).all()
+        loaded: StoredNotices | None = None
+        for row in rows:
             value = _value(row.value)
             kind, drug = value.get("catalyst_type"), value.get("drug")
             subject = AdvisoryClaim(
@@ -154,12 +281,19 @@ def check_advisory_meetings(
                 drug=drug if isinstance(drug, str) else None,
                 window=_window(value),
             )
-            found = NoticesInWindow()
+            company = company_of(companies.get(row.source_document_id, set()))
             if subject.catalyst_type == ADVISORY_TYPE and subject.window is not None:
-                found = notices_for(session, store, *subject.window)
-            owners = companies.get(row.source_document_id, set())
-            company = next(iter(owners)) if len(owners) == 1 else None
-            result = advisory_notice(subject, found, _same_drug(references, company))
+                loaded = loaded or load_notices(session, store)
+                try:
+                    found = notices_in(loaded, *subject.window)
+                except (ValueError, OverflowError):
+                    result = CheckResult(CHECK, Outcome.FAIL, "the claim's window cannot be looked up")
+                else:
+                    result = advisory_notice(
+                        subject, found, _same_drug(references, company), _other_company(references, company)
+                    )
+            else:
+                result = advisory_notice(subject, NoticesInWindow(), _same_drug(references, company))
             store_check(session, row.id, result, at)
             report.claims += 1
             key = f"{result.check}:{result.outcome.value}"
