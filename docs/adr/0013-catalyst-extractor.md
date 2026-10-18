@@ -26,5 +26,5 @@ The spec gives the extractor no tools and no database access, requires every val
 ## Consequences
 
 - The demo can show proposed catalysts with their quotes, labeled as not yet verified, straight from the claims.
-- A document where the model found nothing has no claim, so a later run reads it again. Each re-read costs a few cents at the prices in `config/models.toml` (a median release is about 4,000 input tokens); the daily cap of $4 bounds the total. A record of empty extractions can come with the publish gate.
+- A document where the model found nothing has no claim, so a later run reads it again. Each re-read costs a few cents at the prices in `config/models.toml` (a median release is about 4,000 input tokens); the daily cap ($2 since ADR 0022) bounds the total. A record of empty extractions can come with the publish gate.
 - The prompt has no scores yet. The gold set and its scorer are the third part of this roadmap item; until they exist, no prompt change can be judged, so the prompt stays at 1.0.0.
