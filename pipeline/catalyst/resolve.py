@@ -122,19 +122,22 @@ def _letters(text: str) -> str:
 
 
 _DASHES = r"\-\u2010-\u2015"
+# Only a hyphen or an en dash joins a name to more: writers set em dashes and bars against words
+# as punctuation ("data from SKYLINE\u2014the Phase 3 study\u2014are due") (Opus review of PR #55).
+_JOINERS = r"\-\u2010-\u2013"
 
 
 def whole_word_pattern(study_name: str) -> re.Pattern[str]:
     """Match a name as a whole word, allowing any spacing or dash between its parts.
 
-    A name joined by a dash to more letters or digits is part of a longer name, so "IMAGINE" is
+    A name joined by a hyphen or en dash to more letters or digits is part of a longer name, so "IMAGINE" is
     not found in "IMAGINE-II" or "PRE-IMAGINE" (Mirum has trials named IMAGINE and IMAGINE-II).
     """
     parts = re.findall(r"[^\W_]+", study_name)
     if not parts:
         return re.compile(r"(?!)")
     body = rf"[\s{_DASHES}]*".join(re.escape(part) for part in parts)
-    before, after = rf"(?<![^\W_])(?<![^\W_][{_DASHES}])", rf"(?![{_DASHES}]?[^\W_])"
+    before, after = rf"(?<![^\W_])(?<![^\W_][{_JOINERS}])", rf"(?![{_JOINERS}]?[^\W_])"
     return re.compile(before + body + after, re.IGNORECASE)
 
 

@@ -353,3 +353,21 @@ def test_without_a_resolved_trial_the_check_does_not_apply(status: str | None) -
     outcomes = _outcomes(facts)
     assert outcomes["trial_named_in_quote"][0] is Outcome.NOT_APPLICABLE
     assert outcomes["names_matched"][0] is (Outcome.PASS if status is None else Outcome.FAIL)
+
+
+def test_an_ambiguous_trial_match_with_a_candidate_id_does_not_apply() -> None:
+    """Only resolved matches are held to their quote; an ambiguous one is left to names_matched."""
+    candidate = uuid4()
+    matches = (Match("company", "resolved", COMPANY), Match("trial", "ambiguous", candidate))
+    facts = _facts(VANTAGE_QUOTE, matches=matches, trial_names={candidate: IMAGINE_II})
+    assert _outcomes(facts)["trial_named_in_quote"][0] is Outcome.NOT_APPLICABLE
+
+
+@pytest.mark.parametrize(
+    "quote",
+    ["Topline data from VANTAGE\u2014the Phase 2b study\u2014are expected in Q1 2027.",
+     "The pivotal trial\u2014VANTAGE\u2014reads out in Q1 2027."],
+    ids=["em dash after", "em dashes around"],
+)  # fmt: skip
+def test_a_study_name_set_against_an_em_dash_is_named(quote: str) -> None:
+    assert _trial_check(quote, VANTAGE) == (Outcome.PASS, None)

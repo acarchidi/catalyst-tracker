@@ -150,6 +150,13 @@ def test_part_of_a_name_or_a_different_name_does_not_count(name: str) -> None:
     assert _check(_text(SPYRE_RELEASE), _company(name))[0] is Outcome.FAIL
 
 
+def test_a_name_inside_a_longer_word_does_not_count() -> None:
+    """Immunome is not named by "Immunomedics" (mutation found by the Opus review of PR #55)."""
+    text = "Immunomedics, Inc. announced topline data from its Phase 3 study."
+    assert _check(text, _company("Immunome, Inc."))[0] is Outcome.FAIL
+    assert _check("Immunome, Inc. announced topline data.", _company("Immunome, Inc."))[0] is Outcome.PASS
+
+
 def test_a_name_another_company_also_goes_by_does_not_count() -> None:
     """Two records share the name, so the name alone cannot say which company the release is from."""
     spyre, twin = _company("Spyre Therapeutics, Inc."), _company("SPYRE THERAPEUTICS INC /DE/")
@@ -336,6 +343,41 @@ def test_an_unreadable_copy_fails_its_claims_and_the_run_goes_on(
     report = check_company_named(session_factory, store, lambda: NOW)
     assert _outcomes(session_factory) == {
         lost: ("fail", "the stored copy of the source could not be read (SnapshotNotFoundError)"),
+        kept: ("pass", None),
+    }
+    assert (report.documents_read, report.documents_unreadable) == (1, 1)
+
+
+class _LockedStore(_CountingStore):
+    """A local copy the job is not allowed to open."""
+
+    def __init__(self, store: SnapshotStore, locked: str) -> None:
+        super().__init__(store)
+        self.locked = locked
+
+    def get(self, key: str) -> bytes:
+        if key == self.locked:
+            raise PermissionError(key)
+        return super().get(key)
+
+
+def test_a_copy_that_cannot_be_opened_fails_its_claims_and_the_run_goes_on(
+    session_factory: sessionmaker[Session], companies: dict[str, UUID], tmp_path: Path
+) -> None:
+    """An operating-system error on one copy must not stop the job and roll back every row (Opus review)."""
+    local = LocalSnapshotStore(tmp_path / "snapshots")
+    with session_factory.begin() as session:
+        locked = _document(session, local, "sec:locked", MIRUM_RELEASE.read_bytes())
+        link_company_document(session, companies["mirum"], locked, DocumentMatch.SEC_CIK)
+        readable = _document(session, local, "sec:spyre", SPYRE_RELEASE.read_bytes())
+        link_company_document(session, companies["spyre"], readable, DocumentMatch.SEC_CIK)
+        lost, kept = _claim(session, locked), _claim(session, readable)
+        key = session.execute(
+            select(TABLES[SourceDocument].c.snapshot_key).where(TABLES[SourceDocument].c.id == locked)
+        ).scalar_one()
+    report = check_company_named(session_factory, _LockedStore(local, key), lambda: NOW)
+    assert _outcomes(session_factory) == {
+        lost: ("fail", "the stored copy of the source could not be read (PermissionError)"),
         kept: ("pass", None),
     }
     assert (report.documents_read, report.documents_unreadable) == (1, 1)

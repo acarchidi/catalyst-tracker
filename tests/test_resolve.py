@@ -280,6 +280,26 @@ def test_a_study_name_inside_a_longer_dashed_name_is_not_that_study(text: str) -
         assert [result.id for _, result in found] == [imagine_ii]
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["Topline data from IMAGINE\u2014the Phase 3 study\u2014are due.",
+     "The pivotal trial\u2014IMAGINE\u2014reads out.",
+     "Topline data from IMAGINE\u2015are due."],
+    ids=["em dash after", "em dashes around", "horizontal bar"],
+)  # fmt: skip
+def test_a_long_dash_used_as_punctuation_still_ends_the_study_name(text: str) -> None:
+    """Writers set em dashes against words; only a hyphen or en dash joins a name to more.
+
+    From the Opus review of PR #55.
+    """
+    imagine = uuid4()
+    trials = [
+        TrialRef(id=imagine, nct_id="NCT02047318", study_name="IMAGINE", company_ids=frozenset({SPYRE}))
+    ]
+    found = _references(trials=trials).trials_mentioned(text, company_id=SPYRE)
+    assert [result.id for _, result in found] == [imagine]
+
+
 def test_registry_numbers_in_a_sentence_are_each_reported() -> None:
     found = _references(trials=_trials()).trials_mentioned(
         "See NCT06111111 and NCT09999999.", company_id=SPYRE

@@ -129,7 +129,7 @@ def _decide(
     (company,) = owners
     try:
         text = document_text(store.get(snapshot_key), content_type)
-    except (SnapshotStoreError, httpx.HTTPError, ValueError) as error:
+    except (SnapshotStoreError, httpx.HTTPError, OSError, ValueError) as error:
         report.documents_unreadable += 1
         log_event(_log, "company_check_unreadable", snapshot_key=snapshot_key, error=type(error).__name__)
         return _failed(f"the stored copy of the source could not be read ({type(error).__name__})")
