@@ -64,7 +64,7 @@ class PoliteHttpClient:
         }
         self._robots: dict[str, RobotFileParser] = {}
 
-    def get(self, url: str, params: Mapping[str, str | int] | None = None) -> httpx.Response:
+    def get(self, url: str, params: Mapping[str, str | int | list[str]] | None = None) -> httpx.Response:
         """Fetch `url`, raising for a disallowed host or path, or any non-success status."""
         host = urlsplit(url).hostname or ""
         policy = self._hosts.get(host)
