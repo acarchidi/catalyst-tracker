@@ -260,6 +260,26 @@ def test_lower_case_words_and_near_names_are_not_trials(text: str) -> None:
     assert _references(trials=_trials()).trials_mentioned(text, company_id=SPYRE) == []
 
 
+@pytest.mark.parametrize(
+    "text",
+    ["IMAGINE-II topline data are due.", "PRE-IMAGINE data are due.", "IMAGINE\u2013II data are due."],
+    ids=["a longer study name", "a longer name before it", "an en dash"],
+)
+def test_a_study_name_inside_a_longer_dashed_name_is_not_that_study(text: str) -> None:
+    """Mirum's IMAGINE and IMAGINE-II are two trials; "IMAGINE-II" names only the second."""
+    imagine, imagine_ii = uuid4(), uuid4()
+    trials = [
+        TrialRef(id=imagine, nct_id="NCT02047318", study_name="IMAGINE", company_ids=frozenset({SPYRE})),
+        TrialRef(
+            id=imagine_ii, nct_id="NCT02117713", study_name="IMAGINE-II", company_ids=frozenset({SPYRE})
+        ),
+    ]
+    found = _references(trials=trials).trials_mentioned(text, company_id=SPYRE)
+    assert imagine not in {result.id for _, result in found}
+    if text.startswith("IMAGINE"):
+        assert [result.id for _, result in found] == [imagine_ii]
+
+
 def test_registry_numbers_in_a_sentence_are_each_reported() -> None:
     found = _references(trials=_trials()).trials_mentioned(
         "See NCT06111111 and NCT09999999.", company_id=SPYRE
