@@ -1,4 +1,4 @@
-# 0033 — One JSON export of the live data for the private prototype
+# 0034 — One JSON export of the live data for the private prototype
 
 - **Status:** accepted
 - **Date:** 2026-10-18

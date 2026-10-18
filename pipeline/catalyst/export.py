@@ -1,4 +1,4 @@
-"""One JSON file of the live data for the private prototype (ADR 0033).
+"""One JSON file of the live data for the private prototype (ADR 0034).
 
 Published catalysts come from the read layer (`catalyst.api.read.published`), so they are
 exactly what the read API shows a paid caller, under the same rule: a record with a value no

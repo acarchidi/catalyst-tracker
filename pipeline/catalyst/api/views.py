@@ -30,7 +30,7 @@ class View(BaseModel):
 class SourceView(View):
     """One primary document and the verbatim words in it that state one or more values."""
 
-    claim_id: UUID = Field(description="The published claim that holds the quote (ADR 0033).")
+    claim_id: UUID = Field(description="The published claim that holds the quote (ADR 0034).")
     url: str = Field(description="Deep link to the exact document, for example an 8-K's Exhibit 99.1.")
     publisher: str = Field(description="Who published the document.")
     document_type: str = Field(description="Form and exhibit type, for example '8-K EX-99.1'.")

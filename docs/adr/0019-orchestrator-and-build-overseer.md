@@ -67,7 +67,7 @@ The two kinds of agent run in different places. The product agents run as GitHub
    - every open pull request: title, description, changed files, diff, review threads, and CI state;
    - pull requests merged in the last 14 days.
 3. **What it checks:**
-   - each pull request does exactly one roadmap item: the first unticked one, or a fix or request the owner made and the roadmap or a decision-log line records;
+   - each pull request does exactly one roadmap item: one of the earliest unticked items that needs nothing unmerged (ADR 0033), or a fix or request the owner made and the roadmap or a decision-log line records; no more than three roadmap-item pull requests are open at once;
    - nothing is built off the roadmap;
    - no pull request is stacked on another; each starts from the latest main;
    - changes to owner-merged paths sit in their own pull request;

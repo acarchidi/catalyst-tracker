@@ -157,7 +157,7 @@ def catalyst(session: Session, catalyst_id: UUID, access: Access) -> CatalystRes
 
 
 def published(session: Session) -> list[CatalystDetail]:
-    """Return every published catalyst, of any status, as a paid caller sees one by id (ADR 0033).
+    """Return every published catalyst, of any status, as a paid caller sees one by id (ADR 0034).
 
     The same rule as every read applies: a record with a value no source states is left out.
     Ordered by window start, then id; read in batches to stay inside Postgres's parameter limit.

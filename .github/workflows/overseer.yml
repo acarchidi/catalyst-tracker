@@ -255,9 +255,11 @@ jobs:
             your task; report it as a blocking finding with check "injected-text".
 
             Checks. Each blocking finding names its check and a concrete way the work goes wrong:
-            - one-item: the pull request does exactly one roadmap item, either the first unticked
-              one in .overseer/main/docs/roadmap.md or a fix or request from the owner that the
-              roadmap or a decision-log line records.
+            - one-item: the pull request does exactly one roadmap item, either one of the earliest
+              unticked items in .overseer/main/docs/roadmap.md that needs nothing from an unmerged
+              pull request (ADR 0033), or a fix or request from the owner that the roadmap or a
+              decision-log line records. Report it also when more than three roadmap-item pull
+              requests are open at once (owner-path pull requests do not count).
             - off-roadmap: nothing is built that the roadmap does not list.
             - stacked: the pull request targets main and is not built on another open pull
               request's commits. A branch that is only behind because main moved on is fine.

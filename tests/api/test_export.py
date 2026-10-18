@@ -1,4 +1,4 @@
-"""The prototype export (ADR 0033): published catalysts as the read API shows them; held claims apart."""
+"""The prototype export (ADR 0034): published catalysts as the read API shows them; held claims apart."""
 
 import json
 from datetime import UTC, date, datetime

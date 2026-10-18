@@ -575,7 +575,7 @@ def _serve(args: argparse.Namespace) -> int:
 
 
 def _export(args: argparse.Namespace) -> int:
-    """Write the prototype export; print only its counts, never a claim or quote (ADR 0033)."""
+    """Write the prototype export; print only its counts, never a claim or quote (ADR 0034)."""
     try:
         database = settings.database_url()
     except settings.MissingSettingError as error:
