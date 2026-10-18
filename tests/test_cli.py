@@ -19,6 +19,7 @@ from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
+from catalyst.verify.advisory import AdvisoryReport
 from catalyst.verify.run import CheckReport
 from catalyst.verify.second_run import SecondReadingReport
 
@@ -77,6 +78,12 @@ def test_snapshots_verify_prints_the_report_and_fails_on_a_bad_copy(
     assert main(["snapshots-verify"]) == 1
     out = capsys.readouterr().out
     assert '"missing": [\n    "sec:x:gone.htm"' in out
+
+
+@pytest.fixture(autouse=True)
+def _advisory_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the advisory-notice job, which needs a database; its own tests use one."""
+    monkeypatch.setattr(cli, "check_advisory_meetings", lambda *_args: AdvisoryReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 class _FakeEngine:
@@ -410,4 +417,9 @@ def test_verify_claims_prints_the_counts(
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=4, claims_passing=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["verify-claims"]) == 0
-    assert json.loads(capsys.readouterr().out) == {"claims": 4, "claims_passing": 3, "outcomes": {}}
+    assert json.loads(capsys.readouterr().out) == {
+        "claims": 4,
+        "claims_passing": 3,
+        "outcomes": {},
+        "advisory": {"claims": 1, "outcomes": {}},
+    }

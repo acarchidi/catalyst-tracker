@@ -194,6 +194,8 @@ def test_meeting_notices_keep_their_dates_section() -> None:
             "License Application (BLA) 125842 From Capricor, Inc.",
             True,
         ),
+        ("Dermatologic and Ophthalmic Drugs Advisory Committee; Notice of Cancellation", True),
+        ("Oncologic Drugs Advisory Committee; Postponement of Meeting", True),
         ("Advisory Committee; Oncologic Drugs Advisory Committee; Renewal", False),
         (
             "Request for Nominations for Voting Members of Food and Drug Administration Advisory Committees",
