@@ -1,6 +1,6 @@
 """The check job runs every rule on every extractor claim and keeps each claim's latest outcome."""
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -23,7 +23,7 @@ from catalyst.schemas import (
     Trial,
     TrialPhase,
 )
-from catalyst.verify.run import run_checks
+from catalyst.verify.run import CheckReport, run_checks
 
 PUBLISHED = datetime(2026, 10, 1, 12, 0, tzinfo=UTC)
 
@@ -60,7 +60,14 @@ def _document(key: str, fill: str) -> SourceDocument:
     )
 
 
-def _claim(session_factory: sessionmaker[Session], document: UUID, quote: str, **value: Any) -> UUID:
+def _claim(
+    session_factory: sessionmaker[Session],
+    document: UUID,
+    quote: str,
+    *,
+    extracted_at: datetime = PUBLISHED,
+    **value: Any,
+) -> UUID:
     stored: dict[str, Any] = {
         "catalyst_type": "topline_readout",
         "drug": None,
@@ -83,7 +90,7 @@ def _claim(session_factory: sessionmaker[Session], document: UUID, quote: str, *
         prompt_version="1.0.0",
         provider="anthropic",
         model="m",
-        extracted_at=PUBLISHED,
+        extracted_at=extracted_at,
     )
     with session_factory.begin() as session:
         session.execute(insert(TABLES[Claim]).values(**claim.model_dump()))
@@ -160,7 +167,9 @@ def test_a_failed_check_must_say_why(
         session.execute(insert(TABLES[ClaimCheck]).values(**row, checked_at=PUBLISHED))
 
 
-def _company_news(session_factory: sessionmaker[Session], key: str, fill: str, tier: SourceTier) -> UUID:
+def _company_news(
+    session_factory: sessionmaker[Session], key: str, fill: str, tier: SourceTier, *, page: str | None = None
+) -> UUID:
     """Store a company document that is not an SEC filing, linked to Spyre.
 
     Any link to the company counts; how the collector made the link is not this check's concern.
@@ -169,7 +178,7 @@ def _company_news(session_factory: sessionmaker[Session], key: str, fill: str, t
         company = upsert_company(session, 1636282, "Spyre Therapeutics, Inc.", "2834").id
         document = _document(key, fill).model_copy(
             update={
-                "url": f"https://www.example-wire.com/{fill}.html",
+                "url": f"https://www.example-wire.com/{page or fill}.html",
                 "source_tier": tier,
                 "publisher": "Wire",
             }
@@ -195,20 +204,79 @@ def test_an_sec_filing_is_its_own_independent_source(
     assert _checks(session_factory, claim)["independent_source"] == ("pass", None)
 
 
-def test_a_wire_release_needs_a_second_document_from_the_same_company(
+DEAL = {"catalyst_type": "merger_acquisition", "drug": None}
+WIRE_QUOTE = "The merger is expected to close in Q4 2026."
+SITE_QUOTE = "We expect the acquisition to close in the fourth quarter of 2026."
+
+
+def _deal(session_factory: sessionmaker[Session], document: UUID, quote: str, **value: Any) -> UUID:
+    date_text = "Q4 2026" if "Q4 2026" in quote else "fourth quarter of 2026"
+    return _claim(session_factory, document, quote, **(DEAL | {"date_text": date_text} | value))
+
+
+def _run(session_factory: sessionmaker[Session]) -> CheckReport:
+    resolve_claims(session_factory, lambda: _now(date(2026, 10, 17)))
+    return run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+
+
+def test_a_wire_release_needs_a_second_source_from_the_same_company(
     session_factory: sessionmaker[Session], release: dict[str, UUID]
 ) -> None:
-    quote = "Zentocel topline data are expected in Q4 2026."
     wire = _company_news(session_factory, "wire:spyre-1", "c", SourceTier.WIRE)
-    alone = _claim(session_factory, wire, quote, drug="zentocel")
-    run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    alone = _deal(session_factory, wire, WIRE_QUOTE)
+    _run(session_factory)
     assert _checks(session_factory, alone)["independent_source"] == (
         "fail",
         "no second document states this event",
     )
     site = _company_news(session_factory, "site:spyre-1", "d", SourceTier.COMPANY_SITE)
-    second = _claim(session_factory, site, quote, drug="Zentocel")
-    report = run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    second = _deal(session_factory, site, SITE_QUOTE)
+    report = _run(session_factory)
+    assert {n: o for n, (o, _) in _checks(session_factory, second).items() if o == "fail"} == {}
     assert _checks(session_factory, alone)["independent_source"] == ("pass", None)
     assert _checks(session_factory, second)["independent_source"] == ("pass", None)
     assert report.outcomes["independent_source:pass"] == 2
+
+
+def test_a_claim_that_fails_a_rule_check_does_not_vouch(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    """The second document's quote says 2028, so its stored Q4 2026 window cannot vouch (Opus review)."""
+    wire = _company_news(session_factory, "wire:spyre-1", "c", SourceTier.WIRE)
+    claim = _deal(session_factory, wire, WIRE_QUOTE)
+    site = _company_news(session_factory, "site:spyre-1", "d", SourceTier.COMPANY_SITE)
+    _deal(session_factory, site, "We expect the acquisition to close in 2028.", date_text="2028")
+    _run(session_factory)
+    assert _checks(session_factory, claim)["independent_source"][0] == "fail"
+
+
+def test_a_company_page_alone_is_not_enough(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    site = _company_news(session_factory, "site:spyre-1", "d", SourceTier.COMPANY_SITE)
+    claim = _deal(session_factory, site, SITE_QUOTE)
+    _run(session_factory)
+    assert _checks(session_factory, claim)["independent_source"][0] == "fail"
+
+
+def test_two_versions_at_one_address_are_one_source(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    first = _company_news(session_factory, "site:spyre-1:v1", "d", SourceTier.COMPANY_SITE)
+    second = _company_news(session_factory, "site:spyre-1:v2", "e", SourceTier.COMPANY_SITE, page="d")
+    claim = _deal(session_factory, first, SITE_QUOTE)
+    _deal(session_factory, second, "The acquisition should close in Q4 2026.", date_text="Q4 2026")
+    _run(session_factory)
+    assert _checks(session_factory, claim)["independent_source"][0] == "fail"
+
+
+def test_an_older_reading_of_a_document_does_not_vouch(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    wire = _company_news(session_factory, "wire:spyre-1", "c", SourceTier.WIRE)
+    claim = _deal(session_factory, wire, WIRE_QUOTE)
+    site = _company_news(session_factory, "site:spyre-1", "d", SourceTier.COMPANY_SITE)
+    _deal(session_factory, site, SITE_QUOTE, extracted_at=PUBLISHED - timedelta(days=1))
+    _deal(session_factory, site, "We now expect the acquisition to close in 2027.", date_text="2027")
+    _run(session_factory)
+    assert _checks(session_factory, claim)["independent_source"][0] == "fail"

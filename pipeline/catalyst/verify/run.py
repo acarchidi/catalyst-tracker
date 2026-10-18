@@ -35,7 +35,7 @@ from catalyst.schemas import (
     Trial,
     TrialPhase,
 )
-from catalyst.verify.independent import Statement, independent_source
+from catalyst.verify.independent import Statement, independent_sources
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
 
 _log = logging.getLogger(__name__)
@@ -86,21 +86,42 @@ def _window(value: dict[str, Any]) -> tuple[date, date] | None:
         return None
 
 
-def _statements(session: Session, matches: dict[UUID, list[Match]]) -> list[Statement]:
-    """Every extractor claim as the independent-source check compares it."""
+def _statements(
+    session: Session, matches: dict[UUID, list[Match]], passed_rules: set[UUID]
+) -> list[Statement]:
+    """Every extractor claim from each document's latest reading, as the independent check sees it.
+
+    A claim vouches only when the extractor flagged nothing and every rule check passed; an older
+    reading of a document is left out, so a superseded answer never vouches (Opus review of PR #46).
+    """
     claim, document, link = TABLES[Claim], TABLES[SourceDocument], TABLES[CompanyDocument]
     companies: defaultdict[UUID, set[UUID]] = defaultdict(set)
     for row in session.execute(select(link.c.source_document_id, link.c.company_id)):
         companies[row.source_document_id].add(row.company_id)
     query = (
-        select(claim.c.id, claim.c.value, claim.c.source_document_id, document.c.url, document.c.source_tier)
+        select(
+            claim.c.id,
+            claim.c.value,
+            claim.c.quote,
+            claim.c.extracted_at,
+            claim.c.source_document_id,
+            document.c.url,
+            document.c.sha256,
+            document.c.source_tier,
+        )
         .join(document, document.c.id == claim.c.source_document_id)
         .where(claim.c.agent == ROLE, claim.c.field.startswith("catalyst:"))
     )
+    rows = list(session.execute(query))
+    latest: dict[UUID, datetime] = {}
+    for row in rows:
+        latest[row.source_document_id] = max(
+            row.extracted_at, latest.get(row.source_document_id, row.extracted_at)
+        )
     statements: list[Statement] = []
-    for row in session.execute(query):
+    for row in rows:
         value = _value(row.value)
-        drug = value.get("drug")
+        drug, kind = value.get("drug"), value.get("catalyst_type")
         drug_ids = frozenset(
             m.matched_id
             for m in matches.get(row.id, [])
@@ -110,28 +131,22 @@ def _statements(session: Session, matches: dict[UUID, list[Match]]) -> list[Stat
             Statement(
                 claim_id=row.id,
                 url=row.url,
+                sha256=row.sha256,
+                quote=row.quote,
                 tier=SourceTier(row.source_tier),
                 companies=frozenset(companies.get(row.source_document_id, set())),
-                catalyst_type=str(value.get("catalyst_type")),
+                catalyst_type=kind if isinstance(kind, str) and kind else None,
                 drug=drug if isinstance(drug, str) else None,
                 drug_ids=drug_ids,
                 window=_window(value),
-                clean=value.get("problems") == [],
+                clean=(
+                    value.get("problems") == []
+                    and row.id in passed_rules
+                    and row.extracted_at == latest[row.source_document_id]
+                ),
             )
         )
     return statements
-
-
-def _independent(statements: list[Statement]) -> dict[UUID, CheckResult]:
-    by_company: defaultdict[UUID, list[Statement]] = defaultdict(list)
-    for statement in statements:
-        for company in statement.companies:
-            by_company[company].append(statement)
-    results: dict[UUID, CheckResult] = {}
-    for statement in statements:
-        others = [o for company in statement.companies for o in by_company[company]]
-        results[statement.claim_id] = independent_source(statement, others)
-    return results
 
 
 def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFacts]:
@@ -182,10 +197,13 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
     today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
         matches = _matches(session)
-        independent = _independent(_statements(session, matches))
-        for facts in _facts(session, matches):
+        facts_list = _facts(session, matches)
+        rules = {facts.id: rule_checks(facts, today) for facts in facts_list}
+        passed = {i for i, results in rules.items() if all(r.outcome is not Outcome.FAIL for r in results)}
+        independent = independent_sources(_statements(session, matches, passed))
+        for facts in facts_list:
             report.claims += 1
-            results = [*rule_checks(facts, today), independent[facts.id]]
+            results = [*rules[facts.id], independent[facts.id]]
             for result in results:
                 store_check(session, facts.id, result, at)
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1

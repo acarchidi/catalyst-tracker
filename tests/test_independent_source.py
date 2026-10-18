@@ -19,29 +19,48 @@ NO_SECOND = "no second document states this event"
 def _statement(
     *,
     url: str = "https://www.prnewswire.com/news-releases/spyre-1.html",
+    sha256: str = "a" * 64,
+    quote: str = "Zentocel topline data are expected in the second half of 2027.",
     tier: SourceTier = SourceTier.WIRE,
     companies: frozenset[UUID] = frozenset({SPYRE}),
-    catalyst_type: str = "topline_readout",
+    catalyst_type: str | None = "topline_readout",
     drug: str | None = "zentocel",
     drug_ids: frozenset[UUID] = frozenset(),
     window: tuple[date, date] | None = (date(2027, 7, 1), date(2027, 12, 31)),
     clean: bool = True,
 ) -> Statement:
-    return Statement(uuid4(), url, tier, companies, catalyst_type, drug, drug_ids, window, clean)
+    return Statement(
+        claim_id=uuid4(),
+        url=url,
+        sha256=sha256,
+        quote=quote,
+        tier=tier,
+        companies=companies,
+        catalyst_type=catalyst_type,
+        drug=drug,
+        drug_ids=drug_ids,
+        window=window,
+        clean=clean,
+    )
 
 
 def _elsewhere(
     *,
+    url: str = "https://www.spyre.com/news/2026-10-01",
+    sha256: str = "b" * 64,
+    quote: str = "We expect to report topline results for zentocel in 2H27.",
     companies: frozenset[UUID] = frozenset({SPYRE}),
-    catalyst_type: str = "topline_readout",
+    catalyst_type: str | None = "topline_readout",
     drug: str | None = "zentocel",
     drug_ids: frozenset[UUID] = frozenset(),
     window: tuple[date, date] | None = (date(2027, 7, 1), date(2027, 12, 31)),
     clean: bool = True,
 ) -> Statement:
-    """Return the same event from the company's own news page: another document at another address."""
+    """Return the same event in the company's own words on its own news page: another source."""
     return _statement(
-        url="https://www.spyre.com/news/2026-10-01",
+        url=url,
+        sha256=sha256,
+        quote=quote,
         tier=SourceTier.COMPANY_SITE,
         companies=companies,
         catalyst_type=catalyst_type,
@@ -70,9 +89,20 @@ def test_another_document_with_the_same_event_passes() -> None:
     assert _outcome(_statement(), _elsewhere()) == (Outcome.PASS, None)
 
 
-def test_an_overlapping_window_agrees() -> None:
-    later_half = _elsewhere(window=(date(2027, 10, 1), date(2027, 12, 31)))
-    assert _outcome(_statement(), later_half)[0] is Outcome.PASS
+def test_a_narrower_window_inside_the_claims_agrees() -> None:
+    fourth_quarter = _elsewhere(window=(date(2027, 10, 1), date(2027, 12, 31)))
+    assert _outcome(_statement(), fourth_quarter)[0] is Outcome.PASS
+
+
+def test_a_vaguer_window_does_not_vouch_for_a_precise_one() -> None:
+    """A window of "2027" elsewhere confirms the year, not the half (Opus review of PR #46)."""
+    whole_year = _elsewhere(window=(date(2027, 1, 1), date(2027, 12, 31)))
+    assert _outcome(_statement(), whole_year) == (Outcome.FAIL, NO_SECOND)
+
+
+def test_a_window_reaching_past_the_claims_does_not_agree() -> None:
+    later = _elsewhere(window=(date(2027, 10, 1), date(2028, 3, 31)))
+    assert _outcome(_statement(), later)[0] is Outcome.FAIL
 
 
 def test_a_window_that_does_not_overlap_does_not_agree() -> None:
@@ -87,8 +117,38 @@ def test_a_missing_window_never_agrees() -> None:
 
 def test_the_same_document_never_counts_twice() -> None:
     """Two claims from one document, or two versions at one address, are one source."""
-    same_page = _statement()
+    same_page = _statement(sha256="c" * 64, quote="Data from zentocel are due in 2H27.")
     assert _outcome(_statement(), same_page)[0] is Outcome.FAIL
+
+
+def test_one_address_written_differently_is_one_source() -> None:
+    site = "https://www.spyre.com/news/2026-10-01"
+    for variant in (
+        site + "/",
+        site + "?utm_source=x",
+        site + "#top",
+        "https://WWW.Spyre.com/news/2026-10-01",
+        "https://spyre.com/news/2026-10-01",
+        "http://www.spyre.com/news/2026-10-01",
+    ):
+        assert (
+            _outcome(_elsewhere(url=site), _elsewhere(url=variant, sha256="c" * 64, quote="Other words."))[0]
+            is Outcome.FAIL
+        ), variant
+
+
+def test_copies_of_one_release_are_one_source() -> None:
+    """The same file, or the same sentence word for word, is one source wherever it is posted."""
+    same_file = _elsewhere(sha256="a" * 64)
+    assert _outcome(_statement(), same_file)[0] is Outcome.FAIL
+    same_sentence = _elsewhere(quote="Zentocel topline data are expected in the second half of 2027.")
+    assert _outcome(_statement(), same_sentence)[0] is Outcome.FAIL
+    reflowed = _elsewhere(quote="Zentocel  topline data are expected in the Second Half of 2027")
+    assert _outcome(_statement(), reflowed)[0] is Outcome.FAIL
+
+
+def test_a_missing_type_never_agrees() -> None:
+    assert _outcome(_statement(catalyst_type=None), _elsewhere(catalyst_type=None))[0] is Outcome.FAIL
 
 
 def test_another_company_does_not_agree() -> None:

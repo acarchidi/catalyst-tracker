@@ -63,9 +63,10 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - two trials of one drug, with the same type and window in different sentences, can still pair, because trials are not compared here. Part 3's registry checks cover that case (Claude review of PR #31).
    3. **Cross-source and change checks:**
       - the same fact from a second document (8-K versus release versus registry): the check `independent_source` (part 3b, `catalyst.verify.independent`) passes a claim whose own source is a regulator or SEC filing, as the publish rule allows. Any other claim passes only when another document agrees. That document must:
-        - be at another address, so two versions of one page are one source;
+        - be another source: another address (ignoring case, "www.", the scheme, a query, a fragment, and a trailing slash), another file, and other words. A copy of one release posted twice shares its mistakes, so it is one source (Opus review of PR #46);
         - be linked to the same company;
-        - hold an extractor claim the extractor flagged no problem with, giving the same type, an overlapping window, and the same drug (by name, or by the reference tables), with a deal allowed to name no drug.
+        - hold a claim from that document's latest reading that the extractor flagged nothing on and that passed every rule check itself;
+        - give the same type, a window inside the claim's window, and the same drug (by name, or by the reference tables), with a deal allowed to name no drug. A vaguer window ("2027" for a claimed "Q1 2027") confirms less than the claim says, so it does not vouch.
 
         A missing window or drug never agrees. Wire releases are not linked to a company yet, so a wire-only claim fails this check and goes to review until the wire collector links releases to companies;
       - an advisory meeting needs a Federal Register notice;
