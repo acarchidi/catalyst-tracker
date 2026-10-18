@@ -96,8 +96,13 @@ def test_a_table_row_rests_on_the_lead_in_just_before_it() -> None:
     result = _check(row, "pdufa_date")
     assert (result.outcome, result.reason) == (
         Outcome.FAIL,
+        f"the quote names no kind of event, and the last kind named in the {LOOK_BACK} characters "
+        "before it is topline data, not an FDA decision date",
+    )
+    nothing = _alone("SKYLINE Part A Ulcerative Colitis SPY003 Sept 2026", "pdufa_date", "Milestones: ")
+    assert nothing.reason == (
         f"the quote names no kind of event, and the {LOOK_BACK} characters before it have no words "
-        "for an FDA decision date",
+        "for an FDA decision date"
     )
 
 
@@ -155,6 +160,84 @@ def test_an_open_label_study_is_not_a_label_expansion() -> None:
     )
     assert types_named(quote) == frozenset({CatalystType.TOPLINE_READOUT})
     assert _alone("We plan to expand the label in 2027.", "label_expansion").outcome is Outcome.PASS
+
+
+# --- CP4 round 2 -----------------------------------------------------------------------------------
+
+PD_DATA = (
+    "The BLA, supported by data from the Phase 3 RAINIER trial, has a PDUFA target action date of "
+    "August 28, 2027."
+)
+LEAD_IN = (
+    "Upcoming milestones: PDUFA target action date August 28, 2027; "
+    "RAINIER topline data second half of 2027.\n"
+)
+
+
+def test_a_table_row_takes_the_type_named_last_before_it() -> None:
+    # The lead-in names an FDA date first, then topline data; the row is the topline data.
+    row = "RAINIER second half of 2027"
+    result = _alone(row, "pdufa_date", LEAD_IN)
+    assert (result.outcome, result.reason) == (
+        Outcome.FAIL,
+        "the quote names no kind of event, and the last kind named in the 300 characters before it is "
+        "topline data, not an FDA decision date",
+    )
+    assert _alone(row, "topline_readout", LEAD_IN).outcome is Outcome.PASS
+
+
+@pytest.mark.parametrize(
+    "catalyst_type", ["topline_readout", "regulatory_submission", "regulatory_acceptance"]
+)
+def test_an_fda_date_sentence_is_not_a_readout_submission_or_acceptance_on_weak_words(
+    catalyst_type: str,
+) -> None:
+    # "data" and "BLA" are weak words: a sentence about the PDUFA date names them in passing.
+    result = _alone(PD_DATA, catalyst_type)
+    assert result.outcome is Outcome.FAIL
+    assert _alone(PD_DATA, "pdufa_date").outcome is Outcome.PASS
+
+
+def test_an_advisory_meeting_sentence_is_not_a_readout_on_the_word_data() -> None:
+    quote = "An FDA advisory committee will discuss the RAINIER data in the second half of 2027."
+    assert _alone(quote, "topline_readout").outcome is Outcome.FAIL
+    assert _alone(quote, "advisory_committee").outcome is Outcome.PASS
+
+
+@pytest.mark.parametrize(
+    ("quote", "catalyst_type"),
+    [
+        (
+            "Topline data from RAINIER, which will support the BLA under a PDUFA date, come in 2027.",
+            "topline_readout",
+        ),
+        ("We plan to submit the BLA before the PDUFA review clock starts in 2027.", "regulatory_submission"),
+        ("The FDA accepted the NDA and set a PDUFA date of September 26, 2026.", "regulatory_acceptance"),
+    ],
+)
+def test_a_strong_word_of_the_claimed_type_still_passes_beside_fda_date_words(
+    quote: str, catalyst_type: str
+) -> None:
+    assert _alone(quote, catalyst_type).outcome is Outcome.PASS
+
+
+def test_a_dose_expansion_cohort_is_not_a_label_expansion() -> None:
+    quote = (
+        "Data from the dose expansion cohort of the Phase 3 RAINIER trial of pegozafermin are expected in "
+        "the second half of 2027."
+    )
+    assert _alone(quote, "label_expansion").outcome is Outcome.FAIL
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "FDA is expected to complete its review of the NDA by March 2027.",
+        "The FDA set a target date of March 15, 2027.",
+    ],
+)
+def test_review_and_target_date_words_name_an_fda_decision_date(quote: str) -> None:
+    assert _alone(quote, "pdufa_date").outcome is Outcome.PASS
 
 
 def test_an_unknown_type_fails() -> None:

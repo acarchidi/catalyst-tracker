@@ -5,10 +5,17 @@ the quote, so only the second reading could catch a type swap. The check
 `type_named_near_quote` is plain code over a fixed table of words per catalyst type (`WORDS`):
 - the quote holds words for the claimed type: pass;
 - the quote holds words for other types only: fail, since it states another kind of event;
+- the quote holds words for an FDA decision date or an advisory meeting, and the claim is a
+  readout, a submission, or an acceptance: it passes only on that type's strong words (`STRONG`:
+  "topline", "readout"; "submit", "submission"; "accept", "validate"). A sentence about an FDA
+  date names "data" or "BLA" in passing ("The BLA, supported by data from RAINIER, has a PDUFA
+  target action date of August 28, 2027"), so those weak words do not make it a readout or a
+  submission (CP4 round 2);
 - the quote holds no type's words at all, as a table row does ("SKYLINE Part A Ulcerative
-  Colitis SPY003 Sept 2026"): it passes only when the `LOOK_BACK` characters before it, in the
-  stored copy, hold words for the claimed type (the table's lead-in, "expected topline readouts").
-  Only then is the copy read.
+  Colitis SPY003 Sept 2026"): it passes only when the claimed type is the last kind of event
+  named in the `LOOK_BACK` characters before it, in the stored copy (the table's lead-in,
+  "expected topline readouts"), as the drug check takes the drug named last. Only then is the
+  copy read.
 
 Anything else fails, so a missing word holds the claim for a person. Words are whole words, case
 not counting, except short acronyms (IND, NDA, CRL), which must be in capitals. The check can
@@ -57,7 +64,10 @@ WORDS: Mapping[CatalystType, tuple[str, ...]] = MappingProxyType(
             r"(?:target\s+)?action\s+date",
             r"(?:FDA|approval|regulatory)\s+decision",
             r"decision\s+date",
-            r"goal\s+date",
+            r"(?:goal|target)\s+date",
+            # "complete its review", "FDA review", "Priority Review": the agency's review (CP4 round 2)
+            r"(?:complete[sd]?|completing|conclude[sd]?|concluding)\s+(?:its|the|their)\s+review",
+            r"(?:FDA|regulatory|priority|standard)\s+review",
             r"user\s+fee",
         ),
         T.ADVISORY_COMMITTEE: (r"advisory\s+committees?", r"advisory\s+panel", r"(?-i:AdCom)"),
@@ -87,8 +97,9 @@ WORDS: Mapping[CatalystType, tuple[str, ...]] = MappingProxyType(
         ),
         T.COMPLETE_RESPONSE_LETTER: (r"complete\s+response", r"(?-i:CRL)s?"),
         T.LABEL_EXPANSION: (
-            r"(?<!open-)(?<!open\s)label(?:s|ing)?",  # "open-label" names a trial design, not a label
-            r"expan(?:ded|sion)",
+            # "open-label" names a trial design, and "dose expansion" or "expanded access" a cohort or
+            # a program, not a label (CP4 round 2), so "expansion" alone is not a word for this type.
+            r"(?<!open-)(?<!open\s)label(?:s|ing)?",
             r"supplemental",
             r"(?-i:sNDA|sBLA)s?",
             r"(?:new|additional|expanded)\s+indications?",
@@ -160,11 +171,27 @@ _ARTICLE = frozenset(
         T.EARNINGS,
     }
 )
-_PATTERNS: Mapping[CatalystType, re.Pattern[str]] = MappingProxyType(
+# The FDA's own events. A quote with their words is about them, unless it names a readout, a
+# submission, or an acceptance by one of that type's strong words below.
+DOMINANT = frozenset({T.PDUFA_DATE, T.ADVISORY_COMMITTEE})
+STRONG: Mapping[CatalystType, tuple[str, ...]] = MappingProxyType(
     {
-        kind: re.compile(r"(?<!\w)(?:" + "|".join(words) + r")(?!\w)", re.IGNORECASE)
-        for kind, words in WORDS.items()
+        T.TOPLINE_READOUT: (r"top-?\s?line", r"read-?\s?outs?", r"read\s+out"),
+        T.REGULATORY_SUBMISSION: (r"submit(?:s|ted|ting)?", r"submissions?"),
+        T.REGULATORY_ACCEPTANCE: (r"accept(?:s|ed|ing|ance)?", r"validat(?:e|es|ed|ion)"),
     }
+)
+
+
+def _pattern(words: tuple[str, ...]) -> re.Pattern[str]:
+    return re.compile(r"(?<!\w)(?:" + "|".join(words) + r")(?!\w)", re.IGNORECASE)
+
+
+_PATTERNS: Mapping[CatalystType, re.Pattern[str]] = MappingProxyType(
+    {kind: _pattern(words) for kind, words in WORDS.items()}
+)
+_STRONG: Mapping[CatalystType, re.Pattern[str]] = MappingProxyType(
+    {kind: _pattern(words) for kind, words in STRONG.items()}
 )
 if set(WORDS) != set(CatalystType) or set(LABELS) != set(CatalystType):
     raise RuntimeError("every catalyst type needs its words and its label")
@@ -175,6 +202,20 @@ _log = logging.getLogger(__name__)
 def types_named(text: str) -> frozenset[CatalystType]:
     """Return every kind of event the text holds words for."""
     return frozenset(kind for kind, pattern in _PATTERNS.items() if pattern.search(text))
+
+
+def last_named(text: str) -> frozenset[CatalystType]:
+    """Return the kind of event the text names last: the type whose words start latest.
+
+    More than one only when one word is a word of each ("sNDA"); empty when it names none.
+    """
+    starts = {
+        kind: max(m.start() for m in found)
+        for kind, pattern in _PATTERNS.items()
+        if (found := list(pattern.finditer(text)))
+    }
+    latest = max(starts.values(), default=None)
+    return frozenset(kind for kind, at in starts.items() if at == latest)
 
 
 def _plain(kind: CatalystType) -> str:
@@ -212,6 +253,10 @@ def type_named(text: str | None, quote: str, start: int, end: int, catalyst_type
         return _failed(f"'{catalyst_type}' is not a catalyst type")
     found = types_named(quote)
     if kind in found:
+        dominant = sorted(found & DOMINANT)
+        if kind in _STRONG and dominant and not _STRONG[kind].search(quote):
+            named = " or ".join(_plain(k) for k in dominant)
+            return _failed(f"the quote has words for {named}, and only passing words for {_plain(kind)}")
         return CheckResult(CHECK, Outcome.PASS)
     if found:
         others = " or ".join(_plain(k) for k in sorted(found))
@@ -220,8 +265,15 @@ def type_named(text: str | None, quote: str, start: int, end: int, catalyst_type
         return _failed("the quote names no kind of event, and the stored copy was not read")
     if text[start:end] != quote:
         return _failed("the quote is not at its stored place in the stored copy")
-    if kind in types_named(text[max(0, start - LOOK_BACK) : start]):
+    last = last_named(text[max(0, start - LOOK_BACK) : start])
+    if kind in last:
         return CheckResult(CHECK, Outcome.PASS)
+    if last:
+        named = " or ".join(_plain(k) for k in sorted(last))
+        return _failed(
+            f"the quote names no kind of event, and the last kind named in the {LOOK_BACK} characters "
+            f"before it is {named}, not {_named(kind)}"
+        )
     return _failed(
         f"the quote names no kind of event, and the {LOOK_BACK} characters before it have no words "
         f"for {_named(kind)}"

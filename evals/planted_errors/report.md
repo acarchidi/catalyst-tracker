@@ -10,13 +10,13 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 | FDA decision date outside its review window | 1 | 1 | 1 | 1 | 0 |
 | Wrong drug (another in the same release) | 29 | 29 | 22 | 29 | 0 |
 | Wrong drug (another company's drug) | 150 | 150 | 149 | 150 | 0 |
-| Wrong event type | 221 | 221 | 215 | 221 | 0 |
+| Wrong event type | 221 | 221 | 216 | 221 | 0 |
 | Wrong company | 153 | 153 | 153 | 0 | 0 |
 | Wrong trial (another of the company's trials) | 383 | 383 | 383 | 0 | 0 |
 | Wrong phase (registry phase contradicts the quote) | 128 | 128 | 128 | 0 | 0 |
 | Quote from an unrelated sentence | 17 | 17 | 17 | 0 | 0 |
 | Quote from another event with the same date words | 5 | 4 | 4 | 0 | 1 |
-| **All errors** | **1163** | **1162** | **1138** | **477** | **1** |
+| **All errors** | **1163** | **1162** | **1139** | **477** | **1** |
 
 - **Caught**: at least one check failed the copy, so it goes to the review queue, not the site.
 - **Caught without the second reading**: a rule check failed it too.

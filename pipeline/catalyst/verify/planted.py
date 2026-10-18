@@ -445,8 +445,8 @@ ERRORS: tuple[ErrorType, ...] = (
     _error("wrong_type", "Wrong event type", "type", _wrong_type,
            "the quote also holds words for the planted type: data to be presented (a readout or a "
            "presentation), enrollment completed beside topline data, or an NDA accepted with its PDUFA "
-           "date, so the type check (`type_named_near_quote`) passes; only the second reading compares "
-           "types.",
+           "date (an acceptance), so the type check (`type_named_near_quote`) passes; only the second "
+           "reading compares types.",
            "The type check catches most of these without the second reading: the quote holds no words "
            "for the planted type. It misses them when the quote holds words for both types."),
     _error("wrong_company", "Wrong company", "company", _wrong_company, _NO_COMPANY_CHECK),
