@@ -53,19 +53,19 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - trials are left to part 3, which checks them against the registry. The extractor names no trial field, so the two readings have nothing to compare;
       - the verifier prompt gets its own scores on the same gold set (`catalyst eval-extractor --prompt verify_catalysts`), stored in `evals/verify_catalysts/`. The second reading runs live only once those scores match the current prompt and model. The extractor's first-version exemption (`unscored.json`) does not apply to it (review of PR #31). Until then, claims have no `second_reading_agrees` row, and the publish gate counts that as not passing. Before any scores or floor are committed there, `evals/verify_catalysts/baseline.json` and `unscored.json` join `OWNER_PATHS`, in a pull request the owner merges;
       - both readings use the same model family for now. The spec counts that as weak evidence, so a second provider stays the plan;
-      - **the job** (`catalyst.verify.second_run`, part 2b) runs inside `catalyst extract-catalysts`, right after extraction and before matching:
+      - **the job** (`catalyst.verify.second_run`, part 2b) runs inside `catalyst extract-catalysts`, last, after matching and the rule checks, so a problem in it never holds them up (review of PR #34):
         - it reads each release that has extracted claims once per verifier prompt version and model;
         - the table `document_reading` keeps each reading, even one that found nothing, so a re-run spends nothing;
-        - the verifier's claims share their reading's time, which ties them to that reading, so an older model's reading never vouches;
+        - a verifier claim counts only if its prompt version and model match the current reading; ModelClient refuses an answer from any other model, so an older model's reading never vouches, and outcomes no current reading supports are removed on every run, also while the gate is shut;
         - only verifier proposals whose own checks found no problem can vouch;
         - a failed model call leaves the release unread for the next run, with no check row;
         - a spending cap stops the job and says so;
       - two trials of one drug, with the same type and window in different sentences, can still pair, because trials are not compared here. Part 3's registry checks cover that case (Claude review of PR #31).
    3. **Cross-source and change checks:**
       - the same fact from a second document (8-K versus release versus registry);
-      - an advisory meeting needs a Federal Register notice;
+      - an advisory meeting needs a Federal Register notice; plain code reads each stored notice (`catalyst.verify.fedreg_notice`): committee, meeting days, and each product with its application number and sponsor, every value with its quoted sentence, empty where the notice does not say; an unreadable or undated notice, or one that a later amendment for the same committee and topic replaces (the `superseded` list), is listed apart, never counted as a match; a meeting sentence that names any other date, or a change of date, gives no meeting days;
       - a date that moves more than 6 months, or an outcome that reverses, always goes to review;
-      - date ranges ("November 16–19", "late 2027 or early 2028") are read as windows.
+      - date ranges ("November 16–19", "late 2027 or early 2028") are read as windows (part 3a, `catalyst.extract.dates`): the window runs from the first part's start to the last part's end; its precision is the coarsest of the parts, and a range of days counts as month precision, so "day" always means one day; a year written only at the end, in digits or in words ("first quarter to second quarter of 2028", "November 16 to December 2, 2027", "first half or second half next year"), applies to the first part too, never the document's year; a backwards range or a part with no window gives none. Ranges the extractor already proposed (for example "year-end 2026/first quarter 2027") now get windows instead of failing `has_window`.
    4. **Planted-error test (owner proof):**
       - known-correct claims get realistic errors inserted: wrong date or quarter, wrong drug, wrong event type, wrong company, wrong trial, wrong phase, a quote that does not support the value, a past date;
       - every check runs on them, mixed with clean claims;

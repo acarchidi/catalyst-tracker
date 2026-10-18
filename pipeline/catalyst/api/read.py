@@ -1,9 +1,9 @@
 """The read layer under the API and MCP server: published data only (spec: Provenance; ADR 0025).
 
 Only the publish gate writes `catalyst` and its links, so those tables hold nothing from the
-review queue (ADR 0003). Claims are read only through what published rows point at: each
-field's latest `catalyst_change`, and each drug link. A catalyst is shown only when every value
-has a claim and that claim's change states the value shown. Review and check tables are never read.
+review queue (ADR 0003). Claims are read only through `catalyst_change` rows. A catalyst is shown
+only when every value, its drug links included, matches its field's latest change, and each drug
+link cites the claim of one of the catalyst's `drugs` changes. Review and check tables are never read.
 """
 
 import base64
@@ -13,14 +13,15 @@ from collections import defaultdict
 from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
 from uuid import UUID
 
+from pydantic import JsonValue
 from sqlalchemy import Row, Select, func, or_, select, text, tuple_
 from sqlalchemy.orm import Session, sessionmaker
 
-from catalyst.api.access import NOTICE, Access, calendar_window, shape
+from catalyst.api.access import FREE_HORIZON_DAYS, NOTICE, Access, calendar_window, shape
 from catalyst.api.views import (
     CatalystDetail,
     CatalystPage,
@@ -65,8 +66,10 @@ _INDICATION = TABLES[Indication]
 
 OPEN_STATUSES = (CatalystStatus.UPCOMING, CatalystStatus.SLIPPED)
 BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.DRUGS)
+DRUGS = CatalystField.DRUGS.value
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
+_CIK_DIGITS = 10
 # Every query that adds these also names the claim, as `claim_id`, from the row that points at it.
 _SOURCE_COLUMNS = (
     _CLAIM.c.quote,
@@ -80,7 +83,7 @@ _SOURCE_COLUMNS = (
 
 
 class InvalidQueryError(ValueError):
-    """A request the API cannot answer as asked, such as a cursor it never gave out."""
+    """A request the API cannot answer as asked, such as a cursor that is not well formed."""
 
 
 @dataclass(frozen=True)
@@ -112,7 +115,7 @@ def read_session(factory: sessionmaker[Session]) -> Generator[Session]:
 def upcoming(session: Session, query: Query, access: Access, today: date) -> CatalystPage:
     """Return upcoming and slipped catalysts whose window overlaps the caller's date window."""
     window = calendar_window(access, today, query.start, query.end)
-    first, last = window if window else (query.start or today, query.end)
+    first, last = window if window else (query.start or today, _asked_end(query, access, today))
     details, cursor = _page(session, query, window) if window else ([], None)
     return CatalystPage(
         notice=NOTICE,
@@ -122,6 +125,14 @@ def upcoming(session: Session, query: Query, access: Access, today: date) -> Cat
         catalysts=[shape(d, access) for d in details],
         next_cursor=cursor,
     )
+
+
+def _asked_end(query: Query, access: Access, today: date) -> date | None:
+    """Return the end to report for an empty window: never past the free horizon for a free caller."""
+    if access is Access.PAID:
+        return query.end
+    horizon = today + timedelta(days=FREE_HORIZON_DAYS)
+    return min(query.end or horizon, horizon)
 
 
 def company_catalysts(
@@ -194,7 +205,7 @@ def _company_id(session: Session, key: str) -> UUID | None:
     key = key.strip()
     if (as_id := _as_uuid(key)) is not None:
         condition = _COMPANY.c.id == as_id
-    elif key.isdigit():
+    elif key.isascii() and key.isdigit() and len(key) <= _CIK_DIGITS:
         condition = _COMPANY.c.cik == int(key)
     else:
         current = select(_TICKER.c.company_id).where(
@@ -222,7 +233,7 @@ def _decode(cursor: str) -> tuple[date, UUID]:
         start, catalyst_id = base64.urlsafe_b64decode(cursor.encode()).decode().split("|")
         return date.fromisoformat(start), UUID(catalyst_id)
     except (ValueError, binascii.Error, UnicodeDecodeError) as error:
-        raise InvalidQueryError("cursor is not one this API gave out") from error
+        raise InvalidQueryError("cursor is not well formed") from error
 
 
 def _source(row: Row[Any], fields: list[str]) -> SourceView:
@@ -251,15 +262,13 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     ):
         changes[change.catalyst_id].append(change)
     drugs: dict[UUID, list[Row[Any]]] = defaultdict(list)
-    for link in session.execute(
+    links: Select[*tuple[Any, ...]] = (
         select(_LINK.c.catalyst_id, _LINK.c.role, _LINK.c.claim_id, _LINK.c.drug_id, _DRUG.c.preferred_name)
-        .add_columns(*_SOURCE_COLUMNS)
         .join(_DRUG, _DRUG.c.id == _LINK.c.drug_id)
-        .join(_CLAIM, _CLAIM.c.id == _LINK.c.claim_id)
-        .join(_DOC, _DOC.c.id == _CLAIM.c.source_document_id)
         .where(_LINK.c.catalyst_id.in_(ids))
-        .order_by(_DRUG.c.preferred_name, _LINK.c.role)
-    ):
+        .order_by(_DRUG.c.preferred_name, _LINK.c.role, _LINK.c.drug_id)
+    )
+    for link in session.execute(links):
         drugs[link.catalyst_id].append(link)
     companies = _companies(session, list({row.company_id for row in rows}))
     indications = _indications(session, [row.indication_id for row in rows if row.indication_id])
@@ -282,19 +291,24 @@ def _build(
 ) -> CatalystDetail | None:
     current = Catalyst.model_validate(row, from_attributes=True).model_dump(mode="json")
     latest = {change.field: change for change in changes}  # oldest first, so the last one wins
-    shown = [f for f in BACKED_FIELDS if current[f] is not None]
+    if links or DRUGS in latest:  # once the gate has recorded links, an empty list is a value too
+        current[DRUGS] = drugs_value(links)
+    shown = [f for f in (*BACKED_FIELDS, DRUGS) if current.get(f) is not None]
     if any(f not in latest or latest[f].new_value != current[f] for f in shown):
+        return None
+    # A link's source is the `drugs` change that cites its claim; a claim no change cites is not read.
+    drug_changes = {c.claim_id: c for c in changes if c.field == DRUGS}
+    if any(link.claim_id not in drug_changes for link in links):
         return None
     backing: dict[UUID, tuple[Row[Any], list[str]]] = {}
     for name in shown:
-        backing.setdefault(latest[name].claim_id, (latest[name], []))[1].append(name)
+        if name != DRUGS:
+            backing.setdefault(latest[name].claim_id, (latest[name], []))[1].append(name)
     for link in links:
-        fields = backing.setdefault(link.claim_id, (link, []))[1]
-        if "drugs" not in fields:
-            fields.append("drugs")
+        fields = backing.setdefault(link.claim_id, (drug_changes[link.claim_id], []))[1]
+        if DRUGS not in fields:
+            fields.append(DRUGS)
     history = [_change(c) for c in changes]
-    moves = [c for c in history if c.field in DATE_FIELDS and c.old_value is not None]
-    last_move = max((c.learned_at for c in moves), default=None)
     return CatalystDetail(
         id=row.id,
         catalyst_type=row.catalyst_type,
@@ -310,10 +324,29 @@ def _build(
         ),
         date_confidence=row.date_confidence,
         status=row.status,
-        latest_date_change=[c for c in moves if c.learned_at == last_move],
+        latest_date_change=_latest_move(changes),
         sources=[_source(source, fields) for source, fields in backing.values()],
         history=history,
     )
+
+
+def drugs_value(links: Sequence[Row[Any]]) -> list[JsonValue]:
+    """Return the links as a `drugs` change states them: `{drug_id, role}` pairs, sorted (ADR 0025)."""
+    pairs = sorted({(str(link.drug_id), str(link.role)) for link in links})
+    return [{"drug_id": drug_id, "role": role} for drug_id, role in pairs]
+
+
+def _latest_move(changes: list[Row[Any]]) -> list[ChangeView]:
+    """Every date row of the latest move: the rows citing the claim of the newest date move.
+
+    `changes` come ordered by `learned_at`, then id, so the newest is the last and ties break the
+    same way every time. Grouping by claim keeps one move whole if its rows have different times.
+    """
+    moves = [c for c in changes if c.field in DATE_FIELDS and c.old_value is not None]
+    if not moves:
+        return []
+    claim = moves[-1].claim_id
+    return [_change(c) for c in moves if c.claim_id == claim]
 
 
 def _change(row: Row[Any]) -> ChangeView:

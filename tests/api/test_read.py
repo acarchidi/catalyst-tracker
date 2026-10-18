@@ -1,21 +1,34 @@
 """The read layer shows only published values, each with its source and quote (spec: Provenance)."""
 
+import logging
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import Engine, event, insert, update
+from sqlalchemy import Engine, delete, event, insert, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session, sessionmaker
 
-from api.conftest import MOVED, TODAY, UNPUBLISHED_QUOTE, Seed
+from api.conftest import FIRST, MOVED, MOVED_AGAIN, TODAY, UNPUBLISHED_QUOTE, Seed, drugs_value
 from catalyst.api.access import Access
 from catalyst.api.read import Query, catalyst, company_catalysts, read_session, upcoming
 from catalyst.api.views import CatalystDetail
 from catalyst.db.tables import TABLES
-from catalyst.schemas import Catalyst, CatalystType, Company
+from catalyst.schemas import (
+    Catalyst,
+    CatalystChange,
+    CatalystDrug,
+    CatalystField,
+    CatalystType,
+    Claim,
+    ClaimSubject,
+    Company,
+    Drug,
+    DrugRole,
+    Entity,
+)
 
 
 def _ids(page: Any) -> list[Any]:
@@ -75,7 +88,7 @@ def test_free_sees_only_the_latest_date_change_and_paid_sees_all(
     assert all(c.learned_at == MOVED for c in free.catalyst.latest_date_change)
     assert "history" not in free.model_dump(mode="json")["catalyst"]
     assert isinstance(paid.catalyst, CatalystDetail)
-    assert len(paid.catalyst.history) == 9 + 4  # nine first values, four moved
+    assert len(paid.catalyst.history) == 10 + 4  # nine first values and the drug link, four moved
 
 
 def test_a_catalyst_missing_a_source_is_never_shown(
@@ -227,3 +240,205 @@ def test_free_and_paid_page_say_which_window_they_show(
     assert (free.window_from, free.window_to) == (TODAY, date(2026, 11, 16))
     assert (paid.window_from, paid.window_to) == (TODAY, None)
     assert free.access == Access.FREE
+
+
+def _add(session: Session, record: Entity) -> None:
+    session.execute(insert(TABLES[type(record)]).values(**record.model_dump()))
+
+
+def _second_drug(session: Session, seed: Seed, claim: UUID) -> UUID:
+    """Link a second drug to the slipped readout by hand, citing `claim`, with no `drugs` change row."""
+    drug = Drug(company_id=seed.example, preferred_name="secondumab")
+    _add(session, drug)
+    _add(
+        session, CatalystDrug(catalyst_id=seed.slipped, drug_id=drug.id, role=DrugRole.ALONE, claim_id=claim)
+    )
+    return drug.id
+
+
+def test_a_hand_added_drug_link_never_leaks_an_unpublished_claim(
+    session_factory: sessionmaker[Session], seed: Seed, caplog: pytest.LogCaptureFixture
+) -> None:
+    with session_factory.begin() as session:
+        _second_drug(session, seed, seed.unpublished_claim)
+    with caplog.at_level(logging.INFO, logger="catalyst"), read_session(session_factory) as session:
+        pages = [
+            catalyst(session, seed.slipped, Access.FREE),
+            upcoming(session, Query(), Access.FREE, TODAY),
+            upcoming(session, Query(drug="secondumab"), Access.FREE, TODAY),
+            company_catalysts(session, "EXB", Query(), Access.PAID, TODAY),
+        ]
+    assert pages[0] is None
+    for page in pages[1:]:
+        assert page is not None
+        assert seed.slipped not in _ids(page)
+        assert UNPUBLISHED_QUOTE not in page.model_dump_json()
+    assert any(r.getMessage() == "catalyst_withheld" for r in caplog.records)
+
+
+def test_drug_links_must_match_the_latest_drugs_change(
+    session_factory: sessionmaker[Session], seed: Seed
+) -> None:
+    with session_factory.begin() as session:
+        second = _second_drug(session, seed, seed.unpublished_claim)
+        published = TABLES[Claim].c
+        first = session.execute(
+            select(published.id).where(published.quote == "topline data in the third quarter of 2026")
+        ).scalar_one()
+        # A later drugs change that states both links, but the second link cites another claim.
+        _add(
+            session,
+            CatalystChange(
+                catalyst_id=seed.slipped,
+                field=CatalystField.DRUGS,
+                old_value=drugs_value((seed.drug, DrugRole.ALONE)),
+                new_value=drugs_value((seed.drug, DrugRole.ALONE), (second, DrugRole.ALONE)),
+                claim_id=first,
+                learned_at=MOVED,
+            ),
+        )
+    with read_session(session_factory) as session:
+        assert catalyst(session, seed.slipped, Access.PAID) is None
+    with session_factory.begin() as session:
+        link = TABLES[CatalystDrug]
+        session.execute(update(link).where(link.c.drug_id == second).values(claim_id=first))
+    with read_session(session_factory) as session:
+        found = catalyst(session, seed.slipped, Access.FREE)
+    assert found is not None
+    assert {d.name for d in found.catalyst.drugs} == {"exampumab", "secondumab"}
+    assert UNPUBLISHED_QUOTE not in found.model_dump_json()
+
+
+def test_a_drug_link_removed_by_hand_is_never_shown(
+    session_factory: sessionmaker[Session], seed: Seed
+) -> None:
+    with session_factory.begin() as session:
+        link = TABLES[CatalystDrug]
+        session.execute(delete(link).where(link.c.catalyst_id == seed.slipped))
+    with read_session(session_factory) as session:
+        assert catalyst(session, seed.slipped, Access.PAID) is None
+
+
+def test_a_drug_link_with_no_drugs_change_is_never_shown(
+    session_factory: sessionmaker[Session], seed: Seed
+) -> None:
+    with session_factory.begin() as session:
+        claim = Claim(
+            source_document_id=session.execute(
+                select(TABLES[Claim].c.source_document_id).limit(1)
+            ).scalar_one(),
+            subject_type=ClaimSubject.CATALYST,
+            field="c:8",
+            value={"quote": "exampumab"},
+            quote="exampumab",
+            quote_start=0,
+            quote_end=9,
+            agent="extractor",
+            prompt_id="extract_catalysts",
+            prompt_version="1.0.0",
+            provider="anthropic",
+            model="m",
+            extracted_at=FIRST,
+        )
+        _add(session, claim)
+        _add(
+            session,
+            CatalystDrug(catalyst_id=seed.adcom, drug_id=seed.drug, role=DrugRole.ALONE, claim_id=claim.id),
+        )
+    with read_session(session_factory) as session:
+        assert catalyst(session, seed.adcom, Access.PAID) is None
+
+
+def _move_again(session: Session, seed: Seed, *, split: bool) -> None:
+    """Move the slipped readout again, from 4Q26 to November 2026, citing a newer release.
+
+    With `split`, the move's rows were written a minute apart, as one slow gate run might.
+    """
+    claims = TABLES[Claim].c
+    source = session.execute(
+        select(claims.source_document_id).where(claims.quote.like("topline data now expected%"))
+    ).scalar_one()
+    quote = "topline data now expected in November 2026"
+    claim = Claim(
+        source_document_id=source,
+        subject_type=ClaimSubject.CATALYST,
+        field="catalyst:9",
+        value={"quote": quote},
+        quote=quote,
+        quote_start=0,
+        quote_end=len(quote),
+        agent="extractor",
+        prompt_id="extract_catalysts",
+        prompt_version="1.0.0",
+        provider="anthropic",
+        model="m",
+        extracted_at=MOVED_AGAIN,
+    )
+    _add(session, claim)
+    rows = [
+        (CatalystField.WINDOW_START, "2026-10-01", "2026-11-01"),
+        (CatalystField.WINDOW_END, "2026-12-31", "2026-11-30"),
+        (CatalystField.WINDOW_PRECISION, "quarter", "month"),
+        (CatalystField.WINDOW_RAW_TEXT, "4Q26", "November 2026"),
+    ]
+    for n, (field, old, new) in enumerate(rows):
+        when = MOVED_AGAIN + timedelta(minutes=n if split else 0)
+        _add(
+            session,
+            CatalystChange(
+                catalyst_id=seed.slipped,
+                field=field,
+                old_value=old,
+                new_value=new,
+                claim_id=claim.id,
+                learned_at=when,
+            ),
+        )
+    table = TABLES[Catalyst]
+    session.execute(
+        update(table)
+        .where(table.c.id == seed.slipped)
+        .values(
+            window_start=date(2026, 11, 1),
+            window_end=date(2026, 11, 30),
+            window_precision="month",
+            window_raw_text="November 2026",
+        )
+    )
+
+
+@pytest.mark.parametrize("split", [False, True])
+def test_free_sees_only_the_rows_of_the_latest_move(
+    session_factory: sessionmaker[Session], seed: Seed, split: bool
+) -> None:
+    with session_factory.begin() as session:
+        _move_again(session, seed, split=split)
+    with read_session(session_factory) as session:
+        free = catalyst(session, seed.slipped, Access.FREE)
+    assert free is not None
+    latest = free.catalyst.latest_date_change
+    assert {(c.field, c.old_value, c.new_value) for c in latest} == {
+        ("window_start", "2026-10-01", "2026-11-01"),
+        ("window_end", "2026-12-31", "2026-11-30"),
+        ("window_precision", "quarter", "month"),
+        ("window_raw_text", "4Q26", "November 2026"),
+    }
+    assert all(c.source.quote == "topline data now expected in November 2026" for c in latest)
+    assert all(c.learned_at >= MOVED_AGAIN for c in latest)
+
+
+@pytest.mark.parametrize(
+    ("start", "end"),
+    [
+        (date(2027, 1, 1), None),
+        (date(2026, 11, 1), None),
+        (None, date(2027, 6, 30)),
+        (date(2027, 1, 1), date(2027, 6, 30)),
+    ],
+)
+def test_a_free_page_never_reports_a_window_past_the_horizon(
+    session_factory: sessionmaker[Session], seed: Seed, start: date | None, end: date | None
+) -> None:
+    with read_session(session_factory) as session:
+        page = upcoming(session, Query(start=start, end=end), Access.FREE, TODAY)
+    assert page.window_to == date(2026, 11, 16)
