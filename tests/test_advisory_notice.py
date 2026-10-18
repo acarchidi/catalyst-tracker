@@ -431,9 +431,7 @@ def test_a_later_notice_of_meeting_with_another_date_blocks() -> None:
     )
 
 
-def test_the_lookup_lists_every_later_notice_whatever_its_date(
-    session_factory: sessionmaker[Session], tmp_path: Path
-) -> None:
+def test_the_lookup_lists_every_later_notice_whatever_its_date() -> None:
     from catalyst.verify.fedreg_notice import StoredNotices, notices_in
 
     original = _stored("2026-19700")
@@ -444,3 +442,16 @@ def test_the_lookup_lists_every_later_notice_whatever_its_date(
     found = notices_in(StoredNotices(readable=[original, reannounced]), *OCTOBER_30)
     assert [s.document.published_at for s in found.matching] == [original.document.published_at]
     assert reannounced in found.later
+
+
+def test_a_later_notice_that_only_overlaps_the_window_blocks() -> None:
+    """A re-announcement for October 30 and 31 overlaps an October 30 claim but does not fit it."""
+    from catalyst.verify.fedreg_notice import StoredNotices, notices_in
+
+    original = _stored("2026-19700")
+    two_days = _atropine_notice(
+        dates="The meeting will be held on October 30 and 31, 2026, from 9 a.m. to 5 p.m. Eastern Time.",
+        days_later=10,
+    )
+    found = notices_in(StoredNotices(readable=[original, two_days]), *OCTOBER_30)
+    assert _outcome(_claim(), found)[0] is Outcome.FAIL
