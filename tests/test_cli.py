@@ -22,6 +22,7 @@ from catalyst.publish.run import DecisionReport
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
 from catalyst.verify.advisory import AdvisoryReport
+from catalyst.verify.company import CompanyReport
 from catalyst.verify.run import CheckReport
 from catalyst.verify.second_run import SecondReadingReport
 
@@ -86,6 +87,12 @@ def test_snapshots_verify_prints_the_report_and_fails_on_a_bad_copy(
 def _advisory_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for the advisory-notice job, which needs a database; its own tests use one."""
     monkeypatch.setattr(cli, "check_advisory_meetings", lambda *_args: AdvisoryReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+
+
+@pytest.fixture(autouse=True)
+def _company_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the company-named job, which needs a database; its own tests use one."""
+    monkeypatch.setattr(cli, "check_company_named", lambda *_args: CompanyReport(claims=2, documents_read=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 class _FakeEngine:
@@ -520,7 +527,97 @@ def test_verify_claims_prints_the_counts(
         "claims_passing": 3,
         "outcomes": {},
         "advisory": {"claims": 1, "outcomes": {}},
+        "company": {"claims": 2, "documents_read": 1, "documents_unreadable": 0, "outcomes": {}},
     }
+
+
+def _company_check_breaks(*_args: object) -> CompanyReport:
+    raise OperationalError("select", {}, Exception("database went away"))
+
+
+def test_a_failed_company_check_keeps_the_rule_check_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=4, claims_passing=3))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_company_named", _company_check_breaks)
+    assert main(["verify-claims"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert (printed["claims"], printed["claims_passing"]) == (4, 3)
+    assert printed["advisory"] == {"claims": 1, "outcomes": {}}
+    assert printed["company"] == {"error": "OperationalError: the company check did not finish"}
+
+
+def test_extract_catalysts_runs_the_company_check_after_the_rule_checks(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport(claims=2))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport(claims=2, claims_passing=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == 0
+    assert json.loads(capsys.readouterr().out)["checks"]["company"]["documents_read"] == 1
+    monkeypatch.setattr(cli, "check_company_named", _company_check_breaks)
+    assert main(["extract-catalysts"]) == 0
+    checks = json.loads(capsys.readouterr().out)["checks"]
+    assert (checks["claims_passing"], checks["advisory"]["claims"]) == (1, 1)
+    assert checks["company"] == {"error": "OperationalError: the company check did not finish"}
+
+
+def test_prospects_check_prints_the_counts_of_the_committed_list(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["prospects-check"]) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert counts["rows"] == 209
+    assert counts["with_email"] == 115
+    assert counts["categories"]["media"] == 49
+    assert counts["statuses"] == {
+        "new": 209,
+        "approved": 0,
+        "contacted": 0,
+        "replied": 0,
+        "declined": 0,
+        "do_not_contact": 0,
+    }
+
+
+_PROSPECT_HEADER = (
+    "category,name,organization,role,email,contact_page_url,source_url,"
+    "source_checked_on,notes,status,status_changed_on\n"
+)
+
+
+def test_prospects_check_fails_on_a_bad_row_and_names_its_line(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    path = tmp_path / "p.csv"
+    path.write_text(
+        _PROSPECT_HEADER + "media,Jane,Example,Reporter,jane@gmail.com,https://a.com/c,https://a.com/c,"
+        "2026-10-17,,new,\n",
+        encoding="utf-8",
+    )
+    assert main(["prospects-check", "--file", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "line 2: email" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_prospects_check_fails_when_a_do_not_contact_row_was_removed(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    previous = tmp_path / "before.csv"
+    previous.write_text(
+        _PROSPECT_HEADER + "media,Jane,Example,Reporter,,https://a.com/c,https://a.com/c,"
+        "2026-10-17,,do_not_contact,2026-10-20\n",
+        encoding="utf-8",
+    )
+    current = tmp_path / "after.csv"
+    current.write_text(_PROSPECT_HEADER, encoding="utf-8")
+    assert main(["prospects-check", "--file", str(current), "--previous", str(previous)]) == 1
+    assert "Example, Jane: a do_not_contact row was removed" in capsys.readouterr().err
 
 
 def test_alerts_solves_the_spending_could_not_be_read_alert_once_spending_reads(

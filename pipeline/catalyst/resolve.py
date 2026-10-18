@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 import unicodedata
 from collections import defaultdict
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
@@ -121,11 +121,42 @@ def _letters(text: str) -> str:
     return "".join(ch for ch in text if ch.isalpha())
 
 
+_DASHES = r"\-\u2010-\u2015"
+# Only a hyphen or an en dash joins a name to more: writers set em dashes and bars against words
+# as punctuation ("data from SKYLINE\u2014the Phase 3 study\u2014are due") (Opus review of PR #55).
+_JOINERS = r"\-\u2010-\u2013"
+
+
 def whole_word_pattern(study_name: str) -> re.Pattern[str]:
-    """Match a name as a whole word, allowing any spacing or dash between its parts."""
+    """Match a name as a whole word, allowing any spacing or dash between its parts.
+
+    A name joined by a hyphen or en dash to more letters or digits is part of a longer name, so "IMAGINE" is
+    not found in "IMAGINE-II" or "PRE-IMAGINE" (Mirum has trials named IMAGINE and IMAGINE-II).
+    """
     parts = re.findall(r"[^\W_]+", study_name)
-    body = r"[\s\-\u2010-\u2015]*".join(re.escape(part) for part in parts)
-    return re.compile(rf"(?<![^\W_]){body}(?![^\W_])", re.IGNORECASE) if parts else re.compile(r"(?!)")
+    if not parts:
+        return re.compile(r"(?!)")
+    body = rf"[\s{_DASHES}]*".join(re.escape(part) for part in parts)
+    before, after = rf"(?<![^\W_])(?<![^\W_][{_JOINERS}])", rf"(?![{_JOINERS}]?[^\W_])"
+    return re.compile(before + body + after, re.IGNORECASE)
+
+
+def _written(pattern: re.Pattern[str], study_name: str, text: str) -> Iterator[str]:
+    """Yield each place the text writes the study name, with the registry's capital letters."""
+    for match in pattern.finditer(text):
+        if _letters(match.group(0)) == _letters(study_name):
+            yield match.group(0)
+
+
+def names_trial(text: str, nct_id: str, study_name: str | None) -> bool:
+    """Say whether the text names this trial the way `trials_mentioned` finds trials.
+
+    That is by its registry number, or by its study name as a whole word written with the
+    registry's capital letters. The rule checks use this, so they and the resolver agree.
+    """
+    if nct_id.upper() in {number.upper() for number in _NCT.findall(text)}:
+        return True
+    return study_name is not None and any(_written(whole_word_pattern(study_name), study_name, text))
 
 
 def _held_on(period: tuple[str, date, date | None], on: date | None) -> bool:
@@ -224,10 +255,8 @@ class ReferenceData:
         for trial in self._trials:
             if not trial.study_name or company_id is None or company_id not in trial.company_ids:
                 continue
-            for match in self._study_patterns[trial.id].finditer(text):
-                written = match.group(0)
-                if _letters(written) == _letters(trial.study_name):
-                    by_key.setdefault(name_key(written), (written, []))[1].append(trial.id)
+            for written in _written(self._study_patterns[trial.id], trial.study_name, text):
+                by_key.setdefault(name_key(written), (written, []))[1].append(trial.id)
         found += [(written, _found(ids, MatchedBy.STUDY_NAME)) for written, ids in by_key.values()]
         return found
 

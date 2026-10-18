@@ -11,6 +11,7 @@ from __future__ import annotations
 import calendar
 import json
 import re
+import tomllib
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
@@ -29,10 +30,12 @@ from catalyst.extract.text import TEXT_VERSION, QuoteSpan, document_text, find_q
 from catalyst.references import trial_from_study
 from catalyst.resolve import CompanyRef, DrugRef, ReferenceData, TrialRef, name_key
 from catalyst.schemas import CatalystType, DrugNameKind, TrialPhase
-from catalyst.verify.rules import PDUFA_MONTHS, phases_overlap, stated_phases
+from catalyst.verify.rules import PDUFA_MONTHS, TrialNames, phases_overlap, stated_phases
 
 SEED = 2026
 FOLDER = REPOSITORY / "evals" / "planted_errors"
+COVERAGE = REPOSITORY / "config" / "coverage_companies.toml"
+_LISTED_SINCE = date(2000, 1, 1)  # the coverage list holds current tickers only
 _CODE = re.compile(r"[A-Z]{1,6}[\s\-]?\d{2,6}[A-Z]?")  # a code name such as SPY072 or ABP-450
 _SENTENCE = re.compile(r"\S[^\n]*?(?:[.!?](?=\s)|$)", re.MULTILINE)
 _MONTH = (
@@ -80,6 +83,8 @@ class Corpus:
     phases: Mapping[UUID, TrialPhase | None]
     company_trials: Mapping[UUID, tuple[UUID, ...]]
     trial_names: Mapping[UUID, str]
+    registry: Mapping[UUID, TrialNames]  # each trial's registry number and study name
+    company_refs: tuple[CompanyRef, ...]  # the companies on file, with their tickers
     fingerprints: Mapping[str, str]
 
 
@@ -153,6 +158,7 @@ def load_corpus(
     gold: Path = EVALS / "gold.jsonl",
     copies: Path = EVALS / "documents",
     registry: Path = FOLDER / "registry.json",
+    coverage: Path = COVERAGE,
 ) -> Corpus:
     """Turn the gold set into clean claims and build the reference tables they are matched against."""
     listed = _owners(gold)
@@ -174,8 +180,13 @@ def load_corpus(
     for trial, _ in trials:
         for company in trial.company_ids:
             company_trials[company].append(trial.id)
+    tickers = _tickers(coverage)
+    company_refs = tuple(
+        CompanyRef(c, cik, (name,), ((tickers[cik], _LISTED_SINCE, None),) if cik in tickers else ())
+        for c, cik, name in sorted(set(owners.values()))
+    )
     references = ReferenceData(
-        [CompanyRef(c, cik, (name,), ()) for c, cik, name in sorted(set(owners.values()))],
+        company_refs,
         _drug_refs(records),
         [trial for trial, _ in trials],
     )
@@ -194,8 +205,16 @@ def load_corpus(
         trial_names={
             t.id: f"{t.nct_id}{f' ({t.study_name})' if t.study_name else ''}, {_phase(p)}" for t, p in trials
         },
+        registry={t.id: TrialNames(t.nct_id, t.study_name) for t, _ in trials},
+        company_refs=company_refs,
         fingerprints={"gold_sha256": gold_fingerprint(gold), "registry_sha256": gold_fingerprint(registry)},
     )
+
+
+def _tickers(coverage: Path) -> dict[int, str]:
+    """Return each covered company's ticker by its SEC number, from the coverage list (ADR 0009)."""
+    listed: list[dict[str, Any]] = tomllib.loads(coverage.read_text(encoding="utf-8"))["company"]
+    return {int(c["cik"]): str(c["ticker"]) for c in listed if c.get("ticker")}
 
 
 def _phase(phase: TrialPhase | None) -> str:
@@ -391,9 +410,8 @@ def _error(name: str, label: str, changes: str, mutate: Any, blind_spot: str, no
 
 
 _NO_COMPANY_CHECK = (
-    "no check compares the linked company with the company that put out the release, and the second "
-    "reading does not read the company. Only a company's own code name (such as SPY072) gives the error "
-    "away; a generic or brand name matches under any company."
+    "the release also names the other company by a name or listed ticker of its own (a partner, say), "
+    "so `company_named_in_source` passes, and the second reading does not read the company."
 )
 ERRORS: tuple[ErrorType, ...] = (
     _error("wrong_window", "Wrong quarter, half, month, or year (date words left as they were)", "window",
@@ -419,9 +437,8 @@ ERRORS: tuple[ErrorType, ...] = (
            "no rule reads the type, except the FDA-date and advisory-meeting checks for those two types."),
     _error("wrong_company", "Wrong company", "company", _wrong_company, _NO_COMPANY_CHECK),
     _error("wrong_trial", "Wrong trial (another of the company's trials)", "trials", _wrong_trial,
-           "only the phase check reads the linked trial, so the error shows only when the quote states "
-           "a phase that the other trial does not have. The second reading does not compare trials "
-           "(ADR 0018, part 2)."),
+           "the quote also names the other trial, so `trial_named_in_quote` passes, and the phase check "
+           "finds no contradiction. The second reading does not compare trials (ADR 0018, part 2)."),
     _error("wrong_phase", "Wrong phase (registry phase contradicts the quote)", "trials", _wrong_phase,
            "the phase check found no contradiction.",
            "Built to be exactly what the phase check looks for, so this row shows that the check works, "

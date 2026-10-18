@@ -201,3 +201,27 @@ def test_a_consistent_wrong_date_passes_the_date_rules_unless_it_has_passed() ->
             assert "date_words_in_quote" not in found.failed
             ended = date.fromisoformat(found.record.value["window_end"]) < found.record.published
             assert ("window_matches_words" in found.failed) is ended
+
+
+def test_each_company_carries_its_ticker_from_the_coverage_list() -> None:
+    # Spyre's release names Spyre by its ticker alone, so the company check needs it (PR #55).
+    tickers = {ref.names[0]: {t for t, _, _ in ref.tickers} for ref in _corpus().company_refs}
+    assert tickers["Spyre Therapeutics, Inc."] == {"SYRE"}
+    assert tickers["Mirum Pharmaceuticals, Inc."] == {"MIRM"}
+
+
+def test_the_rule_checks_see_each_matched_trials_registry_names() -> None:
+    corpus = _corpus()
+    assert corpus.registry
+    assert all(names.nct_id.startswith("NCT") for names in corpus.registry.values())
+
+
+def test_the_company_and_trial_checks_are_run() -> None:
+    assert {"company_named_in_source", "trial_named_in_quote"} <= set(_results().checks)
+
+
+def test_a_wrong_company_or_a_wrong_trial_is_caught_every_time() -> None:
+    for name in ("wrong_company", "wrong_trial"):
+        planted = [p for p in _results().planted if p.error == name]
+        assert planted
+        assert all(p.caught for p in planted), name
