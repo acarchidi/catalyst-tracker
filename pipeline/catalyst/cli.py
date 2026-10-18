@@ -145,6 +145,12 @@ def _parser() -> argparse.ArgumentParser:
         default=EXTRACTOR_PROMPT[0],
         help="Which reader to score: the extractor (default) or the verifier's second reading.",
     )
+    planted = commands.add_parser(
+        "planted-errors",
+        help="Plant known errors in gold-set claims and report what the checks catch (free).",
+    )
+    planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
+    planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     _issue_arguments(commands)
     return parser
 
