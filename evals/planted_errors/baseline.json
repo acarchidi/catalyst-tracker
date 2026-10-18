@@ -1,0 +1,26 @@
+{
+  "catch_rate": {
+    "wrong_window": 1.0,
+    "past_window": 1.0,
+    "pdufa_outside_review": 1.0,
+    "wrong_drug": 1.0,
+    "wrong_type": 1.0,
+    "wrong_company": 0.471,
+    "wrong_trial": 0.059,
+    "wrong_phase": 1.0,
+    "quote_swap": 1.0
+  },
+  "rule_catch_rate": {
+    "wrong_window": 1.0,
+    "past_window": 1.0,
+    "pdufa_outside_review": 1.0,
+    "wrong_drug": 0.176,
+    "wrong_type": 0.0,
+    "wrong_company": 0.471,
+    "wrong_trial": 0.059,
+    "wrong_phase": 1.0,
+    "quote_swap": 1.0
+  },
+  "clean_wrongly_flagged": 2,
+  "clean_neighbours_wrongly_flagged": 0
+}

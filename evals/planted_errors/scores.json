@@ -1,0 +1,87 @@
+{
+  "seed": 2026,
+  "gold_sha256": "587e943233a7e74b5c8525731b84db2e0e21ae022789d7f7f8b8ff4fae837aa3",
+  "registry_sha256": "a0312eaa1f7648506c62f09ec4ee1c79d912e785d69572ac7d00da4ff0c3a7d8",
+  "checks": [
+    "date_words_in_quote",
+    "extractor_checks",
+    "has_window",
+    "names_matched",
+    "pdufa_date_plausible",
+    "phase_matches_registry",
+    "second_reading_agrees",
+    "window_matches_words",
+    "window_not_past"
+  ],
+  "errors": {
+    "wrong_window": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 17,
+      "corrected": 17,
+      "missed": 0
+    },
+    "past_window": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 17,
+      "corrected": 17,
+      "missed": 0
+    },
+    "pdufa_outside_review": {
+      "planted": 1,
+      "caught": 1,
+      "caught_by_rules": 1,
+      "corrected": 1,
+      "missed": 0
+    },
+    "wrong_drug": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 3,
+      "corrected": 17,
+      "missed": 0
+    },
+    "wrong_type": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 0,
+      "corrected": 17,
+      "missed": 0
+    },
+    "wrong_company": {
+      "planted": 17,
+      "caught": 8,
+      "caught_by_rules": 8,
+      "corrected": 0,
+      "missed": 9
+    },
+    "wrong_trial": {
+      "planted": 17,
+      "caught": 1,
+      "caught_by_rules": 1,
+      "corrected": 0,
+      "missed": 16
+    },
+    "wrong_phase": {
+      "planted": 6,
+      "caught": 6,
+      "caught_by_rules": 6,
+      "corrected": 0,
+      "missed": 0
+    },
+    "quote_swap": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 17,
+      "corrected": 0,
+      "missed": 0
+    }
+  },
+  "clean": {
+    "records": 19,
+    "wrongly_flagged": 2,
+    "neighbours_checked": 396,
+    "neighbours_wrongly_flagged": 0
+  }
+}

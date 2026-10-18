@@ -71,6 +71,18 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - every check runs on them, mixed with clean claims;
       - a one-page result for the owner reports, per error type: caught, corrected to the right value with its quote, clean records wrongly flagged, and missed;
       - CI blocks a drop.
+
+      How it is built (`catalyst.verify.planted` and `planted_report`, `catalyst planted-errors`):
+      - plain code, no model, no network, seed 2026, so every run gives the same page;
+      - the clean claims are the gold set's events, stored as the extractor stores them (its own code finds the quote and the window). A gold event whose claim the extractor already flags (Mirum's "Q3", which shares its year with "Q4 2026") is left out and named on the page;
+      - names are matched by the matching job's own rules against reference tables built from the gold set and a recorded copy of ClinicalTrials.gov (`evals/planted_errors/registry.json`: the five sponsors' trials, lead sponsor only, recorded 2026-10-18). A code-shaped drug name (SPY072, ABP-450) is a code name; any other is a generic name;
+      - each error is planted in the stored claim, after the extractor's checks, so the checks after it must catch it on their own. One error per copy; each copy is checked among the clean claims of its own release, as of the day the release came out, so the result does not change as the dates pass;
+      - the error types: a later quarter, half, month, or year than the date words say (a day moved 1 to 30 days); the same period a year or more earlier, so it had passed; an FDA decision date moved beyond 15 months; another drug from the gold set; another event type; another company of the gold set; another of the company's registered trials; a trial whose registry phase contradicts the phase in the quote (only when the quote states one); the quote swapped for another sentence of the release;
+      - the second reading is simulated as a reader that gets every event right. A copy counts as **corrected** when the second reading disagrees and the reading it is paired with gives the right value, with its own quote. Because the stand-in never misreads, the page also counts what the rule checks catch without it;
+      - an error is planted only in a claim that passes every check when correct; a claim flagged when correct (SKYLINE Part B, whose drug is empty) counts as wrongly flagged, and so does a correct claim that a planted neighbour makes fail;
+      - checks are one list (`CHECKS`); a new check is one more line there. The independent-source check (PR #46) joins it when it merges;
+      - `evals/planted_errors/` holds the page (`report.md`), the counts (`scores.json`), and the floor (`baseline.json`): each error type's catch rate, with and without the second reading, and the most clean claims that may be wrongly flagged. A test recomputes the counts and fails on any drop, and fails when the committed page or counts are out of date. The floor joins `OWNER_PATHS` in a pull request the owner merges;
+      - the claim-check table is not used here: the test calls the same check functions that fill it, on claims that never enter a database.
    5. **Publish gate:**
       - claims that pass the publish rule become catalysts, with drug and trial links;
       - each link's claim must be about that catalyst and field (from the PR #23 review);

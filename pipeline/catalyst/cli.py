@@ -44,6 +44,10 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.verify.planted import load_corpus
+from catalyst.verify.planted_report import render_report
+from catalyst.verify.planted_report import run as run_planted
+from catalyst.verify.planted_report import scores as planted_scores
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -129,6 +133,12 @@ def _parser() -> argparse.ArgumentParser:
         default=EXTRACTOR_PROMPT[0],
         help="Which reader to score: the extractor (default) or the verifier's second reading.",
     )
+    planted = commands.add_parser(
+        "planted-errors",
+        help="Plant known errors in gold-set claims and report what the checks catch (free).",
+    )
+    planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
+    planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     return parser
 
 
@@ -168,6 +178,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "resolve-claims": _resolve,
         "verify-claims": _verify_claims,
         "api": _serve,
+        "planted-errors": _planted_errors,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -372,6 +383,17 @@ def _evaluate(args: argparse.Namespace) -> int:
     record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
+    return 0
+
+
+def _planted_errors(args: argparse.Namespace) -> int:
+    corpus = load_corpus()
+    results = run_planted(corpus)
+    args.out.write_text(render_report(results, corpus), encoding="utf-8")
+    counted = planted_scores(results)
+    if args.scores:
+        args.scores.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(counted["errors"], indent=2))
     return 0
 
 
