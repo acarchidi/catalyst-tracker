@@ -1,0 +1,133 @@
+name: Collect (live)
+
+# Collects source documents into the live Supabase database for a chosen company list
+# (owner request 2026-10-18: today's prototype). Migrates first, so the extractor's tables
+# exist. Started by hand from the Actions tab or by the coding session. No model calls, so no
+# spend; SEC EDGAR stays under 10 requests a second inside the collector. Safe to re-run:
+# every collector skips what it already stored.
+
+on:
+  workflow_dispatch:
+    inputs:
+      companies:
+        description: "gate1 (50 companies) or coverage (all 466 companies)"
+        type: choice
+        options: [gate1, coverage]
+        default: coverage
+      since:
+        description: "Earliest filing date, YYYY-MM-DD"
+        type: string
+        required: true
+        default: "2026-07-01"
+      sources:
+        description: "Comma-separated collectors to run (for example sec), or all"
+        type: string
+        required: true
+        default: sec
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Collect
+    runs-on: ubuntu-latest
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # each step has its own limit (10 + 160 + 5 = 175, under 190 with setup): a step that times
+    # out fails, and the alert says so (ADR 0023).
+    timeout-minutes: 190
+    outputs:
+      alerts: ${{ steps.alerts.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Bring the live database up to date
+        id: migrate
+        timeout-minutes: 10
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: uv run alembic upgrade head
+
+      - name: Collect
+        id: collect
+        timeout-minutes: 160
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+          COMPANIES: ${{ inputs.companies }}
+          SINCE: ${{ inputs.since }}
+          SOURCES: ${{ inputs.sources }}
+        run: |
+          set +e
+          case "$COMPANIES" in
+            gate1) list=config/gate1_companies.toml ;;
+            coverage) list=config/coverage_companies.toml ;;
+            *) echo "unknown company list: $COMPANIES"; exit 2 ;;
+          esac
+          if [ "$SOURCES" = "all" ]; then
+            uv run catalyst collect --companies "$list" --since "$SINCE" --snapshot-store supabase \
+              > "$RUNNER_TEMP/collect.json"
+          else
+            uv run catalyst collect --companies "$list" --since "$SINCE" --sources "$SOURCES" \
+              --snapshot-store supabase > "$RUNNER_TEMP/collect.json"
+          fi
+          status=$?
+          { echo "## Collection"; echo '```json'; cat "$RUNNER_TEMP/collect.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # Free: no model call. Runs even when a step failed, so the failure is reported.
+      - name: Build alerts from this run
+        id: alerts
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          MIGRATE: ${{ steps.migrate.outcome }}
+          COLLECT: ${{ steps.collect.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
+            --run "collect:$COLLECT:$RUNNER_TEMP/collect.json" \
+            --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  post-alerts:
+    name: Post alerts
+    needs: collect
+    if: ${{ !cancelled() && needs.collect.outputs.alerts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open, update, or close alert issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.collect.outputs.alerts }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/alerts.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/alerts.json"
