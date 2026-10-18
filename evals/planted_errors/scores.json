@@ -6,6 +6,7 @@
     "advisory_meeting_noticed",
     "company_named_in_source",
     "date_words_in_quote",
+    "drug_named_near_quote",
     "extractor_checks",
     "has_window",
     "independent_source",
@@ -49,14 +50,14 @@
     "drug_in_release": {
       "planted": 29,
       "caught": 29,
-      "caught_by_rules": 0,
+      "caught_by_rules": 26,
       "corrected": 29,
       "missed": 0
     },
     "drug_elsewhere": {
       "planted": 150,
       "caught": 150,
-      "caught_by_rules": 34,
+      "caught_by_rules": 149,
       "corrected": 150,
       "missed": 0
     },
@@ -97,10 +98,10 @@
     },
     "quote_same_date": {
       "planted": 5,
-      "caught": 0,
-      "caught_by_rules": 0,
+      "caught": 4,
+      "caught_by_rules": 4,
       "corrected": 0,
-      "missed": 5
+      "missed": 1
     }
   },
   "clean": {

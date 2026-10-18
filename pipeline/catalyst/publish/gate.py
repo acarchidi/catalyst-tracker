@@ -29,7 +29,7 @@ from catalyst.snapshots import (
     SnapshotStoreError,
     snapshot_key,
 )
-from catalyst.verify import advisory, company, independent, second
+from catalyst.verify import advisory, company, drug, independent, second
 from catalyst.verify.rules import RULES, CheckResult, ClaimFacts
 
 QUOTE_CHECK = "quote_matches_stored_copy"
@@ -56,10 +56,12 @@ REQUIRED_CHECKS: tuple[str, ...] = (
     independent.CHECK,
     ADVISORY_CHECK,
     company.CHECK,  # the linked company is named in the source (part 3d)
+    drug.CHECK,  # the claim's drug is named in or just before its quote (part 3e)
 )
 # The only checks that may answer "not applicable" and still let a claim publish: each one is
 # about a kind of claim or fact that may be absent (no window to be past, no stated phase or
-# matched trial, not an FDA decision date, not an advisory meeting, no matched trial to name).
+# matched trial, not an FDA decision date, not an advisory meeting, no matched trial to name, no
+# drug named).
 # Every other required check must pass; a "not applicable" from any of them holds the claim
 # (Opus review of PR #52).
 MAY_NOT_APPLY: frozenset[str] = frozenset(
@@ -69,6 +71,7 @@ MAY_NOT_APPLY: frozenset[str] = frozenset(
         "pdufa_date_plausible",
         ADVISORY_CHECK,
         "trial_named_in_quote",
+        drug.CHECK,
     }
 )
 if not set(REQUIRED_CHECKS) >= MAY_NOT_APPLY:

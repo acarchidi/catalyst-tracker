@@ -19,6 +19,7 @@ from catalyst.resolve_claims import known_drug
 from catalyst.schemas import SourceTier
 from catalyst.verify.advisory import AdvisoryClaim, advisory_notice
 from catalyst.verify.company import company_named, known_companies
+from catalyst.verify.drug import drug_named, drug_names, other_drugs
 from catalyst.verify.fedreg_notice import NoticesInWindow, StoredNotices, notices_in
 from catalyst.verify.independent import Statement, address, independent_sources
 from catalyst.verify.planted import ERRORS, SEED, Corpus, Record, parts, plant, trial_links
@@ -158,6 +159,20 @@ def _company_named(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list
     return {r.id: [company_named(text, known[r.company_id])] for r in records}
 
 
+def _drug_named(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[CheckResult]]:
+    """Run `catalyst.verify.drug`: the quote, or the text just before it, must name the claim's drug."""
+    text = corpus.texts[records[0].document]
+    by_id = {ref.id: ref for ref in corpus.drug_refs}
+    found: dict[UUID, list[CheckResult]] = {}
+    for r in records:
+        ids = [m.matched_id for m in _matches(r, corpus) if m.entity == "drug" and m.status == "resolved"]
+        matched = [by_id[i] for i in ids if i is not None and i in by_id]
+        names = drug_names(r.value["drug"], matched)
+        others = other_drugs(corpus.drug_refs, {r.company_id}, names)
+        found[r.id] = [drug_named(text, r.quote, r.quote_start, r.quote_end, names, others)]
+    return found
+
+
 # Every check on main; a new check is one more line here.
 CHECKS: tuple[Check, ...] = (
     _rule_checks,
@@ -165,6 +180,7 @@ CHECKS: tuple[Check, ...] = (
     _independent_source,
     _advisory_meeting,
     _company_named,
+    _drug_named,
 )
 
 

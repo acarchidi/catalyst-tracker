@@ -52,6 +52,7 @@ from catalyst.snapshots import (
 )
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
+from catalyst.verify.drug import check_drug_named
 from catalyst.verify.planted import load_corpus
 from catalyst.verify.planted_report import render_report
 from catalyst.verify.planted_report import run as run_planted
@@ -349,6 +350,7 @@ def _extract(args: argparse.Namespace) -> int:
                     checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
                 except (SQLAlchemyError, ValueError, OSError) as error:
                     checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+                checks["drug"] = _drug_check(sessionmaker(engine), store)
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -372,6 +374,14 @@ def _extract(args: argparse.Namespace) -> int:
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
     failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or "error" in decisions
     return 1 if failed else 0
+
+
+def _drug_check(session_factory: sessionmaker[Session], store: SnapshotStore) -> dict[str, Any]:
+    """Run the drug-named check as its own step, so a problem in it keeps every earlier summary."""
+    try:
+        return check_drug_named(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the drug check did not finish"}
 
 
 def _decide_after(
@@ -422,6 +432,7 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
+        report["drug"] = _drug_check(sessionmaker(engine), store)
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))
