@@ -5,6 +5,8 @@ stored copies by the collector itself, so the reader sees exactly the bytes the 
 """
 
 import json
+import time
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -203,6 +205,12 @@ def test_an_amendment_does_not_lend_the_old_meeting_date() -> None:
     # the date the amendment changed. That is not the meeting date, so none is given.
     assert "would be held on July 30, 2026" in _recorded("2026-15017")["excerpts"]
     assert _notice("2026-15017").meeting is None
+    # A DATES section that names the old and the new day in one sentence gives no date either.
+    notice = _with_dates(
+        "2026-15017",
+        "The meeting that would be held on July 30, 2026, will be held on August 4, 2026.",
+    )
+    assert notice.meeting is None
 
 
 def test_what_each_recorded_notice_is_missing() -> None:
@@ -336,6 +344,68 @@ def test_application_numbers_of_each_kind(sentence: str, expected: Application) 
     assert notice.products == []
 
 
+def _abstract(sentence: str) -> MeetingNotice:
+    """Read a recorded notice whose abstract is replaced by one made-up sentence in FDA's style."""
+    stored = json.loads(COLLECTED["2026-18920"].content)
+    stored["abstract"] = sentence
+    return read_notice(json.dumps(stored).encode())
+
+
+@pytest.mark.parametrize(
+    ("sentence", "product"),
+    [
+        ("The committee will discuss NDA 214985, for patients with Type 1 Diabetes, submitted by "
+         "Lexicon Pharmaceuticals, Inc.", None),
+        ("The committee will discuss NDA 214985, for pediatric use, submitted by Lexicon "
+         "Pharmaceuticals, Inc.", None),
+        ("The committee will discuss NDA 214985, for adults with heart failure.", None),
+        ("The committee will discuss NDA 214985, for sotagliflozin to treat type 1 diabetes.",
+         "sotagliflozin"),
+        ("The committee will discuss NDA 214985, for sotagliflozin in combination with insulin.",
+         "sotagliflozin"),
+    ],
+)  # fmt: skip
+def test_who_a_drug_is_for_is_never_read_as_the_drug(sentence: str, product: str | None) -> None:
+    (subject,) = _abstract(sentence).subjects
+    assert (subject.product.value if subject.product else None) == product
+
+
+def test_two_companies_are_never_read_as_one() -> None:
+    notice = _abstract(
+        "The committee will discuss BLA 125827, for vusolimogene, from Lexicon and Sanofi, Inc."
+    )
+    assert all(" and " not in f.value for f in notice.sponsors)
+    notice = _abstract(
+        "The committee will discuss BLA 125827 from Lexicon and Sanofi, Inc. for vusolimogene."
+    )
+    assert all(" and " not in f.value for f in notice.sponsors)
+
+
+def test_a_sponsor_at_the_sentence_end_loses_the_full_stop() -> None:
+    notice = _abstract(
+        "The committee will discuss NDA 214985, for sotagliflozin, sponsored by Lexicon Pharmaceuticals."
+    )
+    assert [f.value for f in notice.sponsors] == ["Lexicon Pharmaceuticals"]
+    notice = _abstract(
+        "The committee will discuss NDA 214985, for sotagliflozin, sponsored by Lexicon Pharma Co."
+    )
+    assert [f.value for f in notice.sponsors] == ["Lexicon Pharma Co."]
+
+
+def test_an_application_outside_the_meeting_is_not_a_subject() -> None:
+    notice = _abstract(
+        "FDA approved NDA 111111 for oldrug in 2019. "
+        "The committee will discuss NDA 214985, for sotagliflozin. "
+        "The committee will consider BLA 125827 for vusolimogene."
+    )
+    assert [str(f.value) for f in notice.applications] == ["NDA 214985", "BLA 125827"]
+
+
+def test_a_deeply_nested_copy_is_refused_not_crashed() -> None:
+    with pytest.raises(NoticeError):
+        read_notice(b"[" * 200000)
+
+
 def test_a_notice_that_is_not_json_is_refused() -> None:
     with pytest.raises(NoticeError):
         read_notice(b"<html>not a notice</html>")
@@ -410,10 +480,56 @@ def test_text_without_a_month_name_gives_no_date(text: str) -> None:
         "The meeting will be held on November 2, 2026, and November 30, 2026.",  # four weeks apart
         "The meeting will be held on December 8, 2026, instead of December 1, 2026.",  # a change
         "The meeting will be open to the public.",
+        "The meeting will be held on November 17-16, 2026.",  # backwards
+        "The meeting will be held on November 16, 2026 to 18.",  # a day after the year
     ],
 )
 def test_phrases_that_give_no_date(sentence: str) -> None:
     assert parse_meeting_dates(sentence) is None
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The meeting will be held on November 16, 2026, and the docket closes November 20, 2026.",
+        "The meeting, which was scheduled for November 9, 2026, will be held on November 16, 2026.",
+        "The meeting will be held on November 16, 2026, at 9 a.m. Eastern Time, or on November 17, 2026 "
+        "if needed.",
+        "The meeting will be held on November 16, 2026 (changed from November 12, 2026).",
+        "The meeting will be held on November 16, 2026, not November 12, 2026.",
+        "The meeting will be held on November 16, 2026, replacing the meeting set for November 10, 2026.",
+        "The meeting will be held at 9 a.m. on November 16, 2026, and the briefing materials will be posted "
+        "no later than November 14, 2026.",
+        "Rescheduled from November 9, 2026: the meeting will be held on November 16, 2026.",
+    ],
+)
+def test_another_date_in_the_meeting_sentence_never_widens_the_meeting(sentence: str) -> None:
+    # None is safe; only the meeting day itself would also be right.
+    assert parse_meeting_dates(sentence) in (None, (date(2026, 11, 16), date(2026, 11, 16)))
+
+
+@pytest.mark.parametrize(
+    ("sentence", "first", "last"),
+    [
+        ("The meeting will be held on November 30 and December 1, 2026.", date(2026, 11, 30),
+         date(2026, 12, 1)),
+        ("The meeting will be held on November 16, 2026, from 9 a.m. to 5 p.m. Eastern Time, and on "
+         "November 17, 2026, from 9 a.m. to 3 p.m.", date(2026, 11, 16), date(2026, 11, 17)),
+        ("The meeting will be held on Monday, November 16, 2026, through Tuesday, November 17, 2026.",
+         date(2026, 11, 16), date(2026, 11, 17)),
+        ("The meeting will be held on November 16, 2026, 9 a.m. to 5 p.m.", date(2026, 11, 16),
+         date(2026, 11, 16)),
+    ],
+)  # fmt: skip
+def test_plain_words_join_the_days_of_one_meeting(sentence: str, first: date, last: date) -> None:
+    assert parse_meeting_dates(sentence) == (first, last)
+
+
+def test_a_run_of_weekday_names_is_read_quickly() -> None:
+    began = time.perf_counter()
+    assert parse_meeting_dates("Monday, " * 20000) is None
+    assert parse_meeting_dates("Monday, " * 100 + "November 16, 2026") is None
+    assert time.perf_counter() - began < 5
 
 
 def test_a_meeting_across_the_new_year() -> None:
@@ -492,3 +608,76 @@ def test_a_window_must_not_end_before_it_starts(
 ) -> None:
     with session_factory() as session, pytest.raises(ValueError, match="window"):
         notices_for(session, LocalSnapshotStore(tmp_path), date(2026, 12, 1), date(2026, 11, 1))
+
+
+def _copy(number: str, **changes: str) -> FetchedDocument:
+    """Store a recorded page-two notice with some fields changed (made-up dates, standard wording)."""
+    return fedreg.to_document({**_recorded(number), **changes})
+
+
+def test_a_window_that_ends_on_the_first_meeting_day_matches(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _store(
+        session_factory, store, _dated("2026-18920", "The meeting will be held on December 8 and 9, 2026.")
+    )
+    with session_factory() as session:
+        found = notices_for(session, store, date(2026, 12, 1), date(2026, 12, 8))
+    assert [n.notice.document_number for n in found.matching] == ["2026-18920"]
+
+
+def test_a_notice_published_the_day_after_the_window_is_not_read(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    meeting = "The meeting will be held on November 16, 2026."
+    _store(session_factory, store, _copy("2026-15149", publication_date="2026-11-16", dates=meeting))
+    _store(session_factory, store, _copy("2026-15017", publication_date="2026-11-17", dates=meeting))
+    with session_factory() as session:
+        found = notices_for(session, store, date(2026, 11, 1), date(2026, 11, 16))
+    assert [n.notice.document_number for n in found.matching] == ["2026-15149"]
+    assert found.undated == []
+    assert found.superseded == []
+
+
+@pytest.mark.parametrize("number", ["2026-15017", "2026-15016"])
+def test_an_amended_notice_is_superseded_not_matched(
+    number: str, session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    # The original notice is made up from the recorded amendment: an earlier number and date, the
+    # "Notice of Meeting" title form, and the old meeting day. The amendment gives the new day.
+    amendment = _recorded(number)
+    original_title = str(amendment["title"]).replace(
+        "Amendment of Notice", "Notice of Meeting; Establishment of a Public Docket; Request for Comments"
+    )
+    original = _copy(
+        number,
+        document_number="2026-12000",
+        publication_date="2026-06-30",
+        title=original_title,
+        abstract="The Food and Drug Administration (FDA) is announcing a forthcoming public advisory "
+        "committee meeting of the Cellular, Tissue, and Gene Therapies Advisory Committee (the Committee).",
+        dates="The meeting will be held on July 30, 2026, from 9 a.m. to 5 p.m. Eastern Time.",
+    )
+    amended = _copy(
+        number, dates="The meeting will be held on August 6, 2026, from 9 a.m. to 5 p.m. Eastern Time."
+    )
+    store = LocalSnapshotStore(tmp_path)
+    _store(session_factory, store, original)
+    _store(session_factory, store, amended)
+    with session_factory() as session:
+        july = notices_for(session, store, date(2026, 7, 1), date(2026, 7, 31))
+        august = notices_for(session, store, date(2026, 8, 1), date(2026, 8, 31))
+    assert july.matching == []
+    assert [n.notice.document_number for n in july.superseded] == ["2026-12000"]
+    assert [n.notice.document_number for n in august.matching] == [number]
+    assert [n.notice.document_number for n in august.superseded] == ["2026-12000"]
+
+
+def test_a_copy_too_deep_to_read_is_reported(session_factory: sessionmaker[Session], tmp_path: Path) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _store(session_factory, store, replace(COLLECTED["2026-19700"], content=b"[" * 200000))
+    with session_factory() as session:
+        found = notices_for(session, store, date(2026, 11, 1), date(2026, 11, 30))
+    assert found.unreadable == ["fedreg:2026-19700"]

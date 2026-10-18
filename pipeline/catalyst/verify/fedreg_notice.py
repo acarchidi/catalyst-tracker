@@ -24,6 +24,7 @@ import re
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from itertools import pairwise
 from typing import Any, cast
 
 import httpx
@@ -39,6 +40,7 @@ from catalyst.snapshots import SnapshotStore, SnapshotStoreError
 SOURCE_PREFIX = "fedreg:"
 TEXT_FIELDS = ("title", "abstract", "dates")
 MAX_MEETING_DAYS = 7  # advisory meetings run one to three days; a longer span is two dates mixed up
+MAX_DATE_SENTENCE = 1000  # a DATES sentence is one line; anything longer is not read for days
 
 _log = logging.getLogger(__name__)
 
@@ -210,13 +212,25 @@ _LIST = r"(?:\s*,\s*(?:and\s+)?|\s+and\s+)"
 _DAY = r"\d{1,2}(?!\d)(?:st|nd|rd|th)?(?!\s*(?:[ap]\.m\.|:\d))"
 _DAY_SEPARATOR = rf"(?:{_LIST}|\s*[-\u2013\u2014]\s*|\s+(?:through|to)\s+)"
 _DATE_GROUP = re.compile(
-    rf"(?:(?P<weekdays>{_WEEKDAY}(?:{_LIST}{_WEEKDAY})*),?\s+)?\b{_MONTH}(?![A-Za-z])\s+"
+    rf"(?:\b(?P<weekdays>{_WEEKDAY}(?:{_LIST}{_WEEKDAY})*),?\s+)?\b{_MONTH}(?![A-Za-z])\s+"
     rf"(?P<days>{_DAY}(?:{_DAY_SEPARATOR}{_DAY})*)(?:,?\s+(?P<year>\d{{4}})(?!\d))?"
 )
 # A sentence about a change names two dates, and only one of them is the meeting.
 _CHANGE = re.compile(
-    r"\b(?:instead of|rather than|originally|previously|rescheduled|postponed|was announced|would be held)\b"
+    r"\b(?:instead of|rather than|originally|previously|rescheduled|postponed|was announced|would be held"
+    r"|scheduled for|changed|not|or)\b|\breplac",
+    re.IGNORECASE,
 )
+# Two groups of days belong to one meeting only when plain words join them: "16, 2026, and
+# November 17, 2026", "30 through December 1", or the first day's hours between: ", from 9 a.m. to
+# 5 p.m., and". Any other words between ("and the docket closes") mean a second, different date.
+_HOURS = (
+    r",\s*from\s+[^,;]{1,60}?(?:[ap]\.m\.|noon)"
+    r"(?:\s+(?:Eastern|Central|Mountain|Pacific)\s+(?:(?:Standard|Daylight)\s+)?Time|\s+(?:ET|EST|EDT))?,"
+)
+_JOINER = re.compile(rf"(?:{_HOURS})?\s*,?\s*(?:(?:and|through|to)\s+|[-\u2013\u2014]\s*)?(?:on\s+)?")
+# A day number straight after a year ("November 16, 2026 to 18") is a range written oddly.
+_DANGLING_DAY = re.compile(rf"{_DAY_SEPARATOR}{_DAY}")
 _MEETING_SENTENCE = re.compile(r"\b(?:will|is scheduled to)\s+(?:be\s+held|take\s+place|meet|convene)\b")
 
 
@@ -228,7 +242,14 @@ class _Group:
     year: int | None
 
 
-def _groups(sentence: str) -> list[_Group]:
+def _groups(sentence: str) -> list[_Group] | None:
+    """Return the sentence's groups of days, or None when it names days that are not one meeting."""
+    matches = list(_DATE_GROUP.finditer(sentence))
+    for before, after in pairwise(matches):
+        if not _JOINER.fullmatch(sentence, before.end(), after.start()):
+            return None
+    if matches and _DANGLING_DAY.match(sentence, matches[-1].end()):
+        return None
     return [
         _Group(
             month=_MONTH_NUMBERS[m["month"]],
@@ -236,7 +257,7 @@ def _groups(sentence: str) -> list[_Group]:
             weekdays=re.findall(_WEEKDAY, m["weekdays"] or ""),
             year=int(m["year"]) if m["year"] else None,
         )
-        for m in _DATE_GROUP.finditer(sentence)
+        for m in matches
     ]
 
 
@@ -277,6 +298,9 @@ def _calendar_days(groups: list[_Group]) -> list[date] | None:
         if not _weekdays_agree(days[0], group, days):
             return None
         every += days
+    # Days are written in order; "November 17-16" is a mistake, not a meeting.
+    if any(later <= earlier for earlier, later in pairwise(every)):
+        return None
     return every
 
 
@@ -284,10 +308,11 @@ def parse_meeting_dates(sentence: str) -> tuple[date, date] | None:
     """Read the meeting's first and last day from a sentence such as "...held on November 16, 2026, ...".
 
     Every day must be written with its month and, somewhere after it, its year. A named weekday must
-    agree with its date. Anything else (no year, an impossible day, a change of date, days more than
-    a week apart) gives None.
+    agree with its date. Groups of days count together only when plain words join them. Anything
+    else (no year, an impossible day, days out of order, a change of date, another date that is not
+    the meeting, days more than a week apart) gives None.
     """
-    if _CHANGE.search(sentence):
+    if len(sentence) > MAX_DATE_SENTENCE or _CHANGE.search(sentence):
         return None
     groups = _groups(sentence)
     days = _calendar_days(groups) if groups else None
@@ -357,26 +382,44 @@ _APPLICATION = re.compile(
     rf"(?:{_LONG_KIND}\s*\(\s*(?P<kind>{_KIND})\s*\)|(?<!\w)(?P<bare>{_KIND}))\s*(?:(?i:no)\.\s*)?"
     r"(?P<number>[A-Z]{0,3}\d{5,7}(?:/S-?\d{1,4})?)(?![\w/])"
 )
-_SUFFIX = (
+_SUFFIX_WORD = (
     r"(?:Inc|LLC|L\.L\.C|Ltd|Limited|Corp|Corporation|Co|Company|plc|PLC|AG|GmbH|S\.A|SA|N\.V|NV|A/S|B\.V"
-    r"|L\.P|LP|Pty|K\.K|S\.p\.A)\.?"
+    r"|L\.P|LP|Pty|K\.K|S\.p\.A)"
 )
+_SUFFIX = rf"{_SUFFIX_WORD}\.?"
+_ENDS_IN_SUFFIX = re.compile(rf"\b{_SUFFIX_WORD}\.$")
 _NAME_WORD = r"[A-Z0-9][\w&'.\-/]*"
-_COMPANY = rf"{_NAME_WORD}(?:\s+(?:{_NAME_WORD}|&|and|of|de|du|la))*?"
+# "and" never joins words of one name: "Lexicon and Sanofi, Inc." is two companies, read as none.
+_COMPANY = rf"{_NAME_WORD}(?:\s+(?:{_NAME_WORD}|&|of|de|du|la))*?"
 _SPONSOR = rf"{_COMPANY}(?:,?\s+{_SUFFIX})?"
 _BY = r"(?:[Ff]rom|[Ss]ubmitted\s+by|[Ss]ponsored\s+by)"
 _SPONSOR_END = r"(?=,|\.(?:\s|$)|;|\s*$|\s+for\b)"
 # A product name runs to the company, the next clause, the next application, or the sentence's end.
 _PRODUCT_END = (
-    rf"(?=,?\s+{_BY}\s|,\s+(?:for|to|in|which)\s|,?\s+and\s+(?:{_KIND}|{_LONG_KIND})|\.(?:\s|$)|;|$)"
+    rf"(?=,?\s+{_BY}\s|,\s+(?:for|to|in|which)\s|,?\s+and\s+(?:{_KIND}|{_LONG_KIND})"
+    r"|\s+to\s+treat\b|,?\s+in\s+combination\b|\.(?:\s|$)|;|$)"
 )
+# "for patients with ...", "for pediatric use": who or what the drug is for, not the drug.
+_NOT_A_PRODUCT = r"(?:the|a|an|use|treatment)\s|(?i:patients|adults|children|pediatric|people|use)\b"
 _AFTER_APPLICATION = re.compile(
     rf",?\s+(?:{_BY}\s+(?P<sponsor_before>{_SPONSOR}),?\s+)?for\s+"
-    rf"(?!(?:the|a|an|use|treatment)\s)(?P<product>[^;]{{1,150}}?){_PRODUCT_END}"
+    rf"(?!{_NOT_A_PRODUCT})(?P<product>[^;]{{1,150}}?){_PRODUCT_END}"
     rf"(?:,?\s+{_BY}\s+(?P<sponsor_after>{_SPONSOR}){_SPONSOR_END})?"
 )
 # A device topic names the company, with its legal suffix, and then the device: "GRAIL, Inc. Galleri".
 _COMPANY_AND_DEVICE = re.compile(rf"(?P<sponsor>{_COMPANY},?\s+{_SUFFIX})\s+(?P<product>[A-Z0-9][^;]*)")
+# Outside the title, only a sentence about the meeting's own agenda names its subjects.
+_AGENDA = re.compile(r"\bwill\s+(?:also\s+)?(?:discuss|consider)\b")
+
+
+def _sponsor_name(name: str | None) -> str | None:
+    """Drop a sentence's full stop from a company name, keeping one that ends a suffix ("Inc.")."""
+    if name is None:
+        return None
+    name = name.strip()
+    if name.endswith(".") and not _ENDS_IN_SUFFIX.search(name):
+        name = name[:-1]
+    return name or None
 
 
 def _subjects_in(text: str, evidence: Evidence, is_topic: bool) -> list[Subject]:
@@ -387,7 +430,7 @@ def _subjects_in(text: str, evidence: Evidence, is_topic: bool) -> list[Subject]
         product = sponsor = None
         if after is not None:
             product = after["product"].strip()
-            sponsor = after["sponsor_before"] or after["sponsor_after"]
+            sponsor = _sponsor_name(after["sponsor_before"] or after["sponsor_after"])
         subjects.append(_subject(product, application, sponsor, evidence))
     if not subjects and is_topic:
         device = _COMPANY_AND_DEVICE.fullmatch(text)
@@ -411,7 +454,8 @@ def _subjects(topic: Fact[str] | None, sentences: list[_Unit]) -> tuple[Subject,
     if topic is not None:
         found += _subjects_in(topic.value, topic.evidence, is_topic=True)
     for unit in sentences:
-        found += _subjects_in(unit.text, unit.evidence, is_topic=False)
+        if _AGENDA.search(unit.text):
+            found += _subjects_in(unit.text, unit.evidence, is_topic=False)
     kept: dict[object, Subject] = {}
     for subject in found:
         key = (
@@ -429,7 +473,7 @@ def _subjects(topic: Fact[str] | None, sentences: list[_Unit]) -> tuple[Subject,
 def _fields(content: bytes) -> dict[str, Any]:
     try:
         parsed: object = json.loads(content)
-    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as error:
         raise NoticeError("the stored copy is not a Federal Register JSON document") from error
     if not isinstance(parsed, dict):
         raise NoticeError("the stored copy is not a Federal Register JSON document")
@@ -494,15 +538,42 @@ class StoredNotice:
 
 @dataclass
 class NoticesInWindow:
-    """Stored notices for a window, in three lists.
+    """Stored notices for a window, in four lists.
 
     `matching` holds those whose meeting overlaps the window, `undated` those with no readable
-    meeting date, and `unreadable` the source keys of copies that could not be read.
+    meeting date, `superseded` those an amendment published on the same day or later replaces
+    (same committee and topic), and `unreadable` the source keys of copies that could not be read.
     """
 
     matching: list[StoredNotice] = field(default_factory=list[StoredNotice])
     undated: list[StoredNotice] = field(default_factory=list[StoredNotice])
+    superseded: list[StoredNotice] = field(default_factory=list[StoredNotice])
     unreadable: list[str] = field(default_factory=list[str])
+
+
+def _meeting_key(notice: MeetingNotice) -> tuple[str | None, str | None]:
+    """Return the committee and topic, which an amendment repeats from the notice it amends."""
+    return (
+        notice.committee.value if notice.committee else None,
+        notice.topic.value if notice.topic else None,
+    )
+
+
+def _is_superseded(stored: StoredNotice, every: list[StoredNotice]) -> bool:
+    """Whether an amendment, published on the same day or later, replaces this notice.
+
+    An amendment changes the meeting it amends, so the older notice's days may be wrong. When two
+    notices could each replace the other, both are set apart: an empty answer is safe, a stale one
+    is not.
+    """
+    key = _meeting_key(stored.notice)
+    return any(
+        other is not stored
+        and other.notice.amendment is not None
+        and _meeting_key(other.notice) == key
+        and other.document.published_at >= stored.document.published_at
+        for other in every
+    )
 
 
 def notices_for(
@@ -511,7 +582,8 @@ def notices_for(
     """Return the stored notices whose meeting days overlap `window_start` to `window_end`.
 
     A notice is published before its meeting, so notices published after the window ends are not
-    read. Notices with no readable meeting date are listed apart, never matched by guess.
+    read. Notices with no readable meeting date, and notices a later amendment replaces, are
+    listed apart, never matched by guess.
     """
     if window_end < window_start:
         raise ValueError("the window must not end before it starts")
@@ -525,6 +597,7 @@ def notices_for(
         .order_by(table.c.published_at, table.c.source_key)
     )
     found = NoticesInWindow()
+    readable: list[StoredNotice] = []
     for row in session.execute(query).mappings():
         document = SourceDocument.model_validate(dict(row))
         try:
@@ -535,9 +608,13 @@ def notices_for(
                 _log, "fedreg_notice_unreadable", source_key=document.source_key, error=type(error).__name__
             )
             continue
-        meeting = notice.meeting
-        if meeting is None:
-            found.undated.append(StoredNotice(document, notice))
+        readable.append(StoredNotice(document, notice))
+    for stored in readable:
+        meeting = stored.notice.meeting
+        if _is_superseded(stored, readable):
+            found.superseded.append(stored)
+        elif meeting is None:
+            found.undated.append(stored)
         elif meeting.value.start <= window_end and meeting.value.end >= window_start:
-            found.matching.append(StoredNotice(document, notice))
+            found.matching.append(stored)
     return found

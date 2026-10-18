@@ -63,7 +63,7 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - two trials of one drug, with the same type and window in different sentences, can still pair, because trials are not compared here. Part 3's registry checks cover that case (Claude review of PR #31).
    3. **Cross-source and change checks:**
       - the same fact from a second document (8-K versus release versus registry);
-      - an advisory meeting needs a Federal Register notice; plain code reads each stored notice (`catalyst.verify.fedreg_notice`): committee, meeting days, and each product with its application number and sponsor, every value with its quoted sentence, empty where the notice does not say; an unreadable or undated notice is listed apart, never counted as a match;
+      - an advisory meeting needs a Federal Register notice; plain code reads each stored notice (`catalyst.verify.fedreg_notice`): committee, meeting days, and each product with its application number and sponsor, every value with its quoted sentence, empty where the notice does not say; an unreadable or undated notice, or one that a later amendment for the same committee and topic replaces (the `superseded` list), is listed apart, never counted as a match; a meeting sentence that names any other date, or a change of date, gives no meeting days;
       - a date that moves more than 6 months, or an outcome that reverses, always goes to review;
       - date ranges ("November 16–19", "late 2027 or early 2028") are read as windows.
    4. **Planted-error test (owner proof):**
