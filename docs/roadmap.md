@@ -115,6 +115,13 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Both readers taught the device types: new prompt versions, device releases in the gold set, both scored again before any device catalyst publishes (checkpoint CP11)
 - [ ] Every feature takes the device case as it is built: search and filters (class, pathway, robotic), timelines and pipeline views, outcomes, benchmarking against predicate and competing devices, market size from procedure volumes, scenarios, insider purchases, foreign listings
 
+## Phase 9 — Alert channels, watchlist board, and the most-watched feed (owner request 2026-10-18; ADR 0029)
+
+- [ ] Alert channels, chosen per watchlist or saved search: email, text message, web push, Slack, Discord, Microsoft Teams, Telegram, and the user's own webhook; instant or daily digest, and quiet hours; free stays the weekly email digest; text messages confirmed by a code, ended by "STOP", and capped per user per month in config (starting at 100), falling back to the other channels past the cap; every alert carries the source link and the notice; owner setup in one sitting (Twilio with its 10DLC registration, a Telegram bot token)
+- [ ] Watchlist board: pin catalysts, companies, drugs, indications, and saved searches; a timeline that draws each date window at its real length (a dot for a day, a bar for a quarter), coloured by type, with its date label; zoom, grouping, filters, and an overlap view of how many watched catalysts fall in each week or month; slips shown as the old window faded with an arrow to the new one; refreshes after each run; a table view with the same data for accessibility; export as image and .ics; read-only sharing, off by default; no price series; free boards keep the free watchlist limit
+- [ ] Most-watched and most-alerted ranking, counted in plain code after each run over 7 days: totals only, a catalyst ranked only once at least 10 different users watch it, users never named; a page and an RSS feed on the paid tier until the owner sets a tier
+- [ ] X feed of the ranking (owner decisions first: which of ADR 0029's options a, b, or c, and whether to add a higher tier and at what price): posts filled in by plain code from a template the owner approves once, on a fixed schedule, original posts only, each with the notice and a link to our page; its own daily spending cap; owner setup (an X account and an X developer account); first post only after checkpoint CP12
+
 ## Later (unscheduled)
 
 - [ ] Public API tier (about $50/month)
@@ -133,6 +140,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-18 | ADR 0029: Phase 9 adds alert channels users choose (text message, Discord, Teams, Telegram, and webhooks beside email, web push, and Slack; texts capped per user), a watchlist board with a timeline of watched catalysts, a most-watched and most-alerted ranking from totals only (at least 10 watchers), and an X feed of it whose tier and form the owner decides; social posts stay out except this feed (owner request) |
 | 2026-10-18 | ADR 0028: coverage explicitly includes Phase 4 studies and independent studies of covered drugs; collaborators listed on every trial and catalyst with their roles and sources; collaborator exposure estimated with the scenarios (share of market value for public ones, dollar value and share of any reported valuation for private ones, never guessed when terms are undisclosed) (owner request) |
 | 2026-10-17 | ADR 0027: the whole platform to cover regulated medical devices and medical robotics (Phase 8): products are drugs or devices, device pathways become catalyst types with their own rule checks, openFDA and device sources added, both readers re-scored on device releases before any device catalyst publishes (owner request) |
 | 2026-10-17 | ADR 0026: insider purchases before known catalysts (Phase 7), read in plain code from SEC Form 4 filings with links, shown as facts with no signal labels; foreign companies' directors and officers covered from March 18, 2026 (owner request) |

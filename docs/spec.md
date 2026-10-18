@@ -39,8 +39,8 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Historical outcomes | Last 90 days | Full archive |
 | Public pages (catalyst, drug, company, indication) | Summary | Full detail |
 | Search and filters | Ticker, date, phase, catalyst type | All filters, saved searches |
-| Watchlists | 1 list, 10 items | Unlimited |
-| Alerts | Weekly email digest | Email, web push, Slack; sent each run |
+| Watchlists and board | 1 list and 1 board, 10 items | Unlimited, with the timeline board |
+| Alerts | Weekly email digest | Email, text message (monthly cap), web push, Slack, Discord, Teams, Telegram, webhooks; sent each run |
 | Interest feeds | No | Yes, with RSS |
 | Readout benchmarks | One featured benchmark per week | All |
 | Market-size estimates | No | Yes |
@@ -148,7 +148,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Auditor | Re-checks published records: sources still say the same, links alive, dates passed without an outcome | Live data (read), source fetches via collectors | Publish; findings re-enter verification |
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
 | Analyst | Drafts benchmarks, market-size estimates, and catalyst-scenario inputs | Published data, published literature | Publish; all drafts go to review in v1 |
-| Marketing and outreach | Drafts the weekly newsletter, notes to named people (journalists, newsletter writers, podcast hosts, investor communities), directory submissions, and public-page text, all from published data; no social posts for now (owner decision 2026-10-17; ADR 0020) | Published data; contact pages fetched by collectors | Send, post, or submit anything; a plain-code sender acts only on text you approved word for word |
+| Marketing and outreach | Drafts the weekly newsletter, notes to named people (journalists, newsletter writers, podcast hosts, investor communities), directory submissions, and public-page text, all from published data; no social posts for now (owner decision 2026-10-17; ADR 0020), apart from the Phase 9 X feed, which plain code fills from a template (ADR 0029) | Published data; contact pages fetched by collectors | Send, post, or submit anything; a plain-code sender acts only on text you approved word for word |
 | Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself or touch production; a merge workflow merges its pull requests after CI and the reviewer agent pass, and you merge changes to that workflow or the review |
 | Build overseer | A GitHub Actions job on every pull-request event and once a day: checks that each pull request does the next roadmap item and follows `AGENTS.md`, finds stuck or drifting work, and keeps a pinned "Build status" issue listing what each building agent is doing (owner decision 2026-10-17; ADR 0019) | Repository, pull requests, CI results (read-only; the model answers in JSON and a plain-code script acts) | Push code, approve, or merge; the script may comment, fail the "Overseer" check, add or remove only its own `overseer-hold` label, re-run a failed CI job once, and open an issue for a decision that is yours |
 | Competitor research (after v1) | Weekly report on competitors' changed public pages and new entrants, plus ranked feature ideas for the owner (ADR 0024) | Changed text from dated copies of competitors' public pages, collected by plain code | Browse, call tools, or add roadmap items; ideas wait for the owner |
@@ -278,7 +278,9 @@ Any search can be saved, watched, exported, or opened as an MCP query.
 
 - **Watch** a catalyst, company, drug, indication, or saved search.
 - **Alert triggers:** new matching catalyst; date window opens, narrows, or slips; outcome posted; advisory committee scheduled; new offering or shelf filing; correction to a watched record.
-- **Channels:** email, web push, and Slack (incoming webhook). Alerts go out right after each twice-daily run publishes. Users choose instant or a daily digest.
+- **Channels:** email, web push, and Slack (incoming webhook); from Phase 9 also text message (capped per user each month), Discord, Microsoft Teams, Telegram, and the user's own webhook (ADR 0029). Alerts go out right after each twice-daily run publishes. Users choose channels per watchlist, instant or a daily digest, and quiet hours.
+- **Board (Phase 9):** pinned items on a timeline that draws each date window at its real length, with grouping, an overlap view, and slips shown as moves; a table view carries the same data (ADR 0029).
+- **Most watched (Phase 9):** a ranking of the catalysts most watched and most alerted over 7 days, from totals only and only once at least 10 users watch a catalyst; never names a user (ADR 0029).
 
 ### Interest feeds
 
@@ -395,7 +397,7 @@ The product stays an impersonal publication, which keeps it outside investment-a
 | Source content | Store facts, links, and short verification quotes; never republish full press releases or abstracts; respect conference embargoes. |
 | Price data | Use only within the vendor license; serve event-window statistics, not raw price series (see Open questions). |
 | Privacy | Privacy policy; collect minimal personal data; honor deletion requests. |
-| Marketing automation | Only scheduled original posts; no automated replies or DMs. X requires written approval for AI reply bots and suspended about 42,000 accounts for automated replies in April 2026. Social posts are out of scope for now (owner decision 2026-10-17). |
+| Marketing automation | Only scheduled original posts; no automated replies or DMs. X requires written approval for AI reply bots and suspended about 42,000 accounts for automated replies in April 2026. Social posts are out of scope for now (owner decision 2026-10-17), except the Phase 9 X feed of the most-watched ranking: template posts from plain code on a fixed schedule, original posts only (ADR 0029). |
 | Email and outreach | CAN-SPAM covers all commercial email, business-to-business included: accurate headers and subjects, a physical postal address, an opt-out that works for at least 30 days, and opt-outs honored within 10 business days ([FTC guide](https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business)). Notes say they are promotional; opting out takes only a reply or one page; opted-out addresses are never sold or passed on; the sender stays responsible for its email service. Outreach uses public professional contact details of US contacts only for now, one note plus at most one follow-up per person, and you approve every item: its text, its recipients, and its channel (ADR 0020). |
 | Business setup | Entity, terms of service, Stripe, and sales tax on digital subscriptions: deferred, but required before taking payment. |
 
