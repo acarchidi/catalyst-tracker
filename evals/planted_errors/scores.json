@@ -6,6 +6,7 @@
     "date_words_in_quote",
     "extractor_checks",
     "has_window",
+    "independent_source",
     "names_matched",
     "pdufa_date_plausible",
     "phase_matches_registry",

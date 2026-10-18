@@ -61,6 +61,6 @@ The second reading in this test is a stand-in that always reads the release corr
 - Spyre Therapeutics, Inc., SPY072 + IL-17A/F, "late 2027 or early 2028": linked to trial NCT07012395 (SKYLINE-UC), Phase 2
 - Spyre Therapeutics, Inc., SPY003, "Sept 2026": linked to trial NCT07148414 (SKYWAY-RD), Phase 2
 
-Checks run: date_words_in_quote, extractor_checks, has_window, names_matched, pdufa_date_plausible, phase_matches_registry, second_reading_agrees, window_matches_words, window_not_past.
+Checks run: date_words_in_quote, extractor_checks, has_window, independent_source, names_matched, pdufa_date_plausible, phase_matches_registry, second_reading_agrees, window_matches_words, window_not_past. Every gold release is an SEC filing, which the publish rule lets stand alone, so independent_source passes every claim here and can catch nothing yet.
 
 Made by `uv run catalyst planted-errors --out evals/planted_errors/report.md --scores evals/planted_errors/scores.json` (ADR 0018, part 4).

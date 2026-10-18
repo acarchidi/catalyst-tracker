@@ -9,13 +9,24 @@ records may be wrongly flagged than it allows.
 
 import json
 from collections.abc import Sequence
+from dataclasses import replace
 from functools import cache
 from pathlib import Path
 from uuid import UUID
 
 from catalyst.cli import main
-from catalyst.verify.planted import ERRORS, FOLDER, Corpus, Record, load_corpus
-from catalyst.verify.planted_report import CHECKS, Results, floor_problems, render_report, run, scores
+from catalyst.schemas import SourceTier
+from catalyst.verify.independent import independent_sources
+from catalyst.verify.planted import ERRORS, FOLDER, Corpus, Record, load_corpus, plant
+from catalyst.verify.planted_report import (
+    CHECKS,
+    Results,
+    floor_problems,
+    render_report,
+    run,
+    scores,
+    statement_of,
+)
 from catalyst.verify.rules import CheckResult, Outcome
 
 
@@ -142,3 +153,23 @@ def test_the_command_writes_the_report_and_the_scores(tmp_path: Path) -> None:
     assert main(["planted-errors", "--out", str(out), "--scores", str(counts)]) == 0
     assert out.read_text(encoding="utf-8") == render_report(_results(), _corpus())
     assert json.loads(counts.read_text(encoding="utf-8")) == scores(_results())
+
+
+def test_every_gold_release_is_an_sec_filing_so_the_independent_source_check_passes_it() -> None:
+    # The publish rule lets a regulator or SEC filing stand alone (spec: Verification); every gold
+    # release is an 8-K exhibit, so this check cannot catch any planted error here.
+    assert all(found.error and "independent_source" not in found.failed for found in _results().planted)
+    assert "independent_source" in _results().checks
+
+
+def test_a_planted_copy_never_vouches_for_its_original_or_itself() -> None:
+    corpus = _corpus()
+    original = _record("LIVMARLI", "Q4 2026")
+    copy = plant(next(e for e in ERRORS if e.name == "wrong_trial"), original, corpus)
+    assert copy is not None
+    statements = [
+        replace(statement_of(r, corpus, clean=True), tier=SourceTier.COMPANY_SITE) for r in (original, copy)
+    ]
+    found = independent_sources(statements)
+    assert found[original.id].outcome is Outcome.FAIL
+    assert found[copy.id].outcome is Outcome.FAIL

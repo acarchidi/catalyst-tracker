@@ -10,11 +10,14 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 from uuid import UUID, uuid5
 
 from catalyst.resolve import Status
 from catalyst.resolve_claims import known_drug
+from catalyst.schemas import SourceTier
+from catalyst.verify.independent import Statement, address, independent_sources
 from catalyst.verify.planted import ERRORS, SEED, Corpus, Record, parts, plant, trial_links
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
 from catalyst.verify.second import CHECK as SECOND_READING
@@ -75,9 +78,53 @@ def _second_reading(records: Sequence[Record], corpus: Corpus) -> dict[UUID, lis
     return {claim: [result] for claim, result in found.items()}
 
 
-# Every check on main. PR #46 adds `independent_source` (catalyst.verify.independent): once it
-# merges, it joins this list as one more line, and the floor test then counts what it catches.
-CHECKS: tuple[Check, ...] = (_rule_checks, _second_reading)
+def _tier(url: str) -> SourceTier:
+    """Return a gold release's source tier as its collector sets it: the gold set is SEC exhibits."""
+    if address(url).startswith("sec.gov/"):
+        return SourceTier.REGULATOR_OR_SEC
+    raise ValueError(f"no source tier known for {url}; add it here as its collector sets it")
+
+
+def statement_of(record: Record, corpus: Corpus, clean: bool) -> Statement:
+    """State a record as `catalyst.verify.run` does; a copy shares its original's document, so its source."""
+    v = record.value
+    window = (
+        (date.fromisoformat(v["window_start"]), date.fromisoformat(v["window_end"]))
+        if v["window_end"]
+        else None
+    )
+    drugs = frozenset(m.matched_id for m in _matches(record, corpus) if m.entity == "drug" and m.matched_id)
+    return Statement(
+        claim_id=record.id,
+        url=corpus.urls[record.document],
+        sha256=record.document,
+        quote=record.quote,
+        tier=_tier(corpus.urls[record.document]),
+        companies=frozenset({record.company_id}),  # the company the claim is linked to
+        catalyst_type=v["catalyst_type"] or None,
+        drug=v["drug"],
+        drug_ids=drugs,
+        window=window,
+        clean=clean,
+    )
+
+
+def _passes_rules(records: Sequence[Record], corpus: Corpus) -> set[UUID]:
+    found = _rule_checks(records, corpus)
+    return {r.id for r in records if not r.value["problems"] and not _failed(found[r.id])}
+
+
+def _independent_source(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[CheckResult]]:
+    """Run `catalyst.verify.independent` on the release's claims and every other release's clean claims."""
+    others = [r for r in corpus.records if r.document != records[0].document]
+    passed = _passes_rules([*records, *others], corpus)
+    found = independent_sources([statement_of(r, corpus, r.id in passed) for r in [*records, *others]])
+    return {r.id: [found[r.id]] for r in records}
+
+
+# Every check on main. PR #49 adds `advisory_meeting_noticed`: once it merges, it joins this list
+# as one more line, and the floor test then counts what it catches.
+CHECKS: tuple[Check, ...] = (_rule_checks, _second_reading, _independent_source)
 
 
 @dataclass(frozen=True)
@@ -325,6 +372,15 @@ def _missed(results: Results, corpus: Corpus) -> list[str]:
     return lines if len(lines) > 2 else [*lines, "None.", ""]
 
 
+def _sec_note(corpus: Corpus) -> str:
+    if all(_tier(url) is SourceTier.REGULATOR_OR_SEC for url in corpus.urls.values()):
+        return (
+            " Every gold release is an SEC filing, which the publish rule lets stand alone, so "
+            "independent_source passes every claim here and can catch nothing yet."
+        )
+    return ""
+
+
 def render_report(results: Results, corpus: Corpus) -> str:
     """Return the one-page Markdown result for the owner."""
     counted = scores(results)
@@ -360,7 +416,7 @@ def render_report(results: Results, corpus: Corpus) -> str:
         *left,
         "",
         *_missed(results, corpus),
-        f"Checks run: {', '.join(results.checks)}.",
+        f"Checks run: {', '.join(results.checks)}.{_sec_note(corpus)}",
         "",
         "Made by `uv run catalyst planted-errors --out evals/planted_errors/report.md "
         "--scores evals/planted_errors/scores.json` (ADR 0018, part 4).",

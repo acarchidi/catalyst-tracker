@@ -60,6 +60,7 @@ class Corpus:
     left_out: tuple[Record, ...]
     texts: Mapping[str, str]
     owners: Mapping[str, UUID]
+    urls: Mapping[str, str]
     companies: Mapping[UUID, str]
     drugs: tuple[str, ...]
     references: ReferenceData
@@ -69,14 +70,14 @@ class Corpus:
     fingerprints: Mapping[str, str]
 
 
-def _owners(gold: Path) -> dict[str, tuple[int, str]]:
-    """Return each release's company: its SEC number (from the filing's address) and name."""
-    found: dict[str, tuple[int, str]] = {}
+def _owners(gold: Path) -> dict[str, tuple[int, str, str]]:
+    """Return each release's company, its SEC number (from the filing's address) and name, and the address."""
+    found: dict[str, tuple[int, str, str]] = {}
     for line in gold.read_text(encoding="utf-8").splitlines():
         if line.strip():
             entry: dict[str, Any] = json.loads(line)
             cik = re.search(r"/edgar/data/(\d+)/", entry["url"])
-            found[entry["sha256"]] = (int(cik.group(1)) if cik else 0, entry["company"])
+            found[entry["sha256"]] = (int(cik.group(1)) if cik else 0, entry["company"], entry["url"])
     return found
 
 
@@ -141,7 +142,8 @@ def load_corpus(
     registry: Path = FOLDER / "registry.json",
 ) -> Corpus:
     """Turn the gold set into clean claims and build the reference tables they are matched against."""
-    owners = {sha: (_company_id(cik), cik, name) for sha, (cik, name) in _owners(gold).items()}
+    listed = _owners(gold)
+    owners = {sha: (_company_id(cik), cik, name) for sha, (cik, name, _) in listed.items()}
     documents = load_gold(gold)
     texts = {
         d.sha256: document_text((copies / f"{d.sha256}.htm").read_bytes(), d.content_type) for d in documents
@@ -170,6 +172,7 @@ def load_corpus(
         left_out=left_out,
         texts=texts,
         owners={sha: company for sha, (company, _, _) in owners.items()},
+        urls={sha: url for sha, (_, _, url) in listed.items()},
         companies=companies,
         drugs=tuple(drugs[key] for key in sorted(drugs)),
         references=references,
