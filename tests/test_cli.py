@@ -520,3 +520,56 @@ def test_verify_claims_prints_the_counts(
         "outcomes": {},
         "advisory": {"claims": 1, "outcomes": {}},
     }
+
+
+def test_prospects_check_prints_the_counts_of_the_committed_list(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["prospects-check"]) == 0
+    counts = json.loads(capsys.readouterr().out)
+    assert counts["rows"] == 209
+    assert counts["with_email"] == 115
+    assert counts["categories"]["media"] == 49
+    assert counts["statuses"] == {
+        "new": 209,
+        "approved": 0,
+        "contacted": 0,
+        "replied": 0,
+        "declined": 0,
+        "do_not_contact": 0,
+    }
+
+
+_PROSPECT_HEADER = (
+    "category,name,organization,role,email,contact_page_url,source_url,"
+    "source_checked_on,notes,status,status_changed_on\n"
+)
+
+
+def test_prospects_check_fails_on_a_bad_row_and_names_its_line(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    path = tmp_path / "p.csv"
+    path.write_text(
+        _PROSPECT_HEADER + "media,Jane,Example,Reporter,jane@gmail.com,https://a.com/c,https://a.com/c,"
+        "2026-10-17,,new,\n",
+        encoding="utf-8",
+    )
+    assert main(["prospects-check", "--file", str(path)]) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "line 2: email" in captured.err
+    assert "Traceback" not in captured.err
+
+
+def test_prospects_check_fails_when_a_do_not_contact_row_was_removed(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    previous = tmp_path / "before.csv"
+    previous.write_text(
+        _PROSPECT_HEADER + "media,Jane,Example,Reporter,,https://a.com/c,https://a.com/c,"
+        "2026-10-17,,do_not_contact,2026-10-20\n",
+        encoding="utf-8",
+    )
+    current = tmp_path / "after.csv"
+    current.write_text(_PROSPECT_HEADER, encoding="utf-8")
+    assert main(["prospects-check", "--file", str(current), "--previous", str(previous)]) == 1
+    assert "Example, Jane: a do_not_contact row was removed" in capsys.readouterr().err

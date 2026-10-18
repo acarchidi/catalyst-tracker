@@ -108,6 +108,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-18 | ADR 0020: the outreach prospect list lives at `outreach/prospects.csv` (209 public US contacts checked 2026-10-17, all `new`), checked by `catalyst prospects-check`; later research adds rows only through `merge_prospects`, which never re-adds a contact or changes a status; a deletion request becomes `do_not_contact` and the row stays (owner request) |
 | 2026-10-18 | ADR 0018 (part 4): the planted-error test plants one realistic error in copies of the gold set's claims (nine kinds), runs every check on each copy among its release's clean claims, with a stand-in second reading that never misreads, and reports caught, caught without the second reading, corrected, and missed per kind, plus clean claims wrongly flagged; CI blocks any drop below `evals/planted_errors/baseline.json` |
 | 2026-10-18 | ADR 0025: read-only data API (/v1, GET only) and stdio MCP server over published data only; a record is shown only when every value has the source of its latest change, or it is held back; free sees the next 30 days, the summary, every source, and the latest date change; paid sees any range and the full history; the drug filter is open to free callers |
 | 2026-10-17 | Owner decision: personal trading and disclosure policies and outside contracts are the owner's own affairs, not project items; removed from the spec's compliance table and open decisions, and never raised again |
