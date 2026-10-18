@@ -35,7 +35,7 @@ output = "20"
 # Daily caps add up to $6.00, about $180 a month at most (owner decision 2026-10-17, lowered
 # from $13.50 to fit the budget while building; ADR 0022). For the first full run on
 # 2026-10-18 the owner raised the extractor to $11.00 and the verifier to $4.50 (total
-# $17.50); both go back to $2.00 after that run. Each cap must cover one worst-case
+# $17.50) for one day; both are back at $2.00. Each cap must cover one worst-case
 # call of its role: the analyst's is $0.50 because one Opus call can cost about $0.35. Owner's Anthropic workspace limit is $50 a
 # month (docs/setup.md Part 2), which is lower and wins until the owner raises it.
 
@@ -51,14 +51,14 @@ provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "11.00"
+daily_cap_usd = "2.00"
 
 [roles.verifier]
 provider = "anthropic"
 model = "claude-sonnet-5-5"
 max_tokens = 16000
 effort = "medium"
-daily_cap_usd = "4.50"
+daily_cap_usd = "2.00"
 
 [roles.entity_resolver]
 provider = "anthropic"
