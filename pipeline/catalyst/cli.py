@@ -6,7 +6,6 @@ import sys
 from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, date, datetime
-from decimal import Decimal
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,7 +17,7 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
-from catalyst.alerts import build_alerts, load_thresholds, parse_run, spend_today
+from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import build_clients, collect_all, load_companies
@@ -356,7 +355,7 @@ def _alerts(args: argparse.Namespace) -> int:
     return 0
 
 
-def _spend_today() -> dict[str, tuple[Decimal, Decimal]]:
+def _spend_today() -> dict[str, RoleSpend]:
     engine = create_engine(settings.database_url())
     try:
         return spend_today(engine, load_config(), datetime.now(NEW_YORK).date())

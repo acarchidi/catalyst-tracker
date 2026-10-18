@@ -22,7 +22,7 @@ Some alert inputs come from runs that read web text. An error message can carry 
    - A weekly summary re-run on the same day edits that day's issue. Posting a new week's summary closes the older ones.
 2. **Plain code builds every alert** (`catalyst.alerts`), with no model call:
    - **Job failures.** It reads the JSON each job prints and the step's outcome in GitHub Actions. A failed step, or a summary with failed documents, an early stop, unfinished matching, checks, or second reading, collection errors, or missing or changed stored copies, raises `job-failed:<job>`. A skipped or cancelled step neither raises nor solves.
-   - **Spending.** A role whose spend today (New York time, from `model_call`) reaches `spend_share_of_cap` of its daily cap (0.9 to start) raises `spend-cap:<role>`. If spending cannot be read, that is an alert too.
+   - **Spending.** A role raises `spend-cap:<role>` when its spend today (New York time, from `model_call`) reaches `spend_share_of_cap` of its daily cap (0.9 to start). It also raises one when less is left under the cap than one call with a full answer could cost. The model client stops a role at that point, which for the small caps of ADR 0022 can be far under 90%. If spending cannot be read, that is an alert too.
    - **Not alerts.** A second reading that has no scores yet is low urgency. It appears in the weekly summary only.
    - **Wording.** Alerts are built from counts and names chosen in code, never from an error message. They link the run log for detail.
 3. **Thresholds** live in `config/orchestrator.toml` (ADR 0019). The file is in `OWNER_PATHS`.
@@ -53,4 +53,4 @@ Some alert inputs come from runs that read web text. An error message can carry 
 - A run that fails before its alert step can run (for example, when installing dependencies fails) posts nothing. GitHub's failed-run email to whoever started it still arrives.
 - Alerts read only numbers, so text in a source cannot change an alert. A false alarm costs one email. Changing a threshold is an owner-merged change.
 - Today, check failures appear only in the weekly summary. A check-failure alert waits for run history.
-- When the weekly sample checker lands, the summary's error-rate line reads its results instead of "No sample yet".
+- These issues are messages to the owner about the pipeline. They are not the product's alerts to readers (spec: Watchlists and alerts), which carry catalyst data and the "not financial advice" notice.- When the weekly sample checker lands, the summary's error-rate line reads its results instead of "No sample yet".

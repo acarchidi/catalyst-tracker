@@ -12,7 +12,15 @@ from sqlalchemy import Engine, insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import cli
-from catalyst.alerts import JobRun, Thresholds, build_alerts, load_thresholds, parse_run, spend_today
+from catalyst.alerts import (
+    JobRun,
+    RoleSpend,
+    Thresholds,
+    build_alerts,
+    load_thresholds,
+    parse_run,
+    spend_today,
+)
 from catalyst.cli import main
 from catalyst.db.tables import TABLES
 from catalyst.issues import Action, Close, Open
@@ -115,7 +123,10 @@ def test_a_skipped_or_cancelled_step_neither_alerts_nor_closes() -> None:
 
 
 def test_a_role_near_its_cap_alerts_and_a_role_under_it_is_solved() -> None:
-    spend = {"extractor": (Decimal("1.85"), Decimal("2.00")), "verifier": (Decimal("0.10"), Decimal("2.00"))}
+    spend = {
+        "extractor": RoleSpend(Decimal("1.85"), Decimal("2.00"), Decimal("0.16")),
+        "verifier": RoleSpend(Decimal("0.10"), Decimal("2.00"), Decimal("0.16")),
+    }
     plan = build_alerts([], spend, LIMITS, RUN_URL)
     assert _keys(plan) == ["spend-cap:extractor"]
     body = plan["issues"][0]["body"]
@@ -123,6 +134,13 @@ def test_a_role_near_its_cap_alerts_and_a_role_under_it_is_solved() -> None:
     assert "config/models.toml" in body
     assert plan["issues"][0]["escalate_at"] is None
     assert [s["key"] for s in plan["solved"]] == ["spend-cap:verifier"]
+
+
+def test_a_role_with_no_room_for_one_more_call_has_reached_its_cap() -> None:
+    # The model client stops a role when its next call could pass the cap: here $0.10 + $0.16 > $0.25,
+    # though $0.10 is far under 90% of the cap (ADR 0022's small caps).
+    spend = {"outcome": RoleSpend(Decimal("0.10"), Decimal("0.25"), Decimal("0.16"))}
+    assert _keys(build_alerts([], spend, LIMITS, RUN_URL)) == ["spend-cap:outcome"]
 
 
 def test_parse_run_reads_the_summary_file(tmp_path: Path) -> None:
@@ -178,8 +196,12 @@ def test_spend_today_sums_each_role_for_the_new_york_day(
     with engine.begin() as connection:
         connection.execute(insert(TABLES[ModelCall]), calls)
     spend = spend_today(engine, load_config(), date(2026, 10, 17))
-    assert spend["extractor"] == (Decimal("1.50"), Decimal("2.00"))
-    assert spend["verifier"] == (Decimal(0), Decimal("2.00"))
+    assert spend["extractor"] == (
+        Decimal("1.50"),
+        Decimal("2.00"),
+        Decimal("0.16"),
+    )  # 16,000 tokens at $10 a million
+    assert spend["verifier"].spent == 0
 
 
 def test_the_alerts_command_writes_the_plan_and_prints_the_bodies(

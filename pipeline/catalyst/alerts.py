@@ -15,13 +15,14 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NamedTuple, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
 
 from catalyst.llm.config import ModelConfig
 from catalyst.llm.ledger import DatabaseLedger
+from catalyst.llm.pricing import TokenUsage, cost_usd
 
 DEFAULT_THRESHOLDS_PATH = Path(__file__).resolve().parents[2] / "config" / "orchestrator.toml"
 OUTCOMES = frozenset({"success", "failure", "cancelled", "skipped"})  # a GitHub Actions step's outcome
@@ -111,7 +112,10 @@ def _extract_problems(summary: dict[str, Any]) -> list[str]:
     second = _mapping(summary.get("second_reading"))
     found = [
         (_count(summary, "documents_failed"), "{} could not be read."),
-        (bool(summary.get("stopped_early")), "It stopped early, before reading every document it was given."),
+        (
+            bool(summary.get("stopped_early")),
+            "It stopped early, before reading every document it was given (usually a spending cap).",
+        ),
         ("error" in _mapping(summary.get("matches")), "Matching names to records did not finish."),
         ("error" in _mapping(summary.get("checks")), "The checks did not finish."),
         ("error" in second, "The second reading did not finish."),
@@ -177,7 +181,8 @@ def _spend_alert(role: str, spent: Decimal, cap: Decimal) -> dict[str, Any]:
     body = [
         f"The {role} role has spent ${spent:.2f} of its ${cap:.2f} daily cap today (New York time).",
         "",
-        "It stops by itself at the cap and starts again after midnight, New York time. "
+        "It stops by itself near the cap, when its next call could pass it, and starts again "
+        "after midnight, New York time. "
         "It never switches to a pricier model.",
         "",
         "What to do: nothing if this is rare. If it happens most days, the cap may be too low for "
@@ -189,14 +194,14 @@ def _spend_alert(role: str, spent: Decimal, cap: Decimal) -> dict[str, Any]:
 
 def build_alerts(
     runs: Iterable[JobRun],
-    spend: Mapping[str, tuple[Decimal, Decimal]] | None,
+    spend: Mapping[str, RoleSpend] | None,
     limits: Thresholds,
     run_url: str,
 ) -> Plan:
     """Return the alerts this run raises, and the alerts it shows are solved.
 
-    A skipped or cancelled step says nothing either way. `spend` maps each role to today's spend
-    and its daily cap; None when this run did not check spending.
+    A skipped or cancelled step says nothing either way. `spend` maps each role to today's
+    spending; None when this run did not check spending.
     """
     issues: list[dict[str, Any]] = []
     solved: list[dict[str, str]] = []
@@ -208,8 +213,10 @@ def build_alerts(
             issues.append(_job_alert(run, problems, limits, run_url))
         else:
             solved.append({"key": f"job-failed:{run.name}", "comment": clean})
-    for role, (spent, cap) in sorted((spend or {}).items()):
-        if spent >= cap * limits.spend_share_of_cap:
+    for role, (spent, cap, smallest_call) in sorted((spend or {}).items()):
+        # The model client stops a role when its next call could pass the cap, which can be well
+        # under the share for a role whose calls are large next to its cap (ADR 0022).
+        if spent >= cap * limits.spend_share_of_cap or spent + smallest_call > cap:
             issues.append(_spend_alert(role, spent, cap))
         else:
             comment = f"Solved: the {role} role is back under its daily cap (${spent:.2f} of ${cap:.2f})."
@@ -217,7 +224,26 @@ def build_alerts(
     return {"mode": "alert", "label": "alert", "issues": issues, "solved": solved}
 
 
-def spend_today(engine: Engine, config: ModelConfig, day: date) -> dict[str, tuple[Decimal, Decimal]]:
-    """Return each role's spend on `day` (New York time) from `model_call`, with its daily cap."""
+class RoleSpend(NamedTuple):
+    """One role's spending today, its daily cap, and the least its largest-answer call can cost."""
+
+    spent: Decimal
+    cap: Decimal
+    smallest_call: Decimal
+
+
+def spend_today(engine: Engine, config: ModelConfig, day: date) -> dict[str, RoleSpend]:
+    """Return each role's spend on `day` (New York time) from `model_call`, with its cap.
+
+    `smallest_call` prices a call with no input and a full answer (`max_tokens`): the model
+    client never starts a call once less than that is left under the cap.
+    """
     ledger = DatabaseLedger(engine)
-    return {name: (ledger.spent(name, day), role.daily_cap_usd) for name, role in config.roles.items()}
+    return {
+        name: RoleSpend(
+            ledger.spent(name, day),
+            role.daily_cap_usd,
+            cost_usd(config.pricing[role.model], TokenUsage(output=role.max_tokens)),
+        )
+        for name, role in config.roles.items()
+    }
