@@ -53,31 +53,51 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - trials are left to part 3, which checks them against the registry. The extractor names no trial field, so the two readings have nothing to compare;
       - the verifier prompt gets its own scores on the same gold set (`catalyst eval-extractor --prompt verify_catalysts`), stored in `evals/verify_catalysts/`. The second reading runs live only once those scores match the current prompt and model. The extractor's first-version exemption (`unscored.json`) does not apply to it (review of PR #31). Until then, claims have no `second_reading_agrees` row, and the publish gate counts that as not passing. Before any scores or floor are committed there, `evals/verify_catalysts/baseline.json` and `unscored.json` join `OWNER_PATHS`, in a pull request the owner merges;
       - both readings use the same model family for now. The spec counts that as weak evidence, so a second provider stays the plan;
-      - **the job** (`catalyst.verify.second_run`, part 2b) runs inside `catalyst extract-catalysts`, right after extraction and before matching:
+      - **the job** (`catalyst.verify.second_run`, part 2b) runs inside `catalyst extract-catalysts`, last, after matching and the rule checks, so a problem in it never holds them up (review of PR #34):
         - it reads each release that has extracted claims once per verifier prompt version and model;
         - the table `document_reading` keeps each reading, even one that found nothing, so a re-run spends nothing;
-        - the verifier's claims share their reading's time, which ties them to that reading, so an older model's reading never vouches;
+        - a verifier claim counts only if its prompt version and model match the current reading; ModelClient refuses an answer from any other model, so an older model's reading never vouches, and outcomes no current reading supports are removed on every run, also while the gate is shut;
         - only verifier proposals whose own checks found no problem can vouch;
         - a failed model call leaves the release unread for the next run, with no check row;
         - a spending cap stops the job and says so;
       - two trials of one drug, with the same type and window in different sentences, can still pair, because trials are not compared here. Part 3's registry checks cover that case (Claude review of PR #31).
    3. **Cross-source and change checks:**
-      - the same fact from a second document (8-K versus release versus registry);
-      - an advisory meeting needs a Federal Register notice;
+      - the same fact from a second document (8-K versus release versus registry): the check `independent_source` (part 3b, `catalyst.verify.independent`) passes a claim whose own source is a regulator or SEC filing, as the publish rule allows. Any other claim passes only when another document agrees. That document must:
+        - be another source: another address (ignoring case, "www.", the scheme, a query, a fragment, and a trailing slash), another file, and other words. A copy of one release posted twice shares its mistakes, so it is one source (Opus review of PR #46);
+        - be linked to the same company;
+        - hold a claim from that document's latest reading that the extractor flagged nothing on and that passed every rule check itself;
+        - give the same type, a window inside the claim's window, and the same drug (by name, or by the reference tables), with a deal allowed to name no drug. A vaguer window ("2027" for a claimed "Q1 2027") confirms less than the claim says, so it does not vouch.
+
+        A missing window or drug never agrees. Wire releases are not linked to a company yet, so a wire-only claim fails this check and goes to review until the wire collector links releases to companies;
+      - an advisory meeting needs a Federal Register notice; plain code reads each stored notice (`catalyst.verify.fedreg_notice`): committee, meeting days, and each product with its application number and sponsor, every value with its quoted sentence, empty where the notice does not say; an unreadable or undated notice, or one that a later amendment for the same committee and topic replaces (the `superseded` list), is listed apart, never counted as a match; a meeting sentence that names any other date, or a change of date, gives no meeting days. The check `advisory_meeting_noticed` (part 3c, `catalyst.verify.advisory`) passes a claimed advisory committee only when a notice that no amendment replaced has its meeting inside the claim's window and names the same drug: the same name apart from case, spaces, and punctuation; a longer name that adds only anion-salt, dosage-form, and strength words (not metal salts: sodium and calcium oxybate are two products) ("atropine" and "Atropine Sulfate Ophthalmic Solution, 0.01%"); or one drug in the reference tables. A longer name that adds anything else is another product ("insulin" and "Insulin Efsitora Alfa", "adalimumab" and "adalimumab-aaty"). It fails when a notice published since the match (every stored notice is read, whatever its title or date, including a fresh "Notice of Meeting" that re-announces the meeting for another day) names the drug, or is for the same committee and names no product, and does not put the meeting in the window; the collector keeps cancellations and postponements for this (Claude review of PR #49); when any stored notice could not be read; when the notice's sponsor matches another company in the reference tables; and, without a match, for an undated notice, a replaced notice, or no notice, each with its own reason, so the claim goes to review. Stored notices are read once per run (Opus review of PR #49). Other catalyst types are not applicable. A meeting the company announces before FDA's notice appears waits in review until the notice is stored;
       - a date that moves more than 6 months, or an outcome that reverses, always goes to review;
-      - date ranges ("November 16–19", "late 2027 or early 2028") are read as windows.
+      - date ranges ("November 16–19", "late 2027 or early 2028") are read as windows (part 3a, `catalyst.extract.dates`): the window runs from the first part's start to the last part's end; its precision is the coarsest of the parts, and a range of days counts as month precision, so "day" always means one day; a year written only at the end, in digits or in words ("first quarter to second quarter of 2028", "November 16 to December 2, 2027", "first half or second half next year"), applies to the first part too, never the document's year, and a year written only at the start ("Q3 2026 to year-end") applies to the last part; "Q4 2026 to first quarter" then runs backwards and gives no window. Unspaced hyphens between whole parts ("Q4 2026-Q1 2027") and "and" without "between" also give no window, so such claims fail `has_window` and go to review; a backwards range or a part with no window gives none. Ranges the extractor already proposed (for example "year-end 2026/first quarter 2027") now get windows instead of failing `has_window`.
    4. **Planted-error test (owner proof):**
       - known-correct claims get realistic errors inserted: wrong date or quarter, wrong drug, wrong event type, wrong company, wrong trial, wrong phase, a quote that does not support the value, a past date;
       - every check runs on them, mixed with clean claims;
       - a one-page result for the owner reports, per error type: caught, corrected to the right value with its quote, clean records wrongly flagged, and missed;
       - CI blocks a drop.
-   5. **Publish gate:**
-      - claims that pass the publish rule become catalysts, with drug and trial links;
+   5. **Publish gate** (three pull requests: the decision first, then the catalyst writer, then the adversarial tests):
+      - **the decision** (part 5a, `catalyst.publish.gate`) is plain code over stored rows. A claim may publish only when both hold:
+        - every required check has a stored row that passed. The required list is a constant: the rule checks, read from the rules themselves so their names live in one place (two rules naming one check stop the gate from loading), plus `second_reading_agrees`, `independent_source`, and `advisory_meeting_noticed`;
+        - only four checks may answer "not applicable" instead, because each is about something a claim may lack: `window_not_past` (no window), `phase_matches_registry` (no stated phase or matched trial), `pdufa_date_plausible` (not an FDA decision date), and `advisory_meeting_noticed` (not an advisory meeting). "Not applicable" from any other check holds the claim (Opus review of PR #52). A new check that may not apply joins this list by name;
+        - the quote is found again, character for character, at its stored place in the stored copy. The copy's text is computed the way the extractor computed it (`document_text`). The quote found somewhere else in the copy is not enough, because the place is part of the claim;
+      - anything else waits for review with every reason, in order: the quote first, then each check in the list. A failing check gives its stored reason ("has_window: the date words name no window"). A check with no row gives "check X has not run". Rows of checks no longer on the list are ignored;
+      - these send a claim to review, never to publication:
+        - a missing copy;
+        - a copy that no longer matches its hash;
+        - a copy whose key is not the document's recorded hash;
+        - a copy that cannot be read;
+        - a claim that does not name the text version its offsets use, or names another version than the current one. Such a quote must be found again before it can publish;
+        - a claim that is not the extractor's catalyst claim;
+        - a claim from any prompt or prompt version other than the current extractor prompt. Its reading was replaced, so it must not publish beside the new one;
+      - the decision is kept in `claim_decision`: one row per extractor claim, with publish or review, the list of reasons, and when it was decided. A re-run updates the row in place. The database refuses a review row with no reason, and a publish row with one. Row-level security is on with no policy, so only the server's own code reads or writes it. The rows can always be rebuilt from the stored checks and copies, so the migration's downgrade may drop them;
+      - the job `catalyst decide-claims` (free, no model) decides every extractor claim, reads each copy once per run, and reports how many claims will publish, how many wait for review, how many copies could not be read, and the ten most common reasons. It also runs last in `catalyst extract-catalysts`, after every check. If matching, the rule checks, or the advisory check failed in that run, it decides nothing and says so, so no decision rests on outcomes the run did not renew. If it fails itself, the earlier steps stand and the command fails;
+      - the decision reads outcomes as they were stored. A decision made long after its checks ran can rely on an old `window_not_past` or `independent_source` outcome. The catalyst writer (5b) therefore re-runs the checks and decides in one pass before it writes anything;
+      - claims that pass the publish rule become catalysts, with drug and trial links (part 5b);
       - each link's claim must be about that catalyst and field (from the PR #23 review);
-      - everything else gets a review status with its reasons;
-      - a claim with a missing check row (for example, after a run where matching failed) counts as not passing;
-      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item;
-      - prompt-injection fixtures prove that text in a source cannot change a stored value.
+      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item (part 5b or 5c; part 5a still requires it for every claim);
+      - prompt-injection fixtures prove that text in a source cannot change a stored value (part 5c).
 
       CP4 then runs (Opus review).
 3. **A failing check never deletes or changes a claim.** It only blocks publication and gives the reason. Corrections come from evidence: a second extraction or another source that passes every check.

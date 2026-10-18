@@ -172,6 +172,42 @@ def test_hosts_outside_the_list_are_refused() -> None:
         clients.web.get("https://www.globenewswire.com/rss")
 
 
+def test_meeting_notices_keep_their_dates_section() -> None:
+    """The DATES section states the meeting day; the search answer has it only when asked."""
+    server = RecordedServer("fedreg-2026-08")
+    clients = build_clients(EMAIL, server.transport, rate_limits=False)
+    documents = list(fedreg.collect_advisory_committee_notices(clients.web, date(2026, 8, 1)))
+    assert all("fields%5B%5D=dates" in url for url in server.requested)
+    stored = {d.source_key: json.loads(d.content) for d in documents}
+    assert stored["fedreg:2026-19700"]["dates"] == (
+        "The meeting will be held on October 30, 2026, from 8:30 a.m. to 3 p.m. Eastern Time."
+    )
+    assert all(notice["dates"] for notice in stored.values())
+
+
+@pytest.mark.parametrize(
+    ("title", "kept"),
+    [
+        ("Pediatric Advisory Committee (PAC); Notice of Meeting; Establishment of a Public Docket", True),
+        (
+            "Cellular, Tissue, and Gene Therapies Advisory Committee; Amendment of Notice-Biologics "
+            "License Application (BLA) 125842 From Capricor, Inc.",
+            True,
+        ),
+        ("Dermatologic and Ophthalmic Drugs Advisory Committee; Notice of Cancellation", True),
+        ("Oncologic Drugs Advisory Committee; Postponement of Meeting", True),
+        ("Advisory Committee; Oncologic Drugs Advisory Committee; Renewal", False),
+        (
+            "Request for Nominations for Voting Members of Food and Drug Administration Advisory Committees",
+            False,
+        ),
+    ],
+)
+def test_meeting_notices_and_their_amendments_are_kept(title: str, kept: bool) -> None:
+    """An amendment is the notice that moves a meeting, so it is kept with the meeting notices."""
+    assert fedreg.is_advisory_committee_meeting({"title": title}) is kept
+
+
 def test_federal_register_later_pages_keep_every_filter() -> None:
     server = RecordedServer("fedreg-2026-paged")
     clients = build_clients(EMAIL, server.transport, rate_limits=False)
@@ -188,6 +224,7 @@ def test_federal_register_later_pages_keep_every_filter() -> None:
         "fedreg:2026-16245",
         "fedreg:2026-15149",
         "fedreg:2026-15017",
+        "fedreg:2026-15016",  # an amendment of 2026-15017's meeting, kept since PR #43's review
     ]
 
 

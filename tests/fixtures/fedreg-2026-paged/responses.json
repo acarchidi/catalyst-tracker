@@ -1,10 +1,10 @@
 {
-  "https://www.federalregister.gov/api/v1/documents.json?conditions%5Bagencies%5D%5B%5D=food-and-drug-administration&conditions%5Btype%5D%5B%5D=NOTICE&conditions%5Bterm%5D=%22advisory+committee%22&conditions%5Bpublication_date%5D%5Bgte%5D=2026-01-01&order=newest&per_page=10": {
+  "https://www.federalregister.gov/api/v1/documents.json?fields%5B%5D=abstract&fields%5B%5D=action&fields%5B%5D=agencies&fields%5B%5D=dates&fields%5B%5D=document_number&fields%5B%5D=excerpts&fields%5B%5D=html_url&fields%5B%5D=pdf_url&fields%5B%5D=public_inspection_pdf_url&fields%5B%5D=publication_date&fields%5B%5D=title&fields%5B%5D=type&conditions%5Bagencies%5D%5B%5D=food-and-drug-administration&conditions%5Btype%5D%5B%5D=NOTICE&conditions%5Bterm%5D=%22advisory+committee%22&conditions%5Bpublication_date%5D%5Bgte%5D=2026-01-01&order=newest&per_page=10": {
     "file": "00_www.federalregister.gov_api_v1_documents.json",
     "status": 200,
     "content_type": "application/json; charset=utf-8"
   },
-  "https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=food-and-drug-administration&conditions%5Bpublication_date%5D%5Bgte%5D=2026-01-01&conditions%5Bterm%5D=%22advisory+committee%22&conditions%5Btype%5D%5B%5D=NOTICE&format=json&order=newest&page=2&per_page=10": {
+  "https://www.federalregister.gov/api/v1/documents?conditions%5Bagencies%5D%5B%5D=food-and-drug-administration&conditions%5Bpublication_date%5D%5Bgte%5D=2026-01-01&conditions%5Bterm%5D=%22advisory+committee%22&conditions%5Btype%5D%5B%5D=NOTICE&fields%5B%5D=abstract&fields%5B%5D=action&fields%5B%5D=agencies&fields%5B%5D=dates&fields%5B%5D=document_number&fields%5B%5D=excerpts&fields%5B%5D=html_url&fields%5B%5D=pdf_url&fields%5B%5D=public_inspection_pdf_url&fields%5B%5D=publication_date&fields%5B%5D=title&fields%5B%5D=type&format=json&order=newest&page=2&per_page=10": {
     "file": "01_www.federalregister.gov_api_v1_documents",
     "status": 200,
     "content_type": "application/json; charset=utf-8"

@@ -1,6 +1,7 @@
 """Federal Register collector: FDA advisory committee meeting notices (spec: Data sources)."""
 
 import json
+import re
 from collections.abc import Iterator
 from datetime import date
 from typing import Any
@@ -12,12 +13,37 @@ from catalyst.schemas import SourceTier
 API_URL = "https://www.federalregister.gov/api/v1/documents.json"
 PUBLISHER = "Federal Register"
 REQUESTS_PER_SECOND = 1.0
+# The search answer's usual fields, plus `dates` and `action`: the DATES section is where a notice
+# states its meeting day, and the search answer leaves it out unless asked (review of PR #43).
+FIELDS = (
+    "abstract",
+    "action",
+    "agencies",
+    "dates",
+    "document_number",
+    "excerpts",
+    "html_url",
+    "pdf_url",
+    "public_inspection_pdf_url",
+    "publication_date",
+    "title",
+    "type",
+)
 
 
 def is_advisory_committee_meeting(document: dict[str, Any]) -> bool:
-    """Return True for FDA advisory committee meeting notices, by their standard title wording."""
+    """Return True for FDA advisory committee meeting notices and the notices that change them.
+
+    An amendment ("Amendment of Notice"), a cancellation, or a postponement moves or ends a
+    meeting, so the date check must see it (Claude review of PR #49).
+    """
     title: str = document.get("title") or ""
-    return "Advisory Committee" in title and "Notice of Meeting" in title
+    return "Advisory Committee" in title and _MEETING_TITLE.search(title) is not None
+
+
+_MEETING_TITLE = re.compile(
+    r"Notice of Meeting|Amendment of Notice|Cancell?ation|Postponement|Reschedul", re.I
+)
 
 
 def to_document(document: dict[str, Any]) -> FetchedDocument:
@@ -38,7 +64,8 @@ def collect_advisory_committee_notices(
     client: PoliteHttpClient, since: date, max_pages: int = 10, per_page: int = 100
 ) -> Iterator[FetchedDocument]:
     """Yield FDA advisory committee meeting notices published on or after `since`."""
-    params: dict[str, str | int] = {
+    params: dict[str, str | int | list[str]] = {
+        "fields[]": list(FIELDS),
         "conditions[agencies][]": "food-and-drug-administration",
         "conditions[type][]": "NOTICE",
         "conditions[term]": '"advisory committee"',
