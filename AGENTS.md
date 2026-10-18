@@ -16,7 +16,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 
 ## How work proceeds
 
-- Take roadmap items in order, one at a time: one branch, one pull request each.
+- Several roadmap items may be in progress at once (owner decision, 2026-10-18; ADR 0033), each on its own branch with one pull request. Start an item only if it needs nothing from a pull request that has not merged yet. Earlier items in the roadmap go first. Keep at most three item pull requests open at a time.
 - Do not stop at checkpoints (owner decision, 2026-10-16; ADR 0007). At every checkpoint in `docs/quality-gates.md`, run its review, fix what it finds, post the plain-English preview to the owner, and continue with the next item. An objection from the owner, whenever it comes, becomes the next item.
 - For an **Opus** checkpoint, run the fresh-eyes review with a reviewer subagent on the Opus model.
 - Stop and ask the owner only before something that cannot be undone or reaches outside the project: making data, pages, or the API public; sending anything to people outside the project; spending money beyond the daily caps in `config/models.toml`; creating accounts or keys. When every remaining item needs something only the owner can give (a key, an account, a judgment), stop and say exactly what is needed.
@@ -27,7 +27,7 @@ The owner is not a programmer. They approve work by reading plain-English summar
 - Branch from the latest main for each item; do not stack pull requests.
 - Open each pull request as a draft. Mark it ready for review only when its work is done and the local checks pass. Marking it ready starts the Claude review (ADR 0006).
 - The build overseer (ADR 0019) checks every pull request against the roadmap and these rules. Treat a blocking overseer finding like a blocking review comment: fix it, or explain on the pull request why not, and the owner settles it. Never remove a `hold` or `overseer-hold` label.
-- The merge robot (ADR 0007) merges a ready pull request from a `claude/` branch into main once CI and the Claude review both succeed on its latest commit. Wait for the merge before starting the next item.
+- The merge robot (ADR 0007) merges a ready pull request from a `claude/` branch into main once CI and the Claude review both succeed on its latest commit. When one pull request merges, merge main into another open pull request only when it conflicts with main or needs the merged work (a merge commit, never a rebase), then run the local checks again. Each such push to a ready pull request starts a paid review and an overseer run. A checkpoint's review runs once every item that leads to it has merged, on main as it then stands.
 - Never approve or merge a pull request yourself, never push to main, and never weaken the review workflow, the merge robot, `scripts/review_verdict.py`, or `scripts/merge_gate.py` to get a merge through.
 - The robot leaves for the owner pull requests that change the merge rules, the review, the rule documents, check settings, or spending caps (the list is in `scripts/merge_gate.py`). Keep such changes in their own small pull requests. For those and for Dependabot pull requests, run a separate reviewer subagent, then tell the owner in plain words what the change does and what the reviewer found.
 
