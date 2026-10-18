@@ -77,13 +77,25 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
       - every check runs on them, mixed with clean claims;
       - a one-page result for the owner reports, per error type: caught, corrected to the right value with its quote, clean records wrongly flagged, and missed;
       - CI blocks a drop.
-   5. **Publish gate:**
-      - claims that pass the publish rule become catalysts, with drug and trial links;
+   5. **Publish gate** (three pull requests: the decision first, then the catalyst writer, then the adversarial tests):
+      - **the decision** (part 5a, `catalyst.publish.gate`) is plain code over stored rows. A claim may publish only when both hold:
+        - every required check has a stored row that passed or did not apply. The required list is a constant: the rule checks, read from the rules themselves so their names live in one place, plus `second_reading_agrees`, `independent_source`, and `advisory_meeting_noticed`. The last comes from PR #49 and is named as a string until that merges. Until then no claim has that row, so every claim waits for review;
+        - the quote is found again, character for character, at its stored place in the stored copy. The copy's text is computed the way the extractor computed it (`document_text`). The quote found somewhere else in the copy is not enough, because the place is part of the claim;
+      - anything else waits for review with every reason, in order: the quote first, then each check in the list. A failing check gives its stored reason ("has_window: the date words name no window"). A check with no row gives "check X has not run". Rows of checks no longer on the list are ignored;
+      - these send a claim to review, never to publication:
+        - a missing copy;
+        - a copy that no longer matches its hash;
+        - a copy whose key is not the document's recorded hash;
+        - a copy that cannot be read;
+        - a claim that does not name the text version its offsets use, or names another version than the current one. Such a quote must be found again before it can publish;
+        - a claim that is not the extractor's catalyst claim;
+      - the decision is kept in `claim_decision`: one row per extractor claim, with publish or review, the list of reasons, and when it was decided. A re-run updates the row in place. The database refuses a review row with no reason, and a publish row with one. Row-level security is on with no policy, so only the server's own code reads or writes it. The rows can always be rebuilt from the stored checks and copies, so the migration's downgrade may drop them;
+      - the job `catalyst decide-claims` (free, no model) decides every extractor claim, reads each copy once per run, and reports how many claims will publish, how many wait for review, how many copies could not be read, and the ten most common reasons. It also runs last in `catalyst extract-catalysts`, after every check. If it fails, the earlier steps stand and the command fails;
+      - the decision reads outcomes as they were stored. A decision made long after its checks ran can rely on an old `window_not_past` or `independent_source` outcome. The catalyst writer (5b) therefore re-runs the checks and decides in one pass before it writes anything;
+      - claims that pass the publish rule become catalysts, with drug and trial links (part 5b);
       - each link's claim must be about that catalyst and field (from the PR #23 review);
-      - everything else gets a review status with its reasons;
-      - a claim with a missing check row (for example, after a run where matching failed) counts as not passing;
-      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item;
-      - prompt-injection fixtures prove that text in a source cannot change a stored value.
+      - `window_not_past` applies only before first publication; once a catalyst is live, its date passing is a change for the outcome tracker, not a review item (part 5b or 5c; part 5a still requires it for every claim);
+      - prompt-injection fixtures prove that text in a source cannot change a stored value (part 5c).
 
       CP4 then runs (Opus review).
 3. **A failing check never deletes or changes a claim.** It only blocks publication and gives the reason. Corrections come from evidence: a second extraction or another source that passes every check.

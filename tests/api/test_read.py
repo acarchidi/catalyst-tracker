@@ -143,7 +143,7 @@ def test_never_reads_review_or_check_tables(
         catalyst(session, seed.slipped, Access.PAID)
     assert statements
     for statement in statements:
-        for table in ("claim_check", "entity_match", "document_reading", "model_call"):
+        for table in ("claim_check", "claim_decision", "entity_match", "document_reading", "model_call"):
             assert table not in statement
 
 
