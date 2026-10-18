@@ -25,6 +25,7 @@ from catalyst.verify.fedreg_notice import (
     Evidence,
     MeetingNotice,
     NoticeError,
+    StoredNotice,
     notices_for,
     parse_meeting_dates,
     read_notice,
@@ -56,6 +57,15 @@ def _recorded(number: str, path: Path = PAGE_TWO) -> dict[str, Any]:
     return next(r for r in results if r["document_number"] == number)
 
 
+def _recorded_anywhere(number: str) -> dict[str, Any]:
+    for page in (FIXTURES / "fedreg-2026-paged").glob("0*"):
+        results: list[dict[str, Any]] = json.loads(page.read_bytes())["results"]
+        for result in results:
+            if result["document_number"] == number:
+                return result
+    raise KeyError(number)
+
+
 def _values(notice: MeetingNotice) -> dict[str, object]:
     return {
         "committee": notice.committee.value if notice.committee else None,
@@ -84,25 +94,22 @@ def _evidence(notice: MeetingNotice) -> list[tuple[object, Evidence]]:
 
 # --- What the collector stores ---------------------------------------------------------------------
 
-
-def test_the_collector_keeps_six_meeting_notices_from_the_recordings() -> None:
-    assert sorted(COLLECTED) == [
-        "2026-15017",
-        "2026-15149",
-        "2026-16245",
-        "2026-18349",
-        "2026-18920",
-        "2026-19700",
-    ]
+MEETING_NOTICES = ["2026-15149", "2026-16245", "2026-18349", "2026-18920", "2026-19700"]
+AMENDMENTS = ["2026-15016", "2026-15017"]
 
 
-def test_a_stored_notice_holds_no_meeting_date_section() -> None:
-    # The search API sends only its default fields; the DATES section is not among them. So no
-    # recorded notice can give its meeting date yet, and the reader must say so, not guess.
-    for fetched in COLLECTED.values():
+def test_the_collector_keeps_seven_meeting_notices_and_amendments_from_the_recordings() -> None:
+    assert sorted(COLLECTED) == sorted([*AMENDMENTS, *MEETING_NOTICES])
+
+
+def test_a_stored_notice_holds_its_recorded_dates_section() -> None:
+    # The collector asks for the DATES section (`dates`). Each meeting notice has one; the documents
+    # API sends none for the two amendments. The full body is never stored.
+    for number, fetched in COLLECTED.items():
         stored = json.loads(fetched.content)
-        assert "dates" not in stored
         assert "body" not in stored
+        assert stored["dates"] == _recorded_anywhere(number)["dates"]
+        assert bool(stored["dates"]) == (number in MEETING_NOTICES)
 
 
 # --- Every recorded notice, field by field ---------------------------------------------------------
@@ -112,7 +119,7 @@ EXPECTED: dict[str, dict[str, object]] = {
     "2026-19700": {
         "committee": "Dermatologic and Ophthalmic Drugs Advisory Committee",
         "topic": "New Drug Application (NDA) 219694 for Atropine Sulfate Ophthalmic Solution, 0.01%",
-        "meeting": None,
+        "meeting": (date(2026, 10, 30), date(2026, 10, 30)),
         "products": ["Atropine Sulfate Ophthalmic Solution, 0.01%"],
         "applications": ["NDA 219694"],
         "sponsors": [],
@@ -121,7 +128,7 @@ EXPECTED: dict[str, dict[str, object]] = {
     "2026-18920": {
         "committee": "Microbiology Devices Panel of the Medical Devices Advisory Committee",
         "topic": "Pathogen-Agnostic Sequencing",
-        "meeting": None,
+        "meeting": (date(2026, 11, 19), date(2026, 11, 19)),
         "products": [],
         "applications": [],
         "sponsors": [],
@@ -130,7 +137,7 @@ EXPECTED: dict[str, dict[str, object]] = {
     "2026-18349": {
         "committee": "Vaccines and Related Biological Products Advisory Committee",
         "topic": "2027 Southern Hemisphere Influenza Virus Vaccines",
-        "meeting": None,
+        "meeting": (date(2026, 10, 1), date(2026, 10, 1)),
         "products": [],
         "applications": [],
         "sponsors": [],
@@ -139,7 +146,7 @@ EXPECTED: dict[str, dict[str, object]] = {
     "2026-16245": {
         "committee": "Molecular and Clinical Genetics Panel of the Medical Devices Advisory Committee",
         "topic": "GRAIL, Inc. Galleri",
-        "meeting": None,
+        "meeting": (date(2026, 9, 23), date(2026, 9, 23)),
         "products": ["Galleri"],
         "applications": [],
         "sponsors": ["GRAIL, Inc."],
@@ -148,7 +155,7 @@ EXPECTED: dict[str, dict[str, object]] = {
     "2026-15149": {
         "committee": "Pediatric Advisory Committee (PAC)",
         "topic": None,
-        "meeting": None,
+        "meeting": (date(2026, 9, 16), date(2026, 9, 16)),
         "products": [],
         "applications": [],
         "sponsors": [],
@@ -164,6 +171,16 @@ EXPECTED: dict[str, dict[str, object]] = {
         "sponsors": ["Replimune, Inc."],
         "amendment": True,
     },
+    "2026-15016": {
+        "committee": "Cellular, Tissue, and Gene Therapies Advisory Committee",
+        "topic": "Biologics License Application (BLA) 125842 From Capricor, Inc. for Deramiocel "
+        "(Human Allogeneic Cardiosphere-Derived Cells)",
+        "meeting": None,
+        "products": ["Deramiocel (Human Allogeneic Cardiosphere-Derived Cells)"],
+        "applications": ["BLA 125842"],
+        "sponsors": ["Capricor, Inc."],
+        "amendment": True,
+    },
 }
 
 
@@ -174,20 +191,15 @@ def test_each_recorded_notice_reads_as_expected(number: str) -> None:
     assert _values(notice) == EXPECTED[number]
 
 
-def test_an_amendment_the_collector_skips_still_reads() -> None:
-    # 2026-15016's title says "Amendment of Notice", not "Notice of Meeting", so the collector
-    # does not keep it today. The reader handles it all the same.
-    notice = read_notice(fedreg.to_document(_recorded("2026-15016")).content)
-    assert _values(notice) == {
-        "committee": "Cellular, Tissue, and Gene Therapies Advisory Committee",
-        "topic": "Biologics License Application (BLA) 125842 From Capricor, Inc. for Deramiocel "
-        "(Human Allogeneic Cardiosphere-Derived Cells)",
-        "meeting": None,
-        "products": ["Deramiocel (Human Allogeneic Cardiosphere-Derived Cells)"],
-        "applications": ["BLA 125842"],
-        "sponsors": ["Capricor, Inc."],
-        "amendment": True,
-    }
+def test_a_recorded_meeting_day_quotes_the_recorded_dates_section() -> None:
+    notice = _notice("2026-19700")
+    dates = "The meeting will be held on October 30, 2026, from 8:30 a.m. to 3 p.m. Eastern Time."
+    assert json.loads(COLLECTED["2026-19700"].content)["dates"] == dates
+    assert notice.meeting is not None
+    assert notice.meeting.evidence.field == "dates"
+    assert notice.meeting.evidence.quote == dates
+    assert notice.text[notice.meeting.evidence.start : notice.meeting.evidence.end] == dates
+    assert "meeting dates" not in notice.missing()
 
 
 def test_the_reader_keeps_the_link_between_drug_number_and_company() -> None:
@@ -202,10 +214,13 @@ def test_the_reader_keeps_the_link_between_drug_number_and_company() -> None:
 
 def test_an_amendment_does_not_lend_the_old_meeting_date() -> None:
     # The search excerpt of 2026-15017 says the meeting "would be held on July 30, 2026", which is
-    # the date the amendment changed. That is not the meeting date, so none is given.
+    # the date the amendment changed. That is not the meeting date, and the recorded copy has no
+    # DATES section, so none is given.
     assert "would be held on July 30, 2026" in _recorded("2026-15017")["excerpts"]
+    assert not json.loads(COLLECTED["2026-15017"].content)["dates"]
     assert _notice("2026-15017").meeting is None
-    # A DATES section that names the old and the new day in one sentence gives no date either.
+    # Made-up wording (no recorded notice has it): a DATES sentence naming the old and the new day
+    # gives no date either.
     notice = _with_dates(
         "2026-15017",
         "The meeting that would be held on July 30, 2026, will be held on August 4, 2026.",
@@ -215,12 +230,13 @@ def test_an_amendment_does_not_lend_the_old_meeting_date() -> None:
 
 def test_what_each_recorded_notice_is_missing() -> None:
     assert {number: _notice(number).missing() for number in sorted(EXPECTED)} == {
+        "2026-15016": ["meeting dates"],
         "2026-15017": ["meeting dates"],
-        "2026-15149": ["meeting dates", "products", "applications", "sponsors"],
-        "2026-16245": ["meeting dates", "applications"],
-        "2026-18349": ["meeting dates", "products", "applications", "sponsors"],
-        "2026-18920": ["meeting dates", "products", "applications", "sponsors"],
-        "2026-19700": ["meeting dates", "sponsors"],
+        "2026-15149": ["products", "applications", "sponsors"],
+        "2026-16245": ["applications"],
+        "2026-18349": ["products", "applications", "sponsors"],
+        "2026-18920": ["products", "applications", "sponsors"],
+        "2026-19700": ["sponsors"],
     }
 
 
@@ -255,36 +271,36 @@ def test_an_amendment_quotes_the_abstract_sentence_that_says_so() -> None:
     )
 
 
+def test_an_amendment_title_is_its_own_evidence() -> None:
+    amendment = _notice("2026-15016").amendment
+    assert amendment is not None
+    assert amendment.field == "title"
+
+
 def test_the_notice_text_is_the_stored_fields_one_per_line() -> None:
     stored = json.loads(COLLECTED["2026-18349"].content)
-    assert _notice("2026-18349").text == f"{stored['title']}\n{stored['abstract']}"
+    assert _notice("2026-18349").text == f"{stored['title']}\n{stored['abstract']}\n{stored['dates']}"
+    # An amendment with no DATES section has only its title and abstract.
+    stored = json.loads(COLLECTED["2026-15017"].content)
+    assert _notice("2026-15017").text == f"{stored['title']}\n{stored['abstract']}"
 
 
-# --- A DATES section, when a stored copy has one ------------------------------------------------------
+# --- DATES wording no recorded notice has (made up for the test) --------------------------------------
 
 
 def _with_dates(number: str, dates: str) -> MeetingNotice:
-    """Read a recorded notice plus a DATES section in the documents API's `dates` field.
+    """Read a recorded notice with its `dates` field replaced by made-up wording.
 
-    The wording is the standard FDA form; the date itself is made up for the test, not recorded.
+    The wording follows the standard FDA form; the dates are made up, not recorded. Use it only for
+    a case no recorded notice covers.
     """
     stored = json.loads(COLLECTED[number].content)
     stored["dates"] = dates
     return read_notice(json.dumps(stored).encode())
 
 
-def test_a_dates_section_gives_the_meeting_date_and_its_sentence() -> None:
-    dates = "The meeting will be held on November 16, 2026, from 9 a.m. to 5 p.m. Eastern Time."
-    notice = _with_dates("2026-19700", dates)
-    assert notice.meeting is not None
-    assert (notice.meeting.value.start, notice.meeting.value.end) == (date(2026, 11, 16), date(2026, 11, 16))
-    assert notice.meeting.evidence.field == "dates"
-    assert notice.meeting.evidence.quote == dates
-    assert notice.text[notice.meeting.evidence.start : notice.meeting.evidence.end] == dates
-    assert "meeting dates" not in notice.missing()
-
-
 def test_a_two_day_meeting_reads_as_a_start_and_an_end() -> None:
+    # Every recorded meeting is one day long.
     notice = _with_dates(
         "2026-18920",
         "The meeting will be held on December 8 and 9, 2026, from 8:30 a.m. to 5 p.m. Eastern Time. "
@@ -544,48 +560,54 @@ def _store(factory: sessionmaker[Session], store: LocalSnapshotStore, fetched: F
     store_fetched(fetched, store, factory, now=lambda: datetime(2026, 10, 17, 12, tzinfo=UTC))
 
 
-def _dated(number: str, dates: str) -> FetchedDocument:
-    """Store a recorded notice with a DATES section added (standard wording, made-up date)."""
-    stored = _recorded(
-        number, FIXTURES / "fedreg-2026-08" / "00_www.federalregister.gov_api_v1_documents.json"
-    )
-    return fedreg.to_document({**stored, "dates": dates})
+def _numbers(stored: list[StoredNotice]) -> list[str]:
+    return sorted(n.notice.document_number for n in stored)
 
 
-def test_notices_for_a_window_reads_stored_notices(
+def test_notices_for_a_window_reads_the_recorded_notices(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
     for fetched in COLLECTED.values():
-        if fetched.source_key not in ("fedreg:2026-19700", "fedreg:2026-18920"):
-            _store(session_factory, store, fetched)
-    _store(session_factory, store, _dated("2026-19700", "The meeting will be held on November 16, 2026."))
-    _store(
-        session_factory, store, _dated("2026-18920", "The meeting will be held on December 8 and 9, 2026.")
-    )
+        _store(session_factory, store, fetched)
     with session_factory() as session:
+        september = notices_for(session, store, date(2026, 9, 1), date(2026, 9, 30))
+        october = notices_for(session, store, date(2026, 10, 1), date(2026, 10, 31))
         november = notices_for(session, store, date(2026, 11, 1), date(2026, 11, 30))
-        december_9 = notices_for(session, store, date(2026, 12, 9), date(2026, 12, 31))
-        january = notices_for(session, store, date(2027, 1, 1), date(2027, 1, 31))
-        august = notices_for(session, store, date(2026, 8, 1), date(2026, 8, 31))
-    assert [n.notice.document_number for n in november.matching] == ["2026-19700"]
-    assert [n.notice.document_number for n in december_9.matching] == ["2026-18920"]
-    assert january.matching == []
-    assert november.unreadable == []
-    # The four stored notices with no readable date are listed apart, never matched by guess.
-    assert sorted(n.notice.document_number for n in november.undated) == [
-        "2026-15017",
-        "2026-15149",
-        "2026-16245",
-        "2026-18349",
-    ]
-    # A notice published after the window ends cannot announce a meeting inside it.
-    assert sorted(n.notice.document_number for n in august.undated) == [
-        "2026-15017",
-        "2026-15149",
-        "2026-16245",
-    ]
-    assert november.matching[0].document.source_key == "fedreg:2026-19700"
+        december = notices_for(session, store, date(2026, 12, 1), date(2026, 12, 31))
+        late_july = notices_for(session, store, date(2026, 7, 1), date(2026, 7, 27))
+        ends_on_meeting_day = notices_for(session, store, date(2026, 9, 1), date(2026, 9, 16))
+        starts_on_meeting_day = notices_for(session, store, date(2026, 9, 23), date(2026, 9, 28))
+    assert _numbers(september.matching) == ["2026-15149", "2026-16245"]  # September 16 and 23
+    assert _numbers(october.matching) == ["2026-18349", "2026-19700"]  # October 1 and 30
+    assert _numbers(november.matching) == ["2026-18920"]  # November 19
+    assert december.matching == []
+    assert _numbers(ends_on_meeting_day.matching) == ["2026-15149"]
+    assert _numbers(starts_on_meeting_day.matching) == ["2026-16245"]
+    # The two amendments give no meeting day, so they are listed apart, never matched by guess.
+    for found in (september, october, november, december):
+        assert _numbers(found.undated) == AMENDMENTS
+        assert found.unreadable == []
+    # A notice published after the window ends cannot announce a meeting inside it: 2026-15149 was
+    # published on July 28, so a window ending July 27 reads only the two July 24 amendments.
+    assert late_july.matching == []
+    assert _numbers(late_july.undated) == AMENDMENTS
+    assert november.matching[0].document.source_key == "fedreg:2026-18920"
+
+
+def test_the_two_recorded_amendments_do_not_replace_each_other(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    # 2026-15016 and 2026-15017 are amendments for the same committee on the same day, but for two
+    # different applications (BLA 125842 and BLA 125827), so neither replaces the other.
+    store = LocalSnapshotStore(tmp_path)
+    for fetched in COLLECTED.values():
+        _store(session_factory, store, fetched)
+    with session_factory() as session:
+        found = notices_for(session, store, date(2026, 7, 1), date(2026, 12, 31))
+    assert found.superseded == []
+    assert _numbers(found.undated) == AMENDMENTS
+    assert _numbers(found.matching) == MEETING_NOTICES
 
 
 def test_a_stored_copy_that_cannot_be_read_is_reported(
@@ -611,68 +633,92 @@ def test_a_window_must_not_end_before_it_starts(
 
 
 def _copy(number: str, **changes: str) -> FetchedDocument:
-    """Store a recorded page-two notice with some fields changed (made-up dates, standard wording)."""
+    """Return a recorded page-two notice with some fields made up, for cases no recording covers."""
     return fedreg.to_document({**_recorded(number), **changes})
 
 
-def test_a_window_that_ends_on_the_first_meeting_day_matches(
+def test_a_window_that_ends_on_the_first_day_of_a_longer_meeting_matches(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
+    # Made up: every recorded meeting is one day long.
     store = LocalSnapshotStore(tmp_path)
-    _store(
-        session_factory, store, _dated("2026-18920", "The meeting will be held on December 8 and 9, 2026.")
-    )
+    two_days = "The meeting will be held on December 8 and 9, 2026."
+    _store(session_factory, store, _copy("2026-15149", dates=two_days))
     with session_factory() as session:
-        found = notices_for(session, store, date(2026, 12, 1), date(2026, 12, 8))
-    assert [n.notice.document_number for n in found.matching] == ["2026-18920"]
+        ends_on_first_day = notices_for(session, store, date(2026, 12, 1), date(2026, 12, 8))
+        starts_on_second_day = notices_for(session, store, date(2026, 12, 9), date(2026, 12, 31))
+    assert _numbers(ends_on_first_day.matching) == ["2026-15149"]
+    assert _numbers(starts_on_second_day.matching) == ["2026-15149"]
 
 
 def test_a_notice_published_the_day_after_the_window_is_not_read(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
+    # Made up: two copies of 2026-15149 (real DATES text, September 16) with publication days moved
+    # to the window's last day and the day after it.
     store = LocalSnapshotStore(tmp_path)
-    meeting = "The meeting will be held on November 16, 2026."
-    _store(session_factory, store, _copy("2026-15149", publication_date="2026-11-16", dates=meeting))
-    _store(session_factory, store, _copy("2026-15017", publication_date="2026-11-17", dates=meeting))
+    _store(session_factory, store, _copy("2026-15149", publication_date="2026-09-16"))
+    _store(
+        session_factory,
+        store,
+        _copy("2026-15149", document_number="2026-90000", publication_date="2026-09-17"),
+    )
     with session_factory() as session:
-        found = notices_for(session, store, date(2026, 11, 1), date(2026, 11, 16))
-    assert [n.notice.document_number for n in found.matching] == ["2026-15149"]
+        found = notices_for(session, store, date(2026, 9, 1), date(2026, 9, 16))
+    assert _numbers(found.matching) == ["2026-15149"]
     assert found.undated == []
     assert found.superseded == []
 
 
-@pytest.mark.parametrize("number", ["2026-15017", "2026-15016"])
-def test_an_amended_notice_is_superseded_not_matched(
-    number: str, session_factory: sessionmaker[Session], tmp_path: Path
-) -> None:
-    # The original notice is made up from the recorded amendment: an earlier number and date, the
-    # "Notice of Meeting" title form, and the old meeting day. The amendment gives the new day.
+def _original_of(number: str) -> FetchedDocument:
+    """Made up: the notice a recorded amendment amends (not in the recordings), with its old day."""
     amendment = _recorded(number)
-    original_title = str(amendment["title"]).replace(
-        "Amendment of Notice", "Notice of Meeting; Establishment of a Public Docket; Request for Comments"
-    )
-    original = _copy(
+    return _copy(
         number,
         document_number="2026-12000",
         publication_date="2026-06-30",
-        title=original_title,
+        title=str(amendment["title"]).replace(
+            "Amendment of Notice", "Notice of Meeting; Establishment of a Public Docket; Request for Comments"
+        ),
         abstract="The Food and Drug Administration (FDA) is announcing a forthcoming public advisory "
         "committee meeting of the Cellular, Tissue, and Gene Therapies Advisory Committee (the Committee).",
         dates="The meeting will be held on July 30, 2026, from 9 a.m. to 5 p.m. Eastern Time.",
     )
+
+
+@pytest.mark.parametrize("number", AMENDMENTS)
+def test_a_recorded_amendment_supersedes_the_notice_it_amends(
+    number: str, session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    # The amendment is stored exactly as recorded (no DATES section); only the original is made up.
+    store = LocalSnapshotStore(tmp_path)
+    _store(session_factory, store, _original_of(number))
+    _store(session_factory, store, COLLECTED[number])
+    with session_factory() as session:
+        july = notices_for(session, store, date(2026, 7, 1), date(2026, 7, 31))
+    assert july.matching == []
+    assert _numbers(july.superseded) == ["2026-12000"]
+    assert _numbers(july.undated) == [number]
+
+
+@pytest.mark.parametrize("number", AMENDMENTS)
+def test_an_amended_notice_is_superseded_not_matched(
+    number: str, session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    # Made up: the original as above, and the amendment given a DATES section with the new day.
     amended = _copy(
         number, dates="The meeting will be held on August 6, 2026, from 9 a.m. to 5 p.m. Eastern Time."
     )
     store = LocalSnapshotStore(tmp_path)
-    _store(session_factory, store, original)
+    _store(session_factory, store, _original_of(number))
     _store(session_factory, store, amended)
     with session_factory() as session:
         july = notices_for(session, store, date(2026, 7, 1), date(2026, 7, 31))
         august = notices_for(session, store, date(2026, 8, 1), date(2026, 8, 31))
     assert july.matching == []
-    assert [n.notice.document_number for n in july.superseded] == ["2026-12000"]
-    assert [n.notice.document_number for n in august.matching] == [number]
-    assert [n.notice.document_number for n in august.superseded] == ["2026-12000"]
+    assert _numbers(july.superseded) == ["2026-12000"]
+    assert _numbers(august.matching) == [number]
+    assert _numbers(august.superseded) == ["2026-12000"]
 
 
 def test_a_copy_too_deep_to_read_is_reported(session_factory: sessionmaker[Session], tmp_path: Path) -> None:

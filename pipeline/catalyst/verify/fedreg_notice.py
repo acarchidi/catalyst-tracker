@@ -11,9 +11,10 @@ Provenance). The notice text is the stored copy's own fields, one per line, in a
 the title, which FDA writes in a fixed form, and the meeting days from the DATES section. Where a
 fact cannot be found it is None or an empty list, never a guess.
 
-The search answer the collector stores today has no DATES section, so no stored notice gives its
-meeting days yet. Search excerpts are never read: they are cut mid-sentence, and in an amendment
-they quote the date the amendment changed.
+The collector asks the search API for the DATES section (`dates`); the API sends none for an
+amendment, so an amendment gives no meeting days and the notice it amends is set apart. Search
+excerpts are never read: they are cut mid-sentence, and in an amendment they quote the date the
+amendment changed.
 """
 
 from __future__ import annotations
