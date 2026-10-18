@@ -158,3 +158,57 @@ def test_a_failed_check_must_say_why(
     row = {"id": uuid4(), "claim_id": claim, "check_name": "has_window", "outcome": "fail", "reason": None}
     with pytest.raises(IntegrityError, match="fail_has_reason"), session_factory.begin() as session:
         session.execute(insert(TABLES[ClaimCheck]).values(**row, checked_at=PUBLISHED))
+
+
+def _company_news(session_factory: sessionmaker[Session], key: str, fill: str, tier: SourceTier) -> UUID:
+    """Store a company document that is not an SEC filing, linked to Spyre.
+
+    Any link to the company counts; how the collector made the link is not this check's concern.
+    """
+    with session_factory.begin() as session:
+        company = upsert_company(session, 1636282, "Spyre Therapeutics, Inc.", "2834").id
+        document = _document(key, fill).model_copy(
+            update={
+                "url": f"https://www.example-wire.com/{fill}.html",
+                "source_tier": tier,
+                "publisher": "Wire",
+            }
+        )
+        stored, _ = save_source_document(session, document)
+        link_company_document(session, company, stored.id, DocumentMatch.SEC_CIK)
+    return stored.id
+
+
+def _checks(session_factory: sessionmaker[Session], claim: UUID) -> dict[str, tuple[str, str | None]]:
+    with session_factory() as session:
+        rows = session.execute(select(TABLES[ClaimCheck]).where(TABLES[ClaimCheck].c.claim_id == claim))
+        return {r.check_name: (r.outcome, r.reason) for r in rows}
+
+
+def test_an_sec_filing_is_its_own_independent_source(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    claim = _claim(
+        session_factory, release["document"], "Phase 2 AZURE-1 topline data are expected in Q4 2026."
+    )
+    run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    assert _checks(session_factory, claim)["independent_source"] == ("pass", None)
+
+
+def test_a_wire_release_needs_a_second_document_from_the_same_company(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    quote = "Zentocel topline data are expected in Q4 2026."
+    wire = _company_news(session_factory, "wire:spyre-1", "c", SourceTier.WIRE)
+    alone = _claim(session_factory, wire, quote, drug="zentocel")
+    run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    assert _checks(session_factory, alone)["independent_source"] == (
+        "fail",
+        "no second document states this event",
+    )
+    site = _company_news(session_factory, "site:spyre-1", "d", SourceTier.COMPANY_SITE)
+    second = _claim(session_factory, site, quote, drug="Zentocel")
+    report = run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    assert _checks(session_factory, alone)["independent_source"] == ("pass", None)
+    assert _checks(session_factory, second)["independent_source"] == ("pass", None)
+    assert report.outcomes["independent_source:pass"] == 2

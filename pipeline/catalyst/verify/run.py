@@ -1,8 +1,9 @@
 """The check job: run every rule check on every extractor claim and keep the latest outcomes (ADR 0018).
 
 Plain code over stored rows: the claim, its source document's publication date, the entity
-resolver's matches, and the registry phases of matched trials. Safe to re-run; each claim keeps
-one row per check, updated in place.
+resolver's matches, and the registry phases of matched trials. The independent-source check also
+reads every other document's extractor claims for the same company. Safe to re-run; each claim
+keeps one row per check, updated in place.
 """
 
 from __future__ import annotations
@@ -11,7 +12,7 @@ import logging
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
@@ -23,7 +24,18 @@ from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
-from catalyst.schemas import Claim, ClaimCheck, EntityMatch, SourceDocument, Trial, TrialPhase
+from catalyst.schemas import (
+    Claim,
+    ClaimCheck,
+    CompanyDocument,
+    EntityMatch,
+    MatchedEntity,
+    SourceDocument,
+    SourceTier,
+    Trial,
+    TrialPhase,
+)
+from catalyst.verify.independent import Statement, independent_source
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
 
 _log = logging.getLogger(__name__)
@@ -64,9 +76,67 @@ def _value(raw: object) -> dict[str, Any]:
     return cast(dict[str, Any], raw) if isinstance(raw, dict) else {}
 
 
-def _facts(session: Session) -> list[ClaimFacts]:
+def _window(value: dict[str, Any]) -> tuple[date, date] | None:
+    start, end = value.get("window_start"), value.get("window_end")
+    if not isinstance(start, str) or not isinstance(end, str):
+        return None
+    try:
+        return date.fromisoformat(start), date.fromisoformat(end)
+    except ValueError:
+        return None
+
+
+def _statements(session: Session, matches: dict[UUID, list[Match]]) -> list[Statement]:
+    """Every extractor claim as the independent-source check compares it."""
+    claim, document, link = TABLES[Claim], TABLES[SourceDocument], TABLES[CompanyDocument]
+    companies: defaultdict[UUID, set[UUID]] = defaultdict(set)
+    for row in session.execute(select(link.c.source_document_id, link.c.company_id)):
+        companies[row.source_document_id].add(row.company_id)
+    query = (
+        select(claim.c.id, claim.c.value, claim.c.source_document_id, document.c.url, document.c.source_tier)
+        .join(document, document.c.id == claim.c.source_document_id)
+        .where(claim.c.agent == ROLE, claim.c.field.startswith("catalyst:"))
+    )
+    statements: list[Statement] = []
+    for row in session.execute(query):
+        value = _value(row.value)
+        drug = value.get("drug")
+        drug_ids = frozenset(
+            m.matched_id
+            for m in matches.get(row.id, [])
+            if m.entity == MatchedEntity.DRUG and m.status == "resolved" and m.matched_id is not None
+        )
+        statements.append(
+            Statement(
+                claim_id=row.id,
+                url=row.url,
+                tier=SourceTier(row.source_tier),
+                companies=frozenset(companies.get(row.source_document_id, set())),
+                catalyst_type=str(value.get("catalyst_type")),
+                drug=drug if isinstance(drug, str) else None,
+                drug_ids=drug_ids,
+                window=_window(value),
+                clean=value.get("problems") == [],
+            )
+        )
+    return statements
+
+
+def _independent(statements: list[Statement]) -> dict[UUID, CheckResult]:
+    by_company: defaultdict[UUID, list[Statement]] = defaultdict(list)
+    for statement in statements:
+        for company in statement.companies:
+            by_company[company].append(statement)
+    results: dict[UUID, CheckResult] = {}
+    for statement in statements:
+        others = [o for company in statement.companies for o in by_company[company]]
+        results[statement.claim_id] = independent_source(statement, others)
+    return results
+
+
+def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFacts]:
     claim, document = TABLES[Claim], TABLES[SourceDocument]
-    matches, phases = _matches(session), _phases(session)
+    phases = _phases(session)
     query = (
         select(claim.c.id, claim.c.value, claim.c.quote, document.c.published_at)
         .join(document, document.c.id == claim.c.source_document_id)
@@ -101,7 +171,9 @@ def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datet
 
 
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
-    """Run every rule check on every extractor claim; store one outcome per claim and check.
+    """Run every rule check and the independent-source check on every extractor claim.
+
+    One outcome is stored per claim and check.
 
     Dates are New York dates, as in the extractor: a 9pm run on October 17 checks against October 17.
     """
@@ -109,9 +181,11 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
     at = now()
     today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
-        for facts in _facts(session):
+        matches = _matches(session)
+        independent = _independent(_statements(session, matches))
+        for facts in _facts(session, matches):
             report.claims += 1
-            results = rule_checks(facts, today)
+            results = [*rule_checks(facts, today), independent[facts.id]]
             for result in results:
                 store_check(session, facts.id, result, at)
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
