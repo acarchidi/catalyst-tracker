@@ -1,6 +1,7 @@
 """Federal Register collector: FDA advisory committee meeting notices (spec: Data sources)."""
 
 import json
+import re
 from collections.abc import Iterator
 from datetime import date
 from typing import Any
@@ -31,12 +32,18 @@ FIELDS = (
 
 
 def is_advisory_committee_meeting(document: dict[str, Any]) -> bool:
-    """Return True for FDA advisory committee meeting notices and their amendments, by title wording.
+    """Return True for FDA advisory committee meeting notices and the notices that change them.
 
-    An amendment ("Amendment of Notice") is the notice that moves or changes a meeting.
+    An amendment ("Amendment of Notice"), a cancellation, or a postponement moves or ends a
+    meeting, so the date check must see it (Claude review of PR #49).
     """
     title: str = document.get("title") or ""
-    return "Advisory Committee" in title and ("Notice of Meeting" in title or "Amendment of Notice" in title)
+    return "Advisory Committee" in title and _MEETING_TITLE.search(title) is not None
+
+
+_MEETING_TITLE = re.compile(
+    r"Notice of Meeting|Amendment of Notice|Cancell?ation|Postponement|Reschedul", re.I
+)
 
 
 def to_document(document: dict[str, Any]) -> FetchedDocument:

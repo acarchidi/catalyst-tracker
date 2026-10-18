@@ -5,8 +5,6 @@ and its quote is found again, character for character, at its place in the store
 else waits for review with every reason. A missing row never passes.
 """
 
-import importlib
-import importlib.util
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -16,9 +14,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+from catalyst.extract.agent import EXTRACTOR_PROMPT
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish.gate import (
     ADVISORY_CHECK,
+    MAY_NOT_APPLY,
     QUOTE_CHECK,
     REQUIRED_CHECKS,
     RULE_CHECKS,
@@ -27,10 +27,11 @@ from catalyst.publish.gate import (
     decide,
     match_quote,
     read_copy,
+    rule_check_names,
 )
 from catalyst.schemas import CheckOutcome, Claim, ClaimCheck, ClaimSubject, GateDecision
 from catalyst.snapshots import LocalSnapshotStore, snapshot_key
-from catalyst.verify import independent, second
+from catalyst.verify import advisory, independent, rules, second
 from catalyst.verify.rules import ClaimFacts, Outcome, rule_checks
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
@@ -51,8 +52,8 @@ def _claim(*, quote: str = SENTENCE, start: int = START, **changes: Any) -> Clai
         "quote_start": start,
         "quote_end": start + len(quote),
         "agent": "extractor",
-        "prompt_id": "extract_catalysts",
-        "prompt_version": "1.0.0",
+        "prompt_id": EXTRACTOR_PROMPT[0],
+        "prompt_version": EXTRACTOR_PROMPT[1],
         "provider": "anthropic",
         "model": "claude-sonnet-5-5",
         "extracted_at": NOW,
@@ -104,14 +105,25 @@ def test_every_check_the_publish_rule_names_is_required() -> None:
     assert QUOTE_CHECK not in REQUIRED_CHECKS  # the gate matches the quote itself, never from a row
 
 
-def test_the_advisory_check_name_matches_its_module_once_that_merges() -> None:
-    # PR #49 adds catalyst.verify.advisory with CHECK = "advisory_meeting_noticed". Until it is on
-    # main the gate names the check as a string. Once it merges, import CHECK in the gate and here.
-    if importlib.util.find_spec("catalyst.verify.advisory") is None:
-        assert ADVISORY_CHECK == "advisory_meeting_noticed"
-    else:
-        advisory: Any = importlib.import_module("catalyst.verify.advisory")
-        assert advisory.CHECK == ADVISORY_CHECK
+def test_the_advisory_check_is_the_one_its_module_stores() -> None:
+    assert ADVISORY_CHECK == advisory.CHECK == "advisory_meeting_noticed"
+
+
+def test_only_checks_about_a_possibly_absent_fact_may_not_apply() -> None:
+    assert {
+        "window_not_past",
+        "phase_matches_registry",
+        "pdufa_date_plausible",
+        "advisory_meeting_noticed",
+    } == MAY_NOT_APPLY
+    for name in ("extractor_checks", "has_window", "names_matched", second.CHECK, independent.CHECK):
+        assert name not in MAY_NOT_APPLY
+
+
+def test_two_rules_naming_one_check_are_refused() -> None:
+    with pytest.raises(RuntimeError, match="each rule must name its own check"):
+        rule_check_names((*rules.RULES, rules.RULES[0]))
+    assert rule_check_names(rules.RULES) == RULE_CHECKS
 
 
 # --- decide() ---
@@ -122,10 +134,50 @@ def test_every_check_passing_and_the_quote_found_publishes() -> None:
     assert decide(claim, _all_pass(claim), _quote_ok(claim)) == Decision(GateDecision.PUBLISH, ())
 
 
-def test_not_applicable_counts_as_passing() -> None:
+def test_not_applicable_passes_only_for_the_checks_that_may_not_apply() -> None:
+    claim = _claim()
+    rows = [
+        _row(claim, name, CheckOutcome.NOT_APPLICABLE, "does not apply")
+        if name in MAY_NOT_APPLY
+        else _row(claim, name)
+        for name in REQUIRED_CHECKS
+    ]
+    assert decide(claim, rows, _quote_ok(claim)).decision is GateDecision.PUBLISH
+
+
+def test_not_applicable_everywhere_never_publishes() -> None:
     claim = _claim()
     rows = [_row(claim, name, CheckOutcome.NOT_APPLICABLE, "does not apply") for name in REQUIRED_CHECKS]
-    assert decide(claim, rows, _quote_ok(claim)).decision is GateDecision.PUBLISH
+    decision = decide(claim, rows, _quote_ok(claim))
+    assert decision.decision is GateDecision.REVIEW
+    assert decision.reasons == tuple(
+        f"{name} must pass, but it did not apply" for name in REQUIRED_CHECKS if name not in MAY_NOT_APPLY
+    )
+
+
+def test_a_not_applicable_independent_source_goes_to_review() -> None:
+    claim = _claim()
+    rows = [r for r in _all_pass(claim) if r.check_name != independent.CHECK]
+    rows.append(_row(claim, independent.CHECK, CheckOutcome.NOT_APPLICABLE, "no other document"))
+    decision = decide(claim, rows, _quote_ok(claim))
+    assert decision.decision is GateDecision.REVIEW
+    assert decision.reasons == (f"{independent.CHECK} must pass, but it did not apply",)
+    assert [hold.label for hold in decision.holds] == [f"{independent.CHECK} failed"]
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [(EXTRACTOR_PROMPT[0], "0.9.0"), ("verify_catalysts", EXTRACTOR_PROMPT[1])],
+    ids=["an older version", "another prompt"],
+)
+def test_a_claim_from_any_prompt_but_the_current_extractor_goes_to_review(prompt: tuple[str, str]) -> None:
+    claim = _claim(prompt_id=prompt[0], prompt_version=prompt[1])
+    decision = decide(claim, _all_pass(claim), _quote_ok(claim))
+    assert decision.decision is GateDecision.REVIEW
+    current = "/".join(EXTRACTOR_PROMPT)
+    assert decision.reasons == (
+        f"the claim came from prompt {prompt[0]}/{prompt[1]}, not the current {current}",
+    )
 
 
 def test_one_failing_check_sends_the_claim_to_review_with_its_stored_reason() -> None:
@@ -260,15 +312,35 @@ def test_only_the_extractors_catalyst_claims_can_publish(changes: dict[str, Any]
     assert decision.reasons == ("only the extractor's catalyst claims can publish",)
 
 
-# --- Property: any single failing or missing required check means review ---
+# --- Property: any single failing, missing, or wrongly excused required check means review ---
+
+
+def _clean_outcomes() -> st.SearchStrategy[list[CheckOutcome]]:
+    """One outcome per required check that lets a claim publish: pass, or n/a where allowed."""
+    either = st.sampled_from([CheckOutcome.PASS, CheckOutcome.NOT_APPLICABLE])
+    parts = [either if name in MAY_NOT_APPLY else st.just(CheckOutcome.PASS) for name in REQUIRED_CHECKS]
+    return st.tuples(*parts).map(list)
 
 
 @given(
-    others=st.lists(
-        st.sampled_from([CheckOutcome.PASS, CheckOutcome.NOT_APPLICABLE]),
-        min_size=len(REQUIRED_CHECKS),
-        max_size=len(REQUIRED_CHECKS),
-    ),
+    others=_clean_outcomes(),
+    excused=st.sampled_from(sorted(set(REQUIRED_CHECKS) - MAY_NOT_APPLY)),
+)
+def test_not_applicable_from_any_check_that_must_pass_means_review(
+    others: list[CheckOutcome], excused: str
+) -> None:
+    claim = _claim()
+    rows = [
+        _row(claim, name, CheckOutcome.NOT_APPLICABLE if name == excused else outcome, "n/a")
+        for name, outcome in zip(REQUIRED_CHECKS, others, strict=True)
+    ]
+    decision = decide(claim, rows, _quote_ok(claim))
+    assert decision.decision is GateDecision.REVIEW
+    assert decision.reasons == (f"{excused} must pass, but it did not apply",)
+
+
+@given(
+    others=_clean_outcomes(),
     broken=st.sampled_from(REQUIRED_CHECKS),
     missing=st.booleans(),
     extra=st.lists(
@@ -290,13 +362,9 @@ def test_any_single_failing_or_missing_required_check_means_review(
 
 
 @given(
-    outcomes=st.lists(
-        st.sampled_from([CheckOutcome.PASS, CheckOutcome.NOT_APPLICABLE]),
-        min_size=len(REQUIRED_CHECKS),
-        max_size=len(REQUIRED_CHECKS),
-    ),
+    outcomes=_clean_outcomes(),
 )
-def test_publish_only_when_every_required_row_passed_or_did_not_apply(outcomes: list[CheckOutcome]) -> None:
+def test_publish_when_every_required_row_passed_or_may_not_apply(outcomes: list[CheckOutcome]) -> None:
     claim = _claim()
     rows = [
         _row(claim, name, outcome, "n/a") for name, outcome in zip(REQUIRED_CHECKS, outcomes, strict=True)
@@ -338,6 +406,15 @@ def test_read_copy_refuses_a_key_that_is_not_the_recorded_hash(tmp_path: Path) -
 def test_read_copy_names_a_malformed_key(tmp_path: Path) -> None:
     copy = read_copy(LocalSnapshotStore(tmp_path), snapshot_key("not-a-hash"), "not-a-hash", "text/html")
     assert copy == UnreadableCopy("the stored copy could not be read")
+
+
+def test_an_unreadable_copy_fails_the_quote_check() -> None:
+    result = match_quote(_claim(), UnreadableCopy("the stored copy could not be read"))
+    assert (result.check, result.outcome, result.reason) == (
+        QUOTE_CHECK,
+        Outcome.FAIL,
+        "the stored copy could not be read",
+    )
 
 
 def test_the_quote_check_names_its_check() -> None:

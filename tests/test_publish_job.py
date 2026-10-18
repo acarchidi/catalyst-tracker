@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
+from catalyst.extract.agent import EXTRACTOR_PROMPT
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish.gate import ADVISORY_CHECK, REQUIRED_CHECKS
 from catalyst.publish.run import decide_claims
@@ -74,6 +75,8 @@ def _claim(
     *,
     agent: str = "extractor",
     start: int | None = None,
+    field: str | None = None,
+    prompt_version: str = EXTRACTOR_PROMPT[1],
     **value: Any,
 ) -> UUID:
     text = document_text(RELEASE.replace(b"Acme", b"a"), "text/html")
@@ -86,14 +89,14 @@ def _claim(
     claim = Claim(
         source_document_id=document,
         subject_type=ClaimSubject.CATALYST,
-        field=f"catalyst:{agent}:{start}",
+        field=field or f"catalyst:{agent}:{start}",
         value=stored | value,
         quote=SENTENCE,
         quote_start=start,
         quote_end=start + len(SENTENCE),
         agent=agent,
-        prompt_id="extract_catalysts",
-        prompt_version="1.0.0",
+        prompt_id=EXTRACTOR_PROMPT[0],
+        prompt_version=prompt_version,
         provider="anthropic",
         model="claude-sonnet-5-5",
         extracted_at=NOW,
@@ -254,6 +257,30 @@ def test_only_extractor_claims_get_a_decision(
     _claim(session_factory, document, agent="verifier")
     decide_claims(session_factory, store, lambda: NOW)
     assert list(_decisions(session_factory)) == [claim]
+
+
+def test_an_extractor_claim_that_is_not_a_catalyst_gets_no_decision(
+    session_factory: sessionmaker[Session], store: _CountingStore
+) -> None:
+    document = _release(session_factory, store)
+    claim = _claim(session_factory, document)
+    _claim(session_factory, document, field="window", start=0)
+    assert decide_claims(session_factory, store, lambda: NOW).summary()["claims"] == 1
+    assert list(_decisions(session_factory)) == [claim]
+
+
+def test_a_claim_from_an_older_prompt_version_waits_for_review(
+    session_factory: sessionmaker[Session], store: _CountingStore
+) -> None:
+    claim = _claim(session_factory, _release(session_factory, store), prompt_version="0.9.0")
+    _checks(session_factory, claim)
+    report = decide_claims(session_factory, store, lambda: NOW)
+    current = "/".join(EXTRACTOR_PROMPT)
+    assert _decisions(session_factory)[claim][:2] == (
+        "review",
+        [f"the claim came from prompt {EXTRACTOR_PROMPT[0]}/0.9.0, not the current {current}"],
+    )
+    assert report.summary()["top_reasons"] == {"extractor_prompt failed": 1}
 
 
 def test_no_claims_is_an_empty_report(session_factory: sessionmaker[Session], store: _CountingStore) -> None:

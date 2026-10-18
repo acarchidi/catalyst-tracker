@@ -46,6 +46,7 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -111,9 +112,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
     _store_arguments(extract)
-    commands.add_parser(
+    verify_claims = commands.add_parser(
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
+    _store_arguments(verify_claims)
     decide = commands.add_parser(
         "decide-claims",
         help="Decide, from the stored checks and copies, which extracted claims may publish (free).",
@@ -287,6 +289,16 @@ def _extract(args: argparse.Namespace) -> int:
                 checks = run_checks(sessionmaker(engine), _utc_now).summary()
             except SQLAlchemyError as error:
                 checks = {"error": f"{type(error).__name__}: checks did not finish"}
+            else:
+                # Its own step, so a problem in it keeps the rule checks' summary (Opus review of PR #49).
+                try:
+                    checks["advisory"] = check_advisory_meetings(
+                        sessionmaker(engine), store, _utc_now
+                    ).summary()
+                except (SQLAlchemyError, ValueError, OSError) as error:
+                    checks["advisory"] = {
+                        "error": f"{type(error).__name__}: the advisory check did not finish"
+                    }
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -294,11 +306,7 @@ def _extract(args: argparse.Namespace) -> int:
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
-        # After every check, so each decision reads the latest outcomes; earlier steps stand if it fails.
-        try:
-            decisions: dict[str, Any] = decide_claims(sessionmaker(engine), store, _utc_now).summary()
-        except (SQLAlchemyError, ValueError) as error:
-            decisions = {"error": f"{type(error).__name__}: the publish decisions did not finish"}
+        decisions = _decide_after(sessionmaker(engine), store, checks)
     finally:
         engine.dispose()
     if args.out is not None:
@@ -316,6 +324,21 @@ def _extract(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def _decide_after(
+    session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
+) -> dict[str, Any]:
+    """Decide every claim after every check; earlier steps stand if this fails.
+
+    Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
+    """
+    if "error" in checks or "error" in checks.get("advisory", {}):
+        return {"skipped": "the checks did not finish, so nothing was decided"}
+    try:
+        return decide_claims(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
+
+
 def _resolve(_args: argparse.Namespace) -> int:
     try:
         database = settings.database_url()
@@ -331,18 +354,23 @@ def _resolve(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _verify_claims(_args: argparse.Namespace) -> int:
+def _verify_claims(args: argparse.Namespace) -> int:
     try:
         database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     engine = create_engine(database)
     try:
-        report = run_checks(sessionmaker(engine), _utc_now)
+        report = run_checks(sessionmaker(engine), _utc_now).summary()
+        try:
+            report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
     finally:
         engine.dispose()
-    print(json.dumps(report.summary(), indent=2))
+    print(json.dumps(report, indent=2))
     return 0
 
 
