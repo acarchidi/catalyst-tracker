@@ -6,8 +6,9 @@ rule checks pass, and a second source agrees or the source is a regulator or SEC
 with no stored row has not passed (ADR 0018). The quote is matched again here, against the
 stored copy, rather than read from a row (spec: Provenance).
 
-Left to later parts: `window_not_past` applies only before first publication (5b, with the
-catalyst writer); prompt-injection fixtures (5c).
+`window_not_past` applies only before first publication; `catalyst.publish.live` marks it not
+applicable for a claim about a live catalyst (5b). Left to a later part: prompt-injection
+fixtures (5c).
 """
 
 from __future__ import annotations
@@ -50,12 +51,17 @@ def rule_check_names(rules: Sequence[Callable[[ClaimFacts, date], CheckResult]])
 
 RULE_CHECKS: tuple[str, ...] = rule_check_names(RULES)
 ADVISORY_CHECK = advisory.CHECK
+# Written by `catalyst.publish.sanity` before the decisions, and again by the writer as it writes:
+# whether a claim can be placed without guessing (one event, a sane date change, a stated drug
+# role). Its own job writes a row for every claim, so a missing row means it has not run (5b).
+WRITER_CHECK = "safe_to_write"
 REQUIRED_CHECKS: tuple[str, ...] = (
     *RULE_CHECKS,
     second.CHECK,
     independent.CHECK,
     ADVISORY_CHECK,
     company.CHECK,  # the linked company is named in the source (part 3d)
+    WRITER_CHECK,  # the writer can place the claim without guessing (part 5b)
 )
 # The only checks that may answer "not applicable" and still let a claim publish: each one is
 # about a kind of claim or fact that may be absent (no window to be past, no stated phase or

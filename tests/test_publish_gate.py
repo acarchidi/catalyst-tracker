@@ -22,6 +22,7 @@ from catalyst.publish.gate import (
     QUOTE_CHECK,
     REQUIRED_CHECKS,
     RULE_CHECKS,
+    WRITER_CHECK,
     Decision,
     UnreadableCopy,
     decide,
@@ -104,7 +105,8 @@ def test_every_check_the_publish_rule_names_is_required() -> None:
     assert independent.CHECK in REQUIRED_CHECKS
     assert ADVISORY_CHECK in REQUIRED_CHECKS
     assert company.CHECK in REQUIRED_CHECKS
-    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 4
+    assert WRITER_CHECK in REQUIRED_CHECKS  # the writer's own check, from its own job (part 5b)
+    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 5
     assert QUOTE_CHECK not in REQUIRED_CHECKS  # the gate matches the quote itself, never from a row
 
 
