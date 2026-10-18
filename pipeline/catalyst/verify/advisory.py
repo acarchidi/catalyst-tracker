@@ -61,16 +61,13 @@ class AdvisoryClaim:
     window: tuple[date, date] | None
 
 
+# Metal salts ("sodium", "calcium") are left out: sodium oxybate and calcium oxybate are two products.
 _FORM_WORDS = frozenset(
     [
         "sulfate",
         "sulphate",
         "hydrochloride",
         "hcl",
-        "sodium",
-        "potassium",
-        "calcium",
-        "magnesium",
         "acetate",
         "citrate",
         "maleate",
@@ -157,6 +154,54 @@ def _inside(window: tuple[date, date], stored: StoredNotice) -> bool:
     return meeting is not None and window[0] <= meeting.value.start and meeting.value.end <= window[1]
 
 
+def _casts_doubt(
+    stored: StoredNotice,
+    newest: datetime,
+    matches: list[StoredNotice],
+    committees: set[str],
+    drug: str,
+    window: tuple[date, date],
+    same_drug: Callable[[str, str], bool],
+) -> bool:
+    """Say whether a notice published since the match could move or cancel the meeting.
+
+    It does when it names the drug, or when it is for the same committee and names no product (a
+    cancellation often does not), and does not itself put the meeting inside the window.
+    """
+    if stored.document.published_at < newest or any(stored is m for m in matches) or _inside(window, stored):
+        return False
+    if _names_drug(stored, drug, same_drug):
+        return True
+    committee = stored.notice.committee.value if stored.notice.committee else None
+    return not stored.notice.products and (committee is None or committee in committees)
+
+
+def _doubt(
+    found: NoticesInWindow,
+    matches: list[StoredNotice],
+    drug: str,
+    window: tuple[date, date],
+    same_drug: Callable[[str, str], bool],
+    other_company: Callable[[str], bool],
+) -> str | None:
+    """Return why a matched meeting is still in doubt, or None when nothing casts doubt on it."""
+    newest = max(s.document.published_at for s in matches)
+    committees = {m.notice.committee.value for m in matches if m.notice.committee}
+
+    def doubts(stored: StoredNotice) -> bool:
+        return _casts_doubt(stored, newest, matches, committees, drug, window, same_drug)
+
+    if any(doubts(s) for s in found.amendments):
+        return "a later amendment names this drug and does not put the meeting in this window"
+    if any(doubts(s) for s in found.undated):
+        return "a later notice for this meeting does not confirm it in this window"
+    if found.unreadable:
+        return f"{len(found.unreadable)} stored notice(s) could not be read, so a change may be missed"
+    if any(other_company(sponsor.value) for m in matches for sponsor in m.notice.sponsors):
+        return "the notice names another company as the sponsor"
+    return None
+
+
 def advisory_notice(
     claim: AdvisoryClaim,
     found: NoticesInWindow,
@@ -176,24 +221,8 @@ def advisory_notice(
     drug, window = claim.drug, claim.window
     matches = [s for s in found.matching if _inside(window, s) and _names_drug(s, drug, same_drug)]
     if matches:
-        newest = max(s.document.published_at for s in matches)
-        moved = [
-            s
-            for s in found.amendments
-            if s.document.published_at >= newest
-            and not any(s is m for m in matches)
-            and _names_drug(s, drug, same_drug)
-            and not _inside(window, s)
-        ]
-        if moved:
-            reason = "a later amendment names this drug and does not put the meeting in this window"
-            return CheckResult(CHECK, Outcome.FAIL, reason)
-        if found.unreadable:
-            reason = f"{len(found.unreadable)} stored notice(s) could not be read, so a change may be missed"
-            return CheckResult(CHECK, Outcome.FAIL, reason)
-        if any(other_company(sponsor.value) for m in matches for sponsor in m.notice.sponsors):
-            return CheckResult(CHECK, Outcome.FAIL, "the notice names another company as the sponsor")
-        return CheckResult(CHECK, Outcome.PASS)
+        reason = _doubt(found, matches, drug, window, same_drug, other_company)
+        return CheckResult(CHECK, Outcome.FAIL, reason) if reason else CheckResult(CHECK, Outcome.PASS)
     if any(_names_drug(s, drug, same_drug) for s in found.undated):
         return CheckResult(
             CHECK, Outcome.FAIL, "a notice names this drug, but its meeting date cannot be read"

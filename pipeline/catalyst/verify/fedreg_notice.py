@@ -346,7 +346,13 @@ _ABSTRACT_COMMITTEE = re.compile(
     r"meeting of the (?P<name>[A-Z][^()]*?(?:Committee|Panel)(?: \([A-Z]{2,10}\))?)"
     r"(?= \(the Committee\)|[.,]| \()"
 )
-_AMENDMENT = re.compile(r"\bamendment to the notice of meeting\b")
+_AMENDMENT = re.compile(
+    r"\bamendment to the notice of meeting\b"
+    r"|\b(?:is|are|has been|have been|was|were|will be)\s+(?:cancell?ed|postponed|rescheduled)\b",
+    re.IGNORECASE,
+)
+# A cancellation or postponement changes a meeting just as an amendment does (Claude review of PR #49).
+_CHANGE_TITLE = re.compile(r"Amendment of Notice|Cancell?ation|Postponement|Reschedul", re.IGNORECASE)
 
 
 def _committee(title: _Unit | None, sentences: list[_Unit]) -> Fact[str] | None:
@@ -368,7 +374,7 @@ def _topic(title: _Unit | None) -> Fact[str] | None:
 
 
 def _amendment(title: _Unit | None, sentences: list[_Unit]) -> Evidence | None:
-    if title is not None and "Amendment of Notice" in title.text:
+    if title is not None and _CHANGE_TITLE.search(title.text):
         return title.evidence
     return next((u.evidence for u in sentences if _AMENDMENT.search(u.text)), None)
 

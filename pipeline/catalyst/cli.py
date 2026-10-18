@@ -335,7 +335,10 @@ def _verify_claims(args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         report = run_checks(sessionmaker(engine), _utc_now).summary()
-        report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
+        try:
+            report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))

@@ -314,11 +314,50 @@ def test_a_same_day_amendment_counts_as_later() -> None:
     assert _outcome(_claim(), found)[0] is Outcome.FAIL
 
 
-def test_a_later_undated_notice_that_is_not_an_amendment_does_not_block() -> None:
+def test_a_later_notice_for_the_committee_without_a_date_blocks() -> None:
+    """A later notice that names the drug but confirms no date may be a cancellation (Claude review)."""
     plain = _atropine_notice(dates="", days_later=3)
-    assert plain.notice.amendment is None
     found = NoticesInWindow(matching=[_stored("2026-19700")], undated=[plain])
+    assert _outcome(_claim(), found) == (
+        Outcome.FAIL,
+        "a later notice for this meeting does not confirm it in this window",
+    )
+
+
+def test_a_cancellation_that_names_no_drug_blocks_the_committees_meeting() -> None:
+    cancelled = _atropine_notice(
+        title="Dermatologic and Ophthalmic Drugs Advisory Committee; Notice of Cancellation",
+        dates="The meeting of the Dermatologic and Ophthalmic Drugs Advisory Committee scheduled for "
+        "October 30, 2026, is cancelled.",
+        days_later=6,
+    )
+    assert cancelled.notice.amendment is not None
+    assert cancelled.notice.products == []
+    found = NoticesInWindow(matching=[_stored("2026-19700")], undated=[cancelled], amendments=[cancelled])
+    assert _outcome(_claim(), found)[0] is Outcome.FAIL
+
+
+def test_a_later_notice_of_the_committee_about_another_drug_does_not_block() -> None:
+    other = _atropine_notice(
+        title="Dermatologic and Ophthalmic Drugs Advisory Committee; Notice of Meeting; Request for "
+        "Comments-New Drug Application (NDA) 219999, for Ruxolitinib Cream, submitted by Example, Inc.",
+        dates="",
+        days_later=3,
+    )
+    assert [p.value for p in other.notice.products] == ["Ruxolitinib Cream"]
+    found = NoticesInWindow(matching=[_stored("2026-19700")], undated=[other])
     assert _outcome(_claim(), found)[0] is Outcome.PASS
+
+
+def test_a_salt_of_another_metal_is_another_product() -> None:
+    """Sodium oxybate and calcium oxybate are different products (Claude review of PR #49)."""
+    title = (
+        "Psychopharmacologic Drugs Advisory Committee; Notice of Meeting; Request for Comments-New Drug "
+        "Application (NDA) 212690, for Calcium Oxybate, submitted by Example, Inc."
+    )
+    stored = _atropine_notice(title=title)
+    assert _outcome(_claim(drug="Sodium Oxybate"), NoticesInWindow(matching=[stored]))[0] is Outcome.FAIL
+    assert _outcome(_claim(drug="oxybate"), NoticesInWindow(matching=[stored]))[0] is Outcome.FAIL
 
 
 @pytest.mark.parametrize(
