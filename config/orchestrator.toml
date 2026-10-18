@@ -1,0 +1,15 @@
+# Thresholds for the plain-code alert rules (ADR 0019, ADR 0023). Only the owner merges a change
+# to this file (OWNER_PATHS in scripts/merge_gate.py). The rules that use run history (a check's
+# failure rate against its 4-week median, the second reading's disagreement rate, the
+# planted-error catch rate) join this file with the orchestrator's controls.
+
+version = "2026-10-17.1"
+
+[alerts]
+# A job's open alert says plainly that the job keeps failing once it has failed this many runs
+# in a row (a clean run closes the alert and starts the count again).
+failed_runs_in_a_row = 2
+# A role whose spend today (New York time) reaches this share of its daily cap in
+# config/models.toml raises an alert. The model client stops a role a little before its cap,
+# so 1.0 would rarely fire.
+spend_share_of_cap = "0.9"
