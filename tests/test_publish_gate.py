@@ -32,7 +32,7 @@ from catalyst.publish.gate import (
 )
 from catalyst.schemas import CheckOutcome, Claim, ClaimCheck, ClaimSubject, GateDecision
 from catalyst.snapshots import LocalSnapshotStore, snapshot_key
-from catalyst.verify import advisory, company, drug, independent, rules, second
+from catalyst.verify import advisory, company, drug, event_type, independent, rules, second
 from catalyst.verify.rules import ClaimFacts, Outcome, rule_checks
 
 NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
@@ -99,15 +99,17 @@ def test_every_check_the_publish_rule_names_is_required() -> None:
     # Spec: quote match (here, by the gate itself), second extraction, rule checks, and a second
     # source or a regulator or SEC filing (the independent-source check). ADR 0018 part 3 adds
     # the Federal Register notice for an advisory meeting, part 3d the company named in the
-    # source document, and part 3e the drug named in or just before the quote.
+    # source document, part 3e the drug named in or just before the quote, and part 5d the type
+    # stated by the quote (CP4 review, O1).
     assert set(RULE_CHECKS) < set(REQUIRED_CHECKS)
     assert second.CHECK in REQUIRED_CHECKS
     assert independent.CHECK in REQUIRED_CHECKS
     assert ADVISORY_CHECK in REQUIRED_CHECKS
     assert company.CHECK in REQUIRED_CHECKS
     assert drug.CHECK in REQUIRED_CHECKS
+    assert event_type.CHECK in REQUIRED_CHECKS
     assert WRITER_CHECK in REQUIRED_CHECKS  # the writer's own check, from its own job (part 5b)
-    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 6
+    assert len(set(REQUIRED_CHECKS)) == len(REQUIRED_CHECKS) == len(RULE_CHECKS) + 7
     assert QUOTE_CHECK not in REQUIRED_CHECKS  # the gate matches the quote itself, never from a row
 
 
@@ -131,6 +133,7 @@ def test_only_checks_about_a_possibly_absent_fact_may_not_apply() -> None:
         second.CHECK,
         independent.CHECK,
         company.CHECK,
+        event_type.CHECK,  # every type has its words, so it always passes or fails (part 5d)
     ):
         assert name not in MAY_NOT_APPLY
 

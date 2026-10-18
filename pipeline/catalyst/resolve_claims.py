@@ -47,11 +47,17 @@ _log = logging.getLogger(__name__)
 _MATCH = TABLES[EntityMatch]
 _COMPANY_LINK = "source document"
 # A code name: letters, an optional dash or space, then digits, as in SPY001, VX-548, INS 1007.
-_CODE_NAME = re.compile(r"^(?P<prefix>[A-Z]{1,6})[\s\-\u2010-\u2015]?\d{2,6}[A-Z]?$")
-# Prefixes of things shaped like code names that are not drugs: diseases, targets, years, quarters.
+_CODE_NAME = re.compile(r"^(?P<prefix>[A-Z]{1,6})[\s\-\u2010-\u2015]?(?P<number>\d{2,6})[A-Z]?$")
+# Prefixes of things shaped like code names that are not drugs: diseases, targets, years, quarters;
+# medical congresses, agencies, and filings ("ASCO 2027", "FDA 2027"; CP4 round 2); and advice
+# words, which must never reach a title (spec: no buy or sell ratings).
 _NOT_DRUG_PREFIXES = frozenset(
     {"COVID", "SARS", "IL", "CD", "FY", "CY", "Q", "H", "NCT", "ICD", "GLP", "HER", "PD"}
+    | {"ASCO", "ESMO", "ASH", "AACR", "EASL", "AASLD", "FDA", "EMA", "PDUFA", "NDA", "BLA", "IND"}
+    | {"BUY", "SELL"}
 )
+# A number part that is a year (1900 to 2099) names a date or a meeting, not a drug (CP4 round 2).
+_YEAR = re.compile(r"^(?:19|20)\d{2}$")
 _NAME_CHARS = 300  # EntityMatch.name limit
 
 
@@ -113,9 +119,12 @@ def _company(links: list[tuple[UUID, str]]) -> Resolution:
 
 
 def _is_new_code_name(name: str, quote: str) -> bool:
-    """Say whether the name is a code name (not a disease, target, or year) quoted as a whole word."""
+    """Say whether the name is a code name quoted as a whole word.
+
+    Not a disease, target, congress, agency, filing, or advice word, and its number is not a year.
+    """
     shape = _CODE_NAME.match(name.strip())
-    if shape is None or shape.group("prefix") in _NOT_DRUG_PREFIXES:
+    if shape is None or shape.group("prefix") in _NOT_DRUG_PREFIXES or _YEAR.match(shape.group("number")):
         return False
     match = whole_word_pattern(name).search(quote)
     return match is not None and match.group(0).upper() == match.group(0)

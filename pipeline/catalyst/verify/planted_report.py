@@ -20,6 +20,7 @@ from catalyst.schemas import SourceTier
 from catalyst.verify.advisory import AdvisoryClaim, advisory_notice
 from catalyst.verify.company import company_named, known_companies
 from catalyst.verify.drug import drug_named, drug_names, other_drugs
+from catalyst.verify.event_type import type_named
 from catalyst.verify.fedreg_notice import NoticesInWindow, StoredNotices, notices_in
 from catalyst.verify.independent import Statement, address, independent_sources
 from catalyst.verify.planted import ERRORS, SEED, Corpus, Record, parts, plant, trial_links
@@ -180,6 +181,15 @@ def _drug_named(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[Ch
     return found
 
 
+def _type_named(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[CheckResult]]:
+    """Run `catalyst.verify.event_type`: the quote, or the lead-in of a table row, must state the type."""
+    text = corpus.texts[records[0].document]
+    return {
+        r.id: [type_named(text, r.quote, r.quote_start, r.quote_end, r.value["catalyst_type"])]
+        for r in records
+    }
+
+
 # Every check on main; a new check is one more line here.
 CHECKS: tuple[Check, ...] = (
     _rule_checks,
@@ -188,6 +198,7 @@ CHECKS: tuple[Check, ...] = (
     _advisory_meeting,
     _company_named,
     _drug_named,
+    _type_named,
 )
 
 
