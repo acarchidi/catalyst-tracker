@@ -10,6 +10,7 @@ from datetime import UTC, date, datetime
 from uuid import UUID
 
 import pytest
+from pydantic import JsonValue
 from sqlalchemy import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -41,6 +42,7 @@ from catalyst.schemas import (
 TODAY = date(2026, 10, 17)
 FIRST = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
 MOVED = datetime(2026, 9, 30, 12, 0, tzinfo=UTC)
+MOVED_AGAIN = datetime(2026, 10, 10, 12, 0, tzinfo=UTC)
 UNPUBLISHED_QUOTE = "UNPUBLISHED: this sentence is only in a claim nothing published points at"
 BACKED = [f for f in CatalystField if f is not CatalystField.DRUGS]
 
@@ -58,6 +60,12 @@ class Seed:
     unsourced: UUID  # OTH catalyst whose title has no claim; never shown
     resolved: UUID  # EXB, already resolved; not upcoming
     unpublished_claim: UUID
+
+
+def drugs_value(*links: tuple[UUID, DrugRole]) -> list[JsonValue]:
+    """Return a `drugs` change row's `new_value`: the links as `{drug_id, role}`, sorted (ADR 0025)."""
+    ordered = sorted((str(drug), role.value) for drug, role in links)
+    return [{"drug_id": drug, "role": role} for drug, role in ordered]
 
 
 def _add(session: Session, record: Entity) -> None:
@@ -189,6 +197,16 @@ def _slipped(session: Session, example: UUID, sec: UUID, wire: UUID, drug: UUID)
         )
     # The first claim's window rows still say 3Q26; the API must show the moved values' source.
     _add(session, CatalystDrug(catalyst_id=catalyst.id, drug_id=drug, role=DrugRole.ALONE, claim_id=first))
+    _add(
+        session,
+        CatalystChange(
+            catalyst_id=catalyst.id,
+            field=CatalystField.DRUGS,
+            new_value=drugs_value((drug, DrugRole.ALONE)),
+            claim_id=first,
+            learned_at=FIRST,
+        ),
+    )
     return catalyst.id
 
 

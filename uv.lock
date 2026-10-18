@@ -117,6 +117,7 @@ dependencies = [
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
     { name = "sqlalchemy" },
+    { name = "starlette" },
     { name = "uvicorn" },
 ]
 
@@ -145,6 +146,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.6" },
     { name = "pydantic", specifier = ">=2.14.1" },
     { name = "sqlalchemy", specifier = ">=2.1.4" },
+    { name = "starlette", specifier = ">=1.7.0,<2" },
     { name = "uvicorn", specifier = ">=0.54.0" },
 ]
 

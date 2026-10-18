@@ -120,6 +120,11 @@ async def _bad_query(_request: Request, error: Exception) -> JSONResponse:
     return _error(400, str(error))
 
 
+async def _server_error(_request: Request, _error_: Exception) -> JSONResponse:
+    # The server still logs the exception; the caller gets no detail beyond the notice.
+    return _error(500, "Internal server error.")
+
+
 def create_app(session_factory: sessionmaker[Session], today: Callable[[], date] = new_york_today) -> FastAPI:
     """Build the API over the read layer. Every route is GET; every response carries the notice."""
     app = FastAPI(
@@ -133,4 +138,5 @@ def create_app(session_factory: sessionmaker[Session], today: Callable[[], date]
     app.add_exception_handler(StarletteHTTPException, _http_error)
     app.add_exception_handler(RequestValidationError, _invalid)
     app.add_exception_handler(read.InvalidQueryError, _bad_query)
+    app.add_exception_handler(Exception, _server_error)
     return app
