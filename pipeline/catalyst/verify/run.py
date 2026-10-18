@@ -1,9 +1,9 @@
 """The check job: run every rule check on every extractor claim and keep the latest outcomes (ADR 0018).
 
 Plain code over stored rows: the claim, its source document's publication date, the entity
-resolver's matches, and the registry phases of matched trials. The independent-source check also
-reads every other document's extractor claims for the same company. Safe to re-run; each claim
-keeps one row per check, updated in place.
+resolver's matches, and the registry phases, numbers, and study names of matched trials. The
+independent-source check also reads every other document's extractor claims for the same company.
+Safe to re-run; each claim keeps one row per check, updated in place.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from catalyst.schemas import (
     TrialPhase,
 )
 from catalyst.verify.independent import Statement, independent_sources
-from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
+from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, TrialNames, rule_checks
 
 _log = logging.getLogger(__name__)
 _CHECK = TABLES[ClaimCheck]
@@ -69,6 +69,14 @@ def _phases(session: Session) -> dict[UUID, TrialPhase | None]:
     return {
         row.id: TrialPhase(row.phase) if row.phase else None
         for row in session.execute(select(trial.c.id, trial.c.phase))
+    }
+
+
+def _trial_names(session: Session) -> dict[UUID, TrialNames]:
+    trial = TABLES[Trial]
+    return {
+        row.id: TrialNames(row.nct_id, row.study_name)
+        for row in session.execute(select(trial.c.id, trial.c.nct_id, trial.c.study_name))
     }
 
 
@@ -151,7 +159,7 @@ def _statements(
 
 def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFacts]:
     claim, document = TABLES[Claim], TABLES[SourceDocument]
-    phases = _phases(session)
+    phases, names = _phases(session), _trial_names(session)
     query = (
         select(claim.c.id, claim.c.value, claim.c.quote, document.c.published_at)
         .join(document, document.c.id == claim.c.source_document_id)
@@ -166,6 +174,7 @@ def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFact
             published=row.published_at.astimezone(NEW_YORK).date(),
             matches=tuple(matches.get(row.id, [])),
             trial_phases=phases,
+            trial_names=names,
         )
         for row in session.execute(query)
     ]

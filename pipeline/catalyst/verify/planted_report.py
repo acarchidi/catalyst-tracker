@@ -18,7 +18,8 @@ from catalyst.resolve import Status
 from catalyst.resolve_claims import known_drug
 from catalyst.schemas import SourceTier
 from catalyst.verify.advisory import AdvisoryClaim, advisory_notice
-from catalyst.verify.fedreg_notice import StoredNotices, notices_in
+from catalyst.verify.company import company_named, known_companies
+from catalyst.verify.fedreg_notice import NoticesInWindow, StoredNotices, notices_in
 from catalyst.verify.independent import Statement, address, independent_sources
 from catalyst.verify.planted import ERRORS, SEED, Corpus, Record, parts, plant, trial_links
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, rule_checks
@@ -49,7 +50,16 @@ def _rule_checks(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[C
     """Run the rule checks (`catalyst.verify.rules`) as of the day the release came out."""
     return {
         r.id: rule_checks(
-            ClaimFacts(r.id, r.value, r.quote, r.published, _matches(r, corpus), corpus.phases), r.published
+            ClaimFacts(
+                r.id,
+                r.value,
+                r.quote,
+                r.published,
+                _matches(r, corpus),
+                corpus.phases,
+                trial_names=corpus.registry,
+            ),
+            r.published,
         )
         for r in records
     }
@@ -130,14 +140,32 @@ def _advisory_meeting(records: Sequence[Record], corpus: Corpus) -> dict[UUID, l
     found: dict[UUID, list[CheckResult]] = {}
     for r in records:
         v = r.value
-        window = (date.fromisoformat(v["window_start"]), date.fromisoformat(v["window_end"]))
+        window = (
+            (date.fromisoformat(v["window_start"]), date.fromisoformat(v["window_end"]))
+            if v["window_start"] and v["window_end"]
+            else None
+        )
         claim = AdvisoryClaim(catalyst_type=v["catalyst_type"], drug=v["drug"], window=window)
-        found[r.id] = [advisory_notice(claim, notices_in(StoredNotices(), *window), same)]
+        stored = notices_in(StoredNotices(), *window) if window else NoticesInWindow()
+        found[r.id] = [advisory_notice(claim, stored, same)]
     return found
 
 
+def _company_named(records: Sequence[Record], corpus: Corpus) -> dict[UUID, list[CheckResult]]:
+    """Run `catalyst.verify.company`: the release must name the company the claim is linked to."""
+    known = known_companies(corpus.company_refs)
+    text = corpus.texts[records[0].document]
+    return {r.id: [company_named(text, known[r.company_id])] for r in records}
+
+
 # Every check on main; a new check is one more line here.
-CHECKS: tuple[Check, ...] = (_rule_checks, _second_reading, _independent_source, _advisory_meeting)
+CHECKS: tuple[Check, ...] = (
+    _rule_checks,
+    _second_reading,
+    _independent_source,
+    _advisory_meeting,
+    _company_named,
+)
 
 
 @dataclass(frozen=True)

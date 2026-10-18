@@ -219,7 +219,8 @@ def recording_trials(
         yield fetched
 
 
-def _companies(session: Session) -> list[CompanyRef]:
+def company_refs(session: Session) -> list[CompanyRef]:
+    """Read every company with its current and former names and its dated tickers."""
     names: defaultdict[UUID, list[str]] = defaultdict(list)
     for row in session.execute(select(_COMPANY_NAME.c.company_id, _COMPANY_NAME.c.name)):
         names[row.company_id].append(row.name)
@@ -272,6 +273,8 @@ def _trials(session: Session) -> list[TrialRef]:
 
 def load_reference_data(session: Session) -> ReferenceData:
     """Read every company, drug, and trial the resolver can match against."""
-    references = ReferenceData(companies=_companies(session), drugs=_drugs(session), trials=_trials(session))
+    references = ReferenceData(
+        companies=company_refs(session), drugs=_drugs(session), trials=_trials(session)
+    )
     log_event(_log, "references_loaded")
     return references

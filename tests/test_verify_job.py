@@ -5,7 +5,7 @@ from typing import Any
 from uuid import UUID
 
 import pytest
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -18,6 +18,7 @@ from catalyst.schemas import (
     ClaimCheck,
     ClaimSubject,
     DocumentMatch,
+    EntityMatch,
     SourceDocument,
     SourceTier,
     Trial,
@@ -112,6 +113,7 @@ def test_every_check_is_stored_for_a_claim(
     outcomes = _outcomes(session_factory)
     assert {name for name, (outcome, _) in outcomes.items() if outcome == "fail"} == set()
     assert outcomes["phase_matches_registry"][0] == "pass"
+    assert outcomes["trial_named_in_quote"][0] == "pass"
     assert (report.claims, report.claims_passing) == (1, 1)
 
 
@@ -154,6 +156,26 @@ def test_a_claim_whose_names_were_never_matched_fails_that_check(
     _claim(session_factory, release["document"], "Topline data are expected in Q4 2026.")
     run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
     assert _outcomes(session_factory)["names_matched"][0] == "fail"
+
+
+def test_a_trial_match_swapped_for_another_of_the_companys_trials_is_caught(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    """The planted-error test's "wrong trial": the match names a trial the quote does not."""
+    _claim(session_factory, release["document"], "AZURE-1 topline data are expected in Q4 2026.")
+    resolve_claims(session_factory, lambda: _now(date(2026, 10, 17)))
+    with session_factory.begin() as session:
+        record_trial(session, Trial(nct_id="NCT06444444", study_name="AZURE-4", phase=TrialPhase.PHASE_2))
+        trial = TABLES[Trial]
+        other = session.execute(select(trial.c.id).where(trial.c.nct_id == "NCT06444444")).scalar_one()
+        match = TABLES[EntityMatch]
+        session.execute(update(match).where(match.c.entity_type == "trial").values(matched_id=other))
+    report = run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    assert _outcomes(session_factory)["trial_named_in_quote"] == (
+        "fail",
+        "the quote does not name the matched trial NCT06444444 (AZURE-4)",
+    )
+    assert report.claims_passing == 0
 
 
 def test_a_failed_check_must_say_why(

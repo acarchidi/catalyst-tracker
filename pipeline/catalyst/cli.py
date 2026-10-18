@@ -51,6 +51,7 @@ from catalyst.snapshots import (
     verify_snapshots,
 )
 from catalyst.verify.advisory import check_advisory_meetings
+from catalyst.verify.company import check_company_named
 from catalyst.verify.planted import load_corpus
 from catalyst.verify.planted_report import render_report
 from catalyst.verify.planted_report import run as run_planted
@@ -344,6 +345,10 @@ def _extract(args: argparse.Namespace) -> int:
                     checks["advisory"] = {
                         "error": f"{type(error).__name__}: the advisory check did not finish"
                     }
+                try:
+                    checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
+                except (SQLAlchemyError, ValueError, OSError) as error:
+                    checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
@@ -413,6 +418,10 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
+        try:
+            report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
     finally:
         engine.dispose()
     print(json.dumps(report, indent=2))

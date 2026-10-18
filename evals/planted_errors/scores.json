@@ -4,6 +4,7 @@
   "registry_sha256": "a0312eaa1f7648506c62f09ec4ee1c79d912e785d69572ac7d00da4ff0c3a7d8",
   "checks": [
     "advisory_meeting_noticed",
+    "company_named_in_source",
     "date_words_in_quote",
     "extractor_checks",
     "has_window",
@@ -12,6 +13,7 @@
     "pdufa_date_plausible",
     "phase_matches_registry",
     "second_reading_agrees",
+    "trial_named_in_quote",
     "window_matches_words",
     "window_not_past"
   ],
@@ -67,17 +69,17 @@
     },
     "wrong_company": {
       "planted": 153,
-      "caught": 72,
-      "caught_by_rules": 72,
+      "caught": 153,
+      "caught_by_rules": 153,
       "corrected": 0,
-      "missed": 81
+      "missed": 0
     },
     "wrong_trial": {
       "planted": 383,
-      "caught": 128,
-      "caught_by_rules": 128,
+      "caught": 383,
+      "caught_by_rules": 383,
       "corrected": 0,
-      "missed": 255
+      "missed": 0
     },
     "wrong_phase": {
       "planted": 128,

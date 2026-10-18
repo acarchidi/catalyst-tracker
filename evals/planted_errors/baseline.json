@@ -7,8 +7,8 @@
     "drug_in_release": 1.0,
     "drug_elsewhere": 1.0,
     "wrong_type": 1.0,
-    "wrong_company": 0.471,
-    "wrong_trial": 0.334,
+    "wrong_company": 1.0,
+    "wrong_trial": 1.0,
     "wrong_phase": 1.0,
     "quote_swap": 1.0,
     "quote_same_date": 0.0
@@ -21,8 +21,8 @@
     "drug_in_release": 0.0,
     "drug_elsewhere": 0.227,
     "wrong_type": 0.077,
-    "wrong_company": 0.471,
-    "wrong_trial": 0.334,
+    "wrong_company": 1.0,
+    "wrong_trial": 1.0,
     "wrong_phase": 1.0,
     "quote_swap": 1.0,
     "quote_same_date": 0.0
