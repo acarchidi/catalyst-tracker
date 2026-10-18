@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "extract (newest press releases) or evaluate (score on the gold set)"
+        description: "extract (newest press releases), evaluate (score on the gold set), or export (published and held catalysts to JSON)"
         type: choice
         options: [extract, evaluate, export]
         default: extract
@@ -49,7 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
     # the long step has its own, lower limit: a step that times out fails, and the alert says so.
-    timeout-minutes: 60
+    # Step limits add up to 10 + 45 + 5 = 60, under the job's 70 with setup.
+    timeout-minutes: 70
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
     steps:
@@ -127,11 +128,13 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          MIGRATE: ${{ steps.migrate.outcome }}
           OUTCOME: ${{ steps.extract.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
-          { echo "## Alerts"; uv run catalyst alerts --run "extract-catalysts:$OUTCOME:$RUNNER_TEMP/summary.json" \
+          { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
+            --run "extract-catalysts:$OUTCOME:$RUNNER_TEMP/summary.json" \
             --spend --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
           delimiter="plan_$(openssl rand -hex 16)"
           { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"

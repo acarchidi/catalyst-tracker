@@ -36,8 +36,12 @@ jobs:
   collect:
     name: Collect
     runs-on: ubuntu-latest
-    # Each step has its own limit, under the job's: a step that times out fails and says so.
-    timeout-minutes: 180
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # each step has its own limit (10 + 160 + 5 = 175, under 190 with setup): a step that times
+    # out fails, and the alert says so (ADR 0023).
+    timeout-minutes: 190
+    outputs:
+      alerts: ${{ steps.alerts.outputs.plan }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -47,6 +51,7 @@ jobs:
         run: uv sync --locked
 
       - name: Bring the live database up to date
+        id: migrate
         timeout-minutes: 10
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -54,6 +59,7 @@ jobs:
         run: uv run alembic upgrade head
 
       - name: Collect
+        id: collect
         timeout-minutes: 160
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -82,3 +88,46 @@ jobs:
           { echo "## Collection"; echo '```json'; cat "$RUNNER_TEMP/collect.json"; echo '```'; } \
             | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
+
+      # Free: no model call. Runs even when a step failed, so the failure is reported.
+      - name: Build alerts from this run
+        id: alerts
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          MIGRATE: ${{ steps.migrate.outcome }}
+          COLLECT: ${{ steps.collect.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
+            --run "collect:$COLLECT:$RUNNER_TEMP/collect.json" \
+            --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  post-alerts:
+    name: Post alerts
+    needs: collect
+    if: ${{ !cancelled() && needs.collect.outputs.alerts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open, update, or close alert issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.collect.outputs.alerts }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/alerts.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/alerts.json"
