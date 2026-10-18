@@ -357,3 +357,23 @@ def test_a_quarter_range_covers_both_quarters_in_order(
     assert window.start == date(first[0], 3 * first[1] - 2, 1)
     assert window.end == QUARTER_ENDS[second[1]].replace(year=second[0])
     assert window.precision is DatePrecision.QUARTER
+
+
+def _digits(text: str, zero: int) -> str:
+    """Write the ASCII digits of `text` with the digits of the script whose zero is `zero`."""
+    return "".join(chr(zero + int(c)) if c.isdigit() else c for c in text)
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "August 2" + _digits("4", 0x09E6) + ", 2027",
+        "Q" + _digits("4", 0x0660) + " 2026",
+        _digits("2027", 0xFF10),
+        "second half of " + _digits("2027", 0x0966),
+    ],
+    ids=["Bengali four", "Arabic-Indic four", "fullwidth year", "Devanagari year"],
+)
+def test_digits_from_other_scripts_name_no_window(phrase: str) -> None:
+    """A reader may see "28" where code reads another digit; only ASCII digits count (CP4, B3)."""
+    assert parse_window(phrase, date(2026, 10, 14)) is None

@@ -30,7 +30,7 @@
     "consistent_wrong_date": {
       "planted": 11,
       "caught": 11,
-      "caught_by_rules": 1,
+      "caught_by_rules": 10,
       "corrected": 11,
       "missed": 0
     },

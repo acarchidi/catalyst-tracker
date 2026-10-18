@@ -98,6 +98,81 @@ def test_date_words_missing_from_the_quote_fail_even_if_the_extractor_saw_no_pro
     assert (outcome, reason) == (Outcome.FAIL, "the date words 'Q4 2026' are not in the quote")
 
 
+CUT_SHORT = [
+    ("Topline data are expected in the second half of 2027.", "second half"),
+    ("The PDUFA date is December 1, 2027.", "December 1"),
+    ("Enrollment completes by year-end 2027.", "year-end"),
+    ("Data are due in Q4 '27.", "Q4"),
+    ("Topline data are expected in the second half of next year.", "second half"),
+    ("Results at a medical meeting held November 16 to December 2, 2027.", "November 16"),
+    ("Data are expected in late 2026 or early 2027.", "late 2026"),
+    ("Data are expected by the end of 2027.", "2027"),
+    ("Data are expected in the fourth quarter of fiscal 2027.", "fourth quarter"),
+    ("Data are expected in fiscal 2027.", "2027"),
+    ("Acme will host investor meetings December 1-15, 2026.", "December 1"),
+    ("Data are expected in Q4 2026-Q1 2027.", "Q4 2026"),
+    ("Data are expected in Q4 2026-Q1 2027.", "Q1 2027"),
+    ("Data are expected in mid-2027.", "2027"),
+    (
+        "Data are expected in the second half of 2027, after enrollment closes in the second half.",
+        "second half",
+    ),
+]
+
+
+@pytest.mark.parametrize(("quote", "date_text"), CUT_SHORT, ids=[f"{w} in {q[:30]}" for q, w in CUT_SHORT])
+def test_date_words_cut_from_a_longer_date_fail(quote: str, date_text: str) -> None:
+    """Words cut from a longer date read as another window: "second half" of "second half of 2027" (CP4, B2).
+
+    Every place the words appear counts: one cut place is enough to hold the claim.
+    """
+    outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
+    assert outcome is Outcome.FAIL
+    assert reason is not None
+    assert reason.startswith(f"the date words '{date_text}' ")
+
+
+NEGATED = [
+    (
+        "Topline data are no longer expected in the second half of 2027; Acme now expects them in 2028.",
+        "second half of 2027",
+    ),
+    ("Topline data are not expected in Q4 2026.", "Q4 2026"),
+    ("Topline data, previously expected in Q4 2026, are now expected in 2027.", "Q4 2026"),
+    ("The readout, no longer expected in Q4 2026, moves to 2027.", "Q4 2026"),
+    ("The readout was delayed from Q4 2026 to 2027.", "Q4 2026"),
+    ("Topline data are now expected after the second half of 2027.", "second half of 2027"),
+    ("Topline data will slip beyond the second half of 2027.", "second half of 2027"),
+    ("The decision is expected no earlier than Q2 2027.", "Q2 2027"),
+    ("The decision will come later than Q2 2027.", "Q2 2027"),
+]
+
+
+@pytest.mark.parametrize(("quote", "date_text"), NEGATED, ids=[w + ": " + q[:30] for q, w in NEGATED])
+def test_date_words_the_quote_takes_back_fail(quote: str, date_text: str) -> None:
+    """A date the quote says no longer holds is not the event's date (CP4, O6)."""
+    outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
+    assert outcome is Outcome.FAIL
+    assert reason is not None
+    assert "no longer hold" in reason
+
+
+WHOLE = [
+    ("Phase 3 AZURE-1 topline data expected in Q4 2026.", "Q4 2026"),
+    ("Topline data are expected in the fourth quarter of 2026.", "fourth quarter of 2026"),
+    ("Announce topline Phase 3 data year-end 2026/first quarter 2027", "year-end 2026/first quarter 2027"),
+    ("The meeting runs November 16-19, 2026 in Boston.", "November 16-19, 2026"),
+    ("Data are expected by the end of 2027.", "by the end of 2027"),
+    ("Data for SPY001 in Q4 2026 and for SPY072 in Q1 2027.", "Q4 2026"),
+    ("We expect data no later than Q4 2026.", "Q4 2026"),
+]
+
+
+@pytest.mark.parametrize(("quote", "date_text"), WHOLE, ids=[w for _, w in WHOLE])
+def test_whole_date_words_pass(quote: str, date_text: str) -> None:
+    assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
+
+
 def test_date_words_that_name_no_window_fail() -> None:
     facts = _facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon")
     outcome, reason = _outcomes(facts)["window_matches_words"]

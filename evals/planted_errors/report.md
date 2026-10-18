@@ -5,7 +5,7 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 | Error planted | Planted | Caught | Caught without the second reading | Corrected (best case) | Missed |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | Wrong quarter, half, month, or year (date words left as they were) | 48 | 48 | 48 | 48 | 0 |
-| Another date from the same quote, stored consistently | 11 | 11 | 1 | 11 | 0 |
+| Another date from the same quote, stored consistently | 11 | 11 | 10 | 11 | 0 |
 | Date moved into the past | 17 | 17 | 17 | 17 | 0 |
 | FDA decision date outside its review window | 1 | 1 | 1 | 1 | 0 |
 | Wrong drug (another in the same release) | 29 | 29 | 22 | 29 | 0 |
@@ -16,7 +16,7 @@ We took the 20 hand-checked catalysts in the gold set, made copies with one real
 | Wrong phase (registry phase contradicts the quote) | 128 | 128 | 128 | 0 | 0 |
 | Quote from an unrelated sentence | 17 | 17 | 17 | 0 | 0 |
 | Quote from another event with the same date words | 5 | 4 | 4 | 0 | 1 |
-| **All errors** | **1163** | **1162** | **1139** | **477** | **1** |
+| **All errors** | **1163** | **1162** | **1148** | **477** | **1** |
 
 - **Caught**: at least one check failed the copy, so it goes to the review queue, not the site.
 - **Caught without the second reading**: a rule check failed it too.
