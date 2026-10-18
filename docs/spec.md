@@ -48,6 +48,7 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Price-impact statistics | Base rates by catalyst type | Per event, per company, filterable |
 | Cash runway and dilution flags | No | Yes |
 | Research assistant | 3 questions a day | 50 a day (fair-use cap) |
+| Research reports (Phase 11) | Summary page with one headline figure and every source | Full reports (or sold one at a time; owner decides; ADR 0032) |
 | Export | Calendar (.ics) | Calendar and CSV |
 | MCP access for AI agents | Calendar tools, rate-limited | All tools, higher limits |
 
