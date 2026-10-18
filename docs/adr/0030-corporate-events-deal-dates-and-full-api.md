@@ -1,0 +1,102 @@
+# 0030 — Corporate events, safety events, read-through to competitors, deal dates, growth blockers, past catalysts with their price moves, and the full API
+
+- **Status:** accepted (planned; nothing is built now)
+- **Date:** 2026-10-18
+- **Roadmap items:** Phase 10, all items
+
+## Context
+
+On 2026-10-18 the owner asked for five things:
+1. A view of past catalysts with their actual effect on the share price.
+2. An API that offers all of the data.
+3. In the history of events: departures and arrivals of top executives, major fundraises, and collaboration or deal announcements.
+4. On the upcoming schedule: future merger, deal, and collaboration dates.
+5. All of it added to the end of the roadmap.
+
+Later the same day the owner added a sixth: track what management says is holding back revenue or earnings growth, and how and when it will be fixed. Examples are adding manufacturing capacity to meet demand for a drug on the market or about to be approved, entering new countries, new payment arrangements with insurers, and licensing production to outside manufacturers. Any statement that names a blocker and gives a rough timeline for fixing it should be tracked.
+
+The owner then added a seventh: record in each company's history any company-specific or industry event that would move its share price. One example is reports of side effects or deaths that pause or stop a trial. And when one company's trial news makes the market sell its competitors' shares, record that event in the competitors' histories too.
+
+**What the spec already has:**
+- Historical outcomes: free sees the last 90 days, paid sees the full archive. The outcome agent is a Phase 1 item.
+- Price-impact statistics per event, per company, and as base rates (Phase 3), measured against the XBI biotech index.
+- One API under everything: the web app, the MCP server, and the research assistant all use it. A public REST API tier at about $50 a month is listed under "Later (unscheduled)".
+- Catalyst types that include offerings and shelf filings, and M&A, but not executive changes or the dates inside a deal.
+
+**What the filings give:**
+- Companies must report a departure or appointment of a principal executive, financial, accounting, or operating officer, or of a director, on Form 8-K Item 5.02. They must also report a material definitive agreement on Item 1.01, and an unregistered sale of shares on Item 3.02. Most 8-K items are due within four business days ([SEC Form 8-K](https://www.sec.gov/files/form8-k.pdf)).
+- Foreign companies listed in the US report such events on Form 6-K (ADR 0021).
+- Registered offerings appear as 424B prospectuses. Private placements appear on 8-K Item 3.02 and in releases.
+- Merger dates appear in the merger agreement, the proxy (DEFM14A) with its shareholder meeting date, a tender offer's Schedule TO with its expiration date, and releases about antitrust waiting periods. Each of these is an SEC filing or a company release.
+
+## Decision
+
+1. **Past catalysts page.** The spec's outcome archive and per-event price statistics become one view: each resolved catalyst with its outcome, its source, and its measured move.
+   - **The move:** abnormal return on day 0, day +1, and day +5 against XBI, the 30-day run-up before it, and volume against its 20-day average.
+   - **Same rules as the spec:** day 0 follows the release time; only event-window statistics are shown, never a price series; free sees 90 days.
+   - It is built when the price license is in place (Phase 3) and needs no new data beyond the outcome agent.
+2. **New event types, recorded in history and kept up to date:**
+   - **Executive changes:** CEO, CFO, chief medical officer, chief scientific officer, chief operating officer, president, and board chair. Each one is an arrival, a departure, or a planned departure with its effective date. The source is 8-K Item 5.02 (or a 6-K) and the release. The reason is shown only when the filing states one.
+   - **Major financings:** registered offerings, private placements (PIPEs), registered directs, at-the-market programmes (their size and what was sold), convertible and other debt, and royalty or synthetic-royalty deals. "Major" means at least 10% of market value, or at least $50 million where market value is not yet licensed. Both thresholds are set in config. The amount and price come from the filing.
+   - **Collaborations and deals:** licences, co-development and co-commercialisation deals, options, and asset sales. Each has its partners, upfront payment, milestone total, royalty terms as disclosed, and whether a payment is contingent. Collaborators are linked to their records (ADR 0028). Undisclosed terms are shown as "terms not disclosed".
+   - **Upcoming deal dates as catalysts:** a merger's expected closing window, the shareholder vote date, the tender offer's expiration date, the antitrust waiting period's end, and the outside date in the agreement. A collaboration also gets its expected effective date and any option-exercise deadline the filing states.
+   - These are not trial or regulatory catalysts, so they appear in their own section and filter ("Corporate events"). They also feed the price statistics as their own event types.
+   - **Both readers learn the new types** under new prompt versions, with gold-set entries for each type. Both are scored again before any of these publishes (checkpoint CP13).
+   - **Back-fill:** history is filled for covered companies from their past filings, at the 10-requests-per-second EDGAR limit, inside the daily model caps. It never raises a live role's cap: it gets its own daily cap, set by the owner in `config/models.toml`, or a narrower scope. At today's caps a full back-fill of long 10-K and 10-Q text would take months, so the owner chooses between a cap and a scope when this phase starts.
+3. **Growth blockers and their fixes ("commercial milestones").**
+   - **What is recorded:** a statement by the company that names something limiting revenue or earnings growth, together with the step that fixes it and a timeline. Each record has:
+     - the blocker, for example "supply constrained" or "no reimbursement in Germany";
+     - the fix: new or expanded manufacturing capacity, a second supplier or contract manufacturer, a licence to an outside manufacturer, launch in a new country or region, a pricing or reimbursement decision, a payer contract or new payment scheme (for example outcomes-based or instalment pricing), a label or formulation change, or a sales-force expansion;
+     - the drug or device it affects;
+     - the timeline, read by the same date parser as every catalyst ("capacity online in 2H27");
+     - the quote, and the label "company expectation".
+   - **Sources:** only the company's own materials: releases, 8-K and 6-K exhibits (including investor presentations filed as exhibits), 10-K and 10-Q text (risk factors and management's discussion), and presentations and call transcripts that the company itself posts on its own website. Transcripts sold by vendors are not used unless their licence allows it. Each source's terms are checked first.
+   - **Tracking over time:** every later statement about the same blocker is a change in its history: on track, moved, done, or dropped. A timeline that slips is shown and can be alerted on, like any slipped catalyst. A blocker the company stops mentioning is marked "no update since" with the date of the last mention, never "fixed".
+   - **What is never added:** our own view of whether the fix will work, or a guess at a timeline the company did not give. A blocker with no timeline is recorded with "no timeline given" and does not appear on the calendar.
+   - These appear on the calendar under their own type, "Commercial milestones", and in the "Corporate events" section's filters. Both readers learn them under CP13 with the other new types.
+4. **Safety events and read-through to competitors.**
+   - **Safety and trial-halt events**, recorded in the company's history and on its trials. These include:
+     - a clinical hold, partial hold, or lifted hold;
+     - a trial paused, stopped early, or ended, with the reason as stated (safety, futility, efficacy, business);
+     - a data monitoring committee's recommendation;
+     - patient deaths or serious side effects the company reports;
+     - a new boxed warning, a safety label change, a recall, or an FDA safety communication;
+     - a market withdrawal.
+   - **Sources:**
+     - the company's releases and filings;
+     - ClinicalTrials.gov status changes ("Suspended", "Terminated", "Withdrawn") with the registry's stated reason;
+     - FDA safety communications, label changes, and recalls (openFDA, already a source).
+   - **News reports are leads only** (spec: Source ranking). A news story about deaths starts a search for the company's or regulator's own statement. Until one exists, nothing is recorded.
+   - **Adverse-event report counts** from FDA's reporting system (openFDA) are shown only as context, labeled "unverified reports; a report does not show the drug caused the event". They are never a catalyst.
+   - **Read-through to competitors:** when a company's event lands, each competitor's history gets a "peer event" entry if it meets two conditions:
+     - **It is a competitor:** it shares the indication, or the drug target or mechanism, according to our reference tables. The match is shown.
+     - **The market moved it:** its abnormal return against XBI on day 0 or day +1 is beyond a threshold set in config. The starting threshold is twice that stock's own typical daily abnormal move over the past 60 trading days.
+   - **What a peer entry records:** the original event with its source, the competitor's measured move, and the label "same-day move; the cause is not established". We record that the shares moved when the event landed. We never claim the event caused the move.
+   - A competitor that did not move gets no entry. The original event's page lists every competitor that did, with its move.
+   - **Price data:** peer entries need the price license (Phase 3). Without it, safety events are still recorded, but peer entries are not.
+   - Safety events also count as their own event type in the price statistics and base rates.
+5. **The full API.** The public REST API tier moves from "Later" into this phase.
+   - It offers every published dataset: catalysts, history, outcomes, corporate events, deal dates, trials, collaborators, benchmarks, market size, scenarios, price statistics, runway, insider purchases (Phase 7), and devices (Phase 8).
+   - Each one comes with its sources, as on the site.
+   - It keeps the spec's design: OpenAPI, versioned paths, cursor paging, ETags, and rate limits by tier.
+   - Access needs an API key per account, rate limits by plan, and usage metering. Bulk export is at most a daily file of changes, never a price series.
+   - It extends the read API of ADR 0025, and keeps its test that no field is a price or return series. Price-derived fields (event-window statistics, market value, scenario ranges) and the bulk file carry them only after the price vendor confirms in writing that this use is allowed, as for reports (ADR 0032).
+   - **Price:** the spec's "about $50 a month" stands until the owner decides otherwise. Whether the API tier and ADR 0029's possible higher tier are one plan is decided together.
+6. **Every rule stays the same.**
+   - Every value has a source document and a verbatim quote.
+   - The readers have no tools.
+   - Only the publish gate writes live data.
+   - No advice: an executive departure or a growth blocker is shown as a fact the company stated, never as a signal.
+
+## Alternatives
+
+- **Buy corporate events from a data vendor.** Rejected for now. It costs money every month, and the 8-K items give the same events with a primary source we can link.
+- **Mix corporate events into the main catalyst calendar.** Rejected as the default. Trial and FDA dates are the core product, and a busy week of executive news would bury them. Users can turn the section on in their calendar and watchlists.
+- **Leave the API under "Later".** Rejected, because the owner asked for it.
+
+## Consequences
+
+- Coverage of SEC forms grows: 8-K Items 1.01, 3.02, and 5.02; 424B prospectuses; DEFM14A; Schedule TO; and the risk-factor and management-discussion text of 10-K and 10-Q filings. Company investor pages become a source, each after a terms check.
+- The readers' prompts change, so the gold set and both scores are redone for the new types.
+- The API tier needs the Phase 3 accounts and billing, and an API key system.
+- The back-fill takes weeks at our caps. That is a trade-off for keeping spending low.
