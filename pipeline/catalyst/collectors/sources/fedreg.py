@@ -12,12 +12,31 @@ from catalyst.schemas import SourceTier
 API_URL = "https://www.federalregister.gov/api/v1/documents.json"
 PUBLISHER = "Federal Register"
 REQUESTS_PER_SECOND = 1.0
+# The search answer's usual fields, plus `dates` and `action`: the DATES section is where a notice
+# states its meeting day, and the search answer leaves it out unless asked (review of PR #43).
+FIELDS = (
+    "abstract",
+    "action",
+    "agencies",
+    "dates",
+    "document_number",
+    "excerpts",
+    "html_url",
+    "pdf_url",
+    "public_inspection_pdf_url",
+    "publication_date",
+    "title",
+    "type",
+)
 
 
 def is_advisory_committee_meeting(document: dict[str, Any]) -> bool:
-    """Return True for FDA advisory committee meeting notices, by their standard title wording."""
+    """Return True for FDA advisory committee meeting notices and their amendments, by title wording.
+
+    An amendment ("Amendment of Notice") is the notice that moves or changes a meeting.
+    """
     title: str = document.get("title") or ""
-    return "Advisory Committee" in title and "Notice of Meeting" in title
+    return "Advisory Committee" in title and ("Notice of Meeting" in title or "Amendment of Notice" in title)
 
 
 def to_document(document: dict[str, Any]) -> FetchedDocument:
@@ -38,7 +57,8 @@ def collect_advisory_committee_notices(
     client: PoliteHttpClient, since: date, max_pages: int = 10, per_page: int = 100
 ) -> Iterator[FetchedDocument]:
     """Yield FDA advisory committee meeting notices published on or after `since`."""
-    params: dict[str, str | int] = {
+    params: dict[str, str | int | list[str]] = {
+        "fields[]": list(FIELDS),
         "conditions[agencies][]": "food-and-drug-administration",
         "conditions[type][]": "NOTICE",
         "conditions[term]": '"advisory committee"',
