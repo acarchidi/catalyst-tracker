@@ -197,10 +197,11 @@ def test_spend_today_sums_each_role_for_the_new_york_day(
     ]
     with engine.begin() as connection:
         connection.execute(insert(TABLES[ModelCall]), calls)
-    spend = spend_today(engine, load_config(), date(2026, 10, 17))
+    config = load_config()
+    spend = spend_today(engine, config, date(2026, 10, 17))
     assert spend["extractor"] == (
         Decimal("1.50"),
-        Decimal("2.00"),
+        config.roles["extractor"].daily_cap_usd,  # the cap as configured, whatever the owner set
         Decimal("0.16"),
     )  # 16,000 tokens at $10 a million
     assert spend["verifier"].spent == 0

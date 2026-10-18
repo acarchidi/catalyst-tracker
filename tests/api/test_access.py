@@ -28,6 +28,7 @@ dates = st.dates(min_value=date(2020, 1, 1), max_value=date(2035, 12, 31))
 def _source(quote: str) -> SourceView:
     when = datetime(2026, 10, 1, tzinfo=UTC)
     return SourceView(
+        claim_id=uuid4(),
         url="https://www.sec.gov/Archives/edgar/data/1/ex99-1.htm",
         publisher="SEC EDGAR",
         document_type="8-K EX-99.1",

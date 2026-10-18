@@ -1,7 +1,7 @@
 """Run every collector for a list of companies, plus the source-wide feeds.
 
 One failing source is logged as an alert and the run continues, so a single outage never
-blocks the other sources.
+blocks the other sources. A run can be limited to some sources, by the names in `SOURCES`.
 """
 
 import logging
@@ -30,6 +30,9 @@ from catalyst.schemas import DocumentMatch
 from catalyst.snapshots import SnapshotStore
 
 _log = logging.getLogger(__name__)
+# Every source a run collects, by the name that starts its counts: "sec:VRTX", "fedreg", "wire:...".
+SOURCES = ("sec", "ctgov", "openfda", "fedreg", "wire")
+_PER_COMPANY = frozenset({"sec", "ctgov", "openfda"})
 
 
 class PilotCompany(BaseModel):
@@ -131,6 +134,21 @@ def _record_names(
     return None
 
 
+def _company_record(
+    sec: EdgarClient, session_factory: sessionmaker[Session], cik: int, ticker: str
+) -> tuple[UUID, bytes] | CollectionStats:
+    """Read the company's SEC record and store the company; on failure, alert and return the failed step."""
+    try:
+        submissions = sec.get(SUBMISSIONS_URL.format(cik=cik)).content
+        found_cik, name, sic = company_profile(submissions)
+        with session_factory.begin() as session:
+            return upsert_company(session, found_cik, name, sic).id, submissions
+    except Exception as error:
+        stats = CollectionStats(f"sec:{ticker}", error=f"{type(error).__name__}: {error}")
+        log_alert(_log, "collector_failed", source=stats.source, error=stats.error)
+        return stats
+
+
 def collect_all(
     companies: list[PilotCompany],
     clients: Clients,
@@ -139,8 +157,15 @@ def collect_all(
     since: date,
     now: Callable[[], datetime] = _utc_now,
     sec_forms: frozenset[str] = DEFAULT_FORMS,
+    sources: frozenset[str] = frozenset(SOURCES),
 ) -> list[CollectionStats]:
-    """Collect every company's SEC filings, trials, and FDA applications, then the source-wide feeds."""
+    """Collect every company's SEC filings, trials, and FDA applications, then the source-wide feeds.
+
+    Only the collectors named in `sources` run. Any per-company source still reads the company's
+    SEC record, which names the company; with none of them, no company is read at all.
+    """
+    if unknown := sources - set(SOURCES):
+        raise ValueError(f"unknown sources: {', '.join(sorted(unknown))}")
     collector = Collector(store, session_factory, now)
     results: list[CollectionStats] = []
 
@@ -148,22 +173,24 @@ def collect_all(
         with session_factory() as session:
             return bool(known_source_keys(session, prefix))
 
-    for pilot in companies:
-        submissions = clients.sec.get(SUBMISSIONS_URL.format(cik=pilot.cik)).content
-        cik, name, sic = company_profile(submissions)
-        with session_factory.begin() as session:
-            company_id = upsert_company(session, cik, name, sic).id
+    for pilot in companies if sources & _PER_COMPANY else ():
+        found = _company_record(clients.sec, session_factory, pilot.cik, pilot.ticker)
+        if isinstance(found, CollectionStats):
+            results.append(found)  # this company's sources cannot run; the next company's still do
+            continue
+        company_id, submissions = found
         names_failed = _record_names(session_factory, company_id, submissions, now().date(), pilot.ticker)
         if names_failed:
             results.append(names_failed)
-        results.append(
-            collector.run(
-                f"sec:{pilot.ticker}",
-                partial(collect_filings, clients.sec, submissions, since, already_stored, sec_forms),
-                (company_id, DocumentMatch.SEC_CIK),
+        if "sec" in sources:
+            results.append(
+                collector.run(
+                    f"sec:{pilot.ticker}",
+                    partial(collect_filings, clients.sec, submissions, since, already_stored, sec_forms),
+                    (company_id, DocumentMatch.SEC_CIK),
+                )
             )
-        )
-        if pilot.ctgov_sponsors:
+        if "ctgov" in sources and pilot.ctgov_sponsors:
             results.append(
                 collector.run(
                     f"ctgov:{pilot.ticker}",
@@ -175,7 +202,7 @@ def collect_all(
                     (company_id, DocumentMatch.CTGOV_LEAD_SPONSOR),
                 )
             )
-        if pilot.openfda_manufacturer:
+        if "openfda" in sources and pilot.openfda_manufacturer:
             manufacturer = pilot.openfda_manufacturer
             results.append(
                 collector.run(
@@ -184,9 +211,18 @@ def collect_all(
                     (company_id, DocumentMatch.OPENFDA_SPONSOR),
                 )
             )
-    results.append(
-        collector.run("fedreg", partial(fedreg.collect_advisory_committee_notices, clients.web, since))
-    )
-    for feed in wires.FEEDS:
-        results.append(collector.run(f"wire:{feed.slug}", partial(wires.collect_feed, clients.web, feed)))
+    return results + _feeds(collector, clients.web, since, sources)
+
+
+def _feeds(
+    collector: Collector, web: PoliteHttpClient, since: date, sources: frozenset[str]
+) -> list[CollectionStats]:
+    """Collect the source-wide feeds named in `sources`: Federal Register notices, then the wires."""
+    results: list[CollectionStats] = []
+    if "fedreg" in sources:
+        results.append(
+            collector.run("fedreg", partial(fedreg.collect_advisory_committee_notices, web, since))
+        )
+    for feed in wires.FEEDS if "wire" in sources else ():
+        results.append(collector.run(f"wire:{feed.slug}", partial(wires.collect_feed, web, feed)))
     return results
