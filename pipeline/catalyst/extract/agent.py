@@ -22,7 +22,7 @@ from typing import Any
 from uuid import UUID
 
 from catalyst.extract.dates import DateWindow, parse_window
-from catalyst.extract.injection import instruction_markers, invisible_characters
+from catalyst.extract.injection import hidden_letters, instruction_markers, invisible_characters
 from catalyst.extract.text import TEXT_VERSION, QuoteSpan, find_quote
 from catalyst.llm.client import ModelClient
 from catalyst.llm.prompts import load_prompt
@@ -45,6 +45,7 @@ class Problem(StrEnum):
     QUOTE_HIDDEN = "the quote is text the page hides from readers"
     INVISIBLE_CHARACTERS = "the quote, date words, or names hold invisible or direction-changing characters"
     NON_ASCII_DIGITS = "the date words hold a digit from another script, which may read as another number"
+    SOURCE_HIDES_TEXT = "the source hides words from readers, so a person must read it"
     SOURCE_INSTRUCTS_MODELS = "the source holds text written to steer a model, so a person must read it"
 
 
@@ -157,8 +158,8 @@ def extract_catalysts(
     `text` is the copy's `document_text`, where quotes are placed. `visible` is its
     `visible_text`: the reader sees only that, and every quote must be in it. None means the
     whole text is visible (plain text). The extractor is the default; the verifier's second
-    reading uses its own role and prompt. When the text addresses models, every proposal is
-    flagged, since no code can tell which of them the text changed.
+    reading uses its own role and prompt. When the text addresses models, or the page hides words
+    from readers, every proposal is flagged, since no code can tell which of them the text changed.
     """
     prompt = load_prompt(*prompt_ref)
     shown = text if visible is None else visible
@@ -166,9 +167,11 @@ def extract_catalysts(
     items: list[dict[str, Any]] = result.data["catalysts"]
     catalysts = tuple(check_proposal(item, text, published, visible) for item in items)
     instructions = instruction_markers(text)
-    if instructions:
-        flag = Problem.SOURCE_INSTRUCTS_MODELS
-        catalysts = tuple(replace(c, problems=(*c.problems, flag)) for c in catalysts)
+    flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
+    if visible is not None and hidden_letters(text, visible):
+        flags.append(Problem.SOURCE_HIDES_TEXT)
+    if flags:
+        catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)
     return Extraction(
         catalysts=catalysts,
         provider=result.provider,

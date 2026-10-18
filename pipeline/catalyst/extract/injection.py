@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from collections import Counter
 
 # Tag characters (U+E0020 to U+E007E) spell ASCII invisibly; a model may still read them.
 _TAG_START, _TAG_END = 0xE0020, 0xE007E
@@ -112,3 +113,14 @@ def invisible_characters(*texts: str | None) -> tuple[str, ...]:
     """
     seen = {f"U+{ord(ch):04X}" for text in texts if text for ch in text if unicodedata.category(ch) == "Cf"}
     return tuple(sorted(seen))
+
+
+def hidden_letters(text: str, visible: str) -> bool:
+    """Say whether the page hides any letter: `text` has letters that its visible text lacks.
+
+    Hidden words can steer a reader, and every check that reads the whole text (the drug check
+    looking just before a quote, the company check) would read them too. Hidden page numbers and
+    lone hidden spaces are not words, so they do not count.
+    """
+    shown = Counter(ch for ch in visible if ch.isalpha())
+    return bool(Counter(ch for ch in text if ch.isalpha()) - shown)
