@@ -84,6 +84,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("catalyst", "indication_id", "indication"),
     ("catalyst_trial", "catalyst_id", "catalyst"),
     ("catalyst_trial", "trial_id", "trial"),
+    ("catalyst_trial", "claim_id", "claim"),
     ("claim", "source_document_id", "source_document"),
     ("catalyst_change", "catalyst_id", "catalyst"),
     ("catalyst_change", "claim_id", "claim"),

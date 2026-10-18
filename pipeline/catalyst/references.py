@@ -239,7 +239,8 @@ def company_refs(session: Session) -> list[CompanyRef]:
     ]
 
 
-def _drugs(session: Session) -> list[DrugRef]:
+def drug_refs(session: Session) -> list[DrugRef]:
+    """Read every drug with every name it goes by, as the resolver matches them."""
     drug, drug_name = TABLES[Drug], TABLES[DrugName]
     names: defaultdict[UUID, list[tuple[str, DrugNameKind]]] = defaultdict(list)
     for row in session.execute(select(drug_name.c.drug_id, drug_name.c.name, drug_name.c.kind)):
@@ -274,7 +275,7 @@ def _trials(session: Session) -> list[TrialRef]:
 def load_reference_data(session: Session) -> ReferenceData:
     """Read every company, drug, and trial the resolver can match against."""
     references = ReferenceData(
-        companies=company_refs(session), drugs=_drugs(session), trials=_trials(session)
+        companies=company_refs(session), drugs=drug_refs(session), trials=_trials(session)
     )
     log_event(_log, "references_loaded")
     return references

@@ -80,6 +80,10 @@ class Corpus:
     companies: Mapping[UUID, str]
     drugs: tuple[str, ...]
     references: ReferenceData
+    drug_refs: tuple[DrugRef, ...]  # the drugs in `references`, with their companies
+    # The drug records production holds: `resolve_claims` stores only a company's new code names,
+    # so brand and generic names (LIVMARLI, azer-cel) are not on file (Opus review of PR #61).
+    drug_records: tuple[DrugRef, ...]
     phases: Mapping[UUID, TrialPhase | None]
     company_trials: Mapping[UUID, tuple[UUID, ...]]
     trial_names: Mapping[UUID, str]
@@ -185,11 +189,8 @@ def load_corpus(
         CompanyRef(c, cik, (name,), ((tickers[cik], _LISTED_SINCE, None),) if cik in tickers else ())
         for c, cik, name in sorted(set(owners.values()))
     )
-    references = ReferenceData(
-        company_refs,
-        _drug_refs(records),
-        [trial for trial, _ in trials],
-    )
+    drug_refs = tuple(_drug_refs(records))
+    references = ReferenceData(company_refs, drug_refs, [trial for trial, _ in trials])
     drugs = {name_key(r.value["drug"]): r.value["drug"] for r in records if r.value["drug"]}
     return Corpus(
         records=records,
@@ -200,6 +201,8 @@ def load_corpus(
         companies=companies,
         drugs=tuple(drugs[key] for key in sorted(drugs)),
         references=references,
+        drug_refs=drug_refs,
+        drug_records=tuple(d for d in drug_refs if all(k is DrugNameKind.CODE for _, k in d.names)),
         phases={trial.id: phase for trial, phase in trials},
         company_trials={c: tuple(ids) for c, ids in company_trials.items()},
         trial_names={
@@ -429,8 +432,14 @@ ERRORS: tuple[ErrorType, ...] = (
     _error("pdufa_outside_review", "FDA decision date outside its review window", "window", _pdufa_outside,
            "the date still falls within 15 months of the release."),
     _error("drug_in_release", "Wrong drug (another in the same release)", "drug", _drug_in_release,
-           "the other drug is the same company's, so it matches; only the second reading compares drugs.",
-           "No rule catches these; only the second reading does, and in this test it never misreads."),
+           "the quote names both drugs, or its true drug is a brand or generic name that no other claim "
+           "of the release names, so the drug check passes, and the other drug is the same company's, so "
+           "it matches; only the second reading compares drugs.",
+           "The drug check catches most of these. It misses them when the quote names both drugs (one "
+           "Spyre sentence names SPY072 alone and with IL-17A/F), or when the true drug is a brand or "
+           "generic name that no other claim of the release names: production keeps records only of code "
+           "names, and this test checks with those alone. Then only the second reading catches them, and "
+           "in this test it never misreads."),
     _error("drug_elsewhere", "Wrong drug (another company's drug)", "drug", _drug_elsewhere,
            "the drug name is a generic or brand name, which matches under any company."),
     _error("wrong_type", "Wrong event type", "type", _wrong_type,
@@ -446,9 +455,12 @@ ERRORS: tuple[ErrorType, ...] = (
     _error("quote_swap", "Quote from an unrelated sentence", "quote", _quote_swap,
            "the other sentence also holds the date words."),
     _error("quote_same_date", "Quote from another event with the same date words", "quote", _quote_same_date,
-           "the other sentence holds the same date words, so the date check passes, and the second reading "
-           "pairs two readings in different sentences when their type, window, and drug agree. No check "
-           "asks whether the quote names the claim's drug."),
+           "the other sentence is about the same drug: SPY072's other sub-study, whose sentence comes just "
+           "after the drug's name and holds the same date words. So the date and drug checks pass, and the "
+           "second reading pairs two readings in different sentences when their type, window, and drug "
+           "agree. The stored values (SPY072, topline data, Q4 2026) are true of that sentence too.",
+           "The drug check (`drug_named_near_quote`) catches every copy whose sentence is about another "
+           "drug."),
 )  # fmt: skip
 
 

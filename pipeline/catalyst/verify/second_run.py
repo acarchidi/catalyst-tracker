@@ -70,7 +70,8 @@ def second_reading_problems(config: ModelConfig) -> list[str]:
     return gate_problems(prompt, config.roles[VERIFIER_ROLE], VERIFY_EVALS, allow_unscored=False)
 
 
-def _read(model: str) -> Any:
+def current_reading(model: str) -> Any:
+    """Select the verifier's readings made with its current prompt and with `model`."""
     reading = TABLES[DocumentReading]
     return and_(
         reading.c.agent == VERIFIER_ROLE,
@@ -88,7 +89,7 @@ def _extracted() -> Any:
 def _to_read(session: Session, model: str, limit: int) -> list[Any]:
     documents, claim, reading = TABLES[SourceDocument], TABLES[Claim], TABLES[DocumentReading]
     has_claims = exists().where(claim.c.source_document_id == documents.c.id, _extracted())
-    done = exists().where(reading.c.source_document_id == documents.c.id, _read(model))
+    done = exists().where(reading.c.source_document_id == documents.c.id, current_reading(model))
     query = select(documents).where(has_claims, ~done).order_by(documents.c.published_at.desc()).limit(limit)
     return list(session.execute(query).all())
 
@@ -147,14 +148,14 @@ def _clear_stale(session: Session, model: str) -> None:
     reading reads it: the publish gate counts a missing row as not passing.
     """
     check, claim, reading = TABLES[ClaimCheck], TABLES[Claim], TABLES[DocumentReading]
-    current = select(reading.c.source_document_id).where(_read(model))
+    current = select(reading.c.source_document_id).where(current_reading(model))
     stale = select(claim.c.id).where(_extracted(), claim.c.source_document_id.not_in(current))
     session.execute(delete(check).where(check.c.check_name == CHECK, check.c.claim_id.in_(stale)))
 
 
 def _compare_all(session: Session, model: str, at: datetime, report: SecondReadingReport) -> None:
     claim, reading, links = TABLES[Claim], TABLES[DocumentReading], TABLES[CompanyDocument]
-    read = select(reading.c.source_document_id).where(_read(model))
+    read = select(reading.c.source_document_id).where(current_reading(model))
     columns = (
         claim.c.id,
         claim.c.source_document_id,

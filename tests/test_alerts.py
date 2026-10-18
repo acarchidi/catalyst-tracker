@@ -73,6 +73,8 @@ def test_a_second_reading_without_scores_is_never_an_alert() -> None:
             {"second_reading": {"skipped": [], "stopped_early": "verifier cap"}},
             "second reading stopped early",
         ),
+        ({"decisions": {"error": "OperationalError: x"}}, "publish decisions did not finish"),
+        ({"published": {"error": "OperationalError: x"}}, "published catalysts did not finish"),
     ],
 )
 def test_a_problem_in_the_summary_raises_one_alert_for_the_job(change: dict[str, Any], words: str) -> None:
