@@ -44,6 +44,7 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -109,9 +110,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
     _store_arguments(extract)
-    commands.add_parser(
+    verify_claims = commands.add_parser(
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
+    _store_arguments(verify_claims)
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -275,6 +277,7 @@ def _extract(args: argparse.Namespace) -> int:
         else:
             try:
                 checks = run_checks(sessionmaker(engine), _utc_now).summary()
+                checks["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
             except SQLAlchemyError as error:
                 checks = {"error": f"{type(error).__name__}: checks did not finish"}
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
@@ -310,18 +313,20 @@ def _resolve(_args: argparse.Namespace) -> int:
     return 0
 
 
-def _verify_claims(_args: argparse.Namespace) -> int:
+def _verify_claims(args: argparse.Namespace) -> int:
     try:
         database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
     engine = create_engine(database)
     try:
-        report = run_checks(sessionmaker(engine), _utc_now)
+        report = run_checks(sessionmaker(engine), _utc_now).summary()
+        report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
     finally:
         engine.dispose()
-    print(json.dumps(report.summary(), indent=2))
+    print(json.dumps(report, indent=2))
     return 0
 
 
