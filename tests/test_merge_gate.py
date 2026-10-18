@@ -132,6 +132,7 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
         "evals/extract_catalysts/unscored.json",
         "evals/verify_catalysts/baseline.json",
         "evals/verify_catalysts/unscored.json",
+        "evals/planted_errors/baseline.json",
     ],
 )
 def test_changes_to_the_rules_review_or_protected_settings_go_to_the_owner(path: str) -> None:
