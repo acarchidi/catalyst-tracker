@@ -196,6 +196,11 @@ def stated_phases(text: str) -> set[TrialPhase]:
     return phases
 
 
+def phases_overlap(stated: TrialPhase, registered: TrialPhase) -> bool:
+    """Say whether two phases share a number: Phase 3 overlaps Phase 2/3; no phase overlaps nothing."""
+    return bool(_PARTS[stated] & _PARTS[registered])
+
+
 def _phase_matches_registry(facts: ClaimFacts, _today: date) -> CheckResult:
     stated = stated_phases(facts.quote)
     registered = [
@@ -207,7 +212,7 @@ def _phase_matches_registry(facts: ClaimFacts, _today: date) -> CheckResult:
     if not stated or not known:
         return _not_applicable("phase_matches_registry", "no stated phase, or no matched trial with a phase")
     for phase in stated:
-        if not any(_PARTS[phase] & _PARTS[trial] for trial in known):
+        if not any(phases_overlap(phase, trial) for trial in known):
             names = ", ".join(sorted({_WORDS[p] for p in known}))
             return _failed(
                 "phase_matches_registry", f"the quote says {_WORDS[phase]}; the registry says {names}"

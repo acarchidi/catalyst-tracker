@@ -1,0 +1,2660 @@
+{
+ "recorded": "2026-10-18",
+ "responses": {
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=TG+Therapeutics&fields=NCTId%2CAcronym%2CPhase%2CLeadSponsorName&pageSize=100": {
+   "studies": [
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03207256"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04016805"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06864936"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "University of Maryland, Baltimore"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "NA"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07673744"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03379051"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1",
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02793583",
+       "acronym": "UNITY-NHL"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02742090"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02006485"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04130997"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03178201"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Columbia University"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03919175"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Massachusetts General Hospital"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06143514",
+       "acronym": "PROVIDE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03804996"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02301156",
+       "acronym": "GENUINE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02013128"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1",
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02656303"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02574663"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03828448"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03381170"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07103746",
+       "acronym": "SUMMIT"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "National Institute of Allergy and Infectious Diseases (NIAID)"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04806035"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02738775"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01647971"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1",
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03778073"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07211633"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01767766"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03364231"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05877963",
+       "acronym": "ENHANCE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02164006"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04624633"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Jennifer R. Brown, MD, PhD"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07220252"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02100852"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03277248",
+       "acronym": "ULTIMATE II"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02268851"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Dana-Farber Cancer Institute"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07503873"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02612311",
+       "acronym": "UNITY-CLL"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07225361"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Northwestern University"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06680037"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03671590"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03277261",
+       "acronym": "ULTIMATE 1"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07389590"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Johns Hopkins University"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02535286"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04163718"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "H. Lee Moffitt Cancer Center and Research Institute"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03776864"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "University of Washington"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06433765"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07577583"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04149821"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Weill Medical College of Cornell University"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07680946"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03801525",
+       "acronym": "ULTRA-V"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01744912"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06433752",
+       "acronym": "ENABLE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "TG Therapeutics, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    }
+   ]
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=AEON+Biopharma&fields=NCTId%2CAcronym%2CPhase%2CLeadSponsorName&pageSize=100": {
+   "studies": [
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04845178"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "AEON Biopharma, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04871451"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "AEON Biopharma, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04849988"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "AEON Biopharma, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05016661"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "AEON Biopharma, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=Spyre+Therapeutics&fields=NCTId%2CAcronym%2CPhase%2CLeadSponsorName&pageSize=100": {
+   "studies": [
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07766005"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06873724"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07148414",
+       "acronym": "SKYWAY-RD"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06622070"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07012395",
+       "acronym": "SKYLINE-UC"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07652294",
+       "acronym": "SKYLINE-LTE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06672718"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06448247"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Spyre Therapeutics, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=Mirum+Pharmaceuticals&fields=NCTId%2CAcronym%2CPhase%2CLeadSponsorName&pageSize=100": {
+   "studies": [
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07454837"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02117713",
+       "acronym": "IMAGINE-II"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06907290"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02061540",
+       "acronym": "CAMEO"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05050136",
+       "acronym": "VANTAGE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03905330",
+       "acronym": "MARCH-PFIC"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07200908"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04185363"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05368038",
+       "acronym": "ScreenPlus"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Albert Einstein College of Medicine"
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07290257"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02475317"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07411716",
+       "acronym": "PEARL"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Children's Hospital of Eastern Ontario"
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02787304"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04524390",
+       "acronym": "EMBARK"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07298330"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06553768"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00007020"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04718961",
+       "acronym": "OHANA"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01438411"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07209462"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01903460",
+       "acronym": "IMAGO"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01115582"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02287779"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03353454"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07712718"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04530994"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04729751",
+       "acronym": "RISE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07823127",
+       "acronym": "OASIS"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06193928",
+       "acronym": "LEAP"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03115086"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04168385",
+       "acronym": "MERGE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07389031",
+       "acronym": "METAPHOR"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Imperial College London"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02047318",
+       "acronym": "IMAGINE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02057718",
+       "acronym": "INDIGO"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02131623"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02321306",
+       "acronym": "CASCADE"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04663308",
+       "acronym": "VISTAS"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01904058",
+       "acronym": "CLARITY"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02160782",
+       "acronym": "ICONIC"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02571192"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02057692",
+       "acronym": "ITCH"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04270682"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Mirum Pharmaceuticals, Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    }
+   ]
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.spons=Acadia+Pharmaceuticals&fields=NCTId%2CAcronym%2CPhase%2CLeadSponsorName&pageSize=100": {
+   "studies": [
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02992132"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04000009"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04279314",
+       "acronym": "LILAC™"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00361166"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02970292"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03152292"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04988867",
+       "acronym": "DAFFODIL™"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02035553"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06194799"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03325556"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02762591"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03118947"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03121586"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04531982",
+       "acronym": "ADVANCE-2"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00477672"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03482882"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT02970305"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03968159"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05895513"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Ohio State University"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03994965"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Bjorn H. Ebdrup"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01174004"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03018340"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05999240"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "New York State Psychiatric Institute"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06420297"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07029581"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04776746"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT01518309"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06173531"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04164758"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03575052"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05240339"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "University of Rochester"
+       }
+      },
+      "designModule": {}
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05796167"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "State University of New York - Downstate Medical Center"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "EARLY_PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00550238"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04292223"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00658567"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04855240"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05008835"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00490516"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05357612"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Vanderbilt University Medical Center"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05523895"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07284667",
+       "acronym": "NORLIGHT"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03947216",
+       "acronym": "PIMPARK"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "University Hospital, Strasbourg, France"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04181723"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT05555615"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT06159673"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2",
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00087542"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE2"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT00628420",
+       "acronym": "ACP-104"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "University of Texas Southwestern Medical Center"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE1"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT03623321"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT04809116"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "Baylor College of Medicine"
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE4"
+       ]
+      }
+     }
+    },
+    {
+     "protocolSection": {
+      "identificationModule": {
+       "nctId": "NCT07095465"
+      },
+      "sponsorCollaboratorsModule": {
+       "leadSponsor": {
+        "name": "ACADIA Pharmaceuticals Inc."
+       }
+      },
+      "designModule": {
+       "phases": [
+        "PHASE3"
+       ]
+      }
+     }
+    }
+   ]
+  }
+ }
+}

@@ -49,6 +49,10 @@ from catalyst.snapshots import (
     verify_snapshots,
 )
 from catalyst.verify.advisory import check_advisory_meetings
+from catalyst.verify.planted import load_corpus
+from catalyst.verify.planted_report import render_report
+from catalyst.verify.planted_report import run as run_planted
+from catalyst.verify.planted_report import scores as planted_scores
 from catalyst.verify.run import run_checks
 from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 from catalyst.verify.second_run import run_second_reading
@@ -203,6 +207,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "decide-claims": _decide_claims,
         "api": _serve,
         "mcp": _serve,
+        "planted-errors": _planted_errors,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -504,6 +509,17 @@ def _evaluate(args: argparse.Namespace) -> int:
     record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
+    return 0
+
+
+def _planted_errors(args: argparse.Namespace) -> int:
+    corpus = load_corpus()
+    results = run_planted(corpus)
+    args.out.write_text(render_report(results, corpus), encoding="utf-8")
+    counted = planted_scores(results)
+    if args.scores:
+        args.scores.write_text(json.dumps(counted, indent=2) + "\n", encoding="utf-8")
+    print(json.dumps(counted["errors"], indent=2))
     return 0
 
 

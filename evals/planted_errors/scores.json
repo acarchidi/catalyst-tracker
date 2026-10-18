@@ -1,0 +1,110 @@
+{
+  "seed": 2026,
+  "gold_sha256": "587e943233a7e74b5c8525731b84db2e0e21ae022789d7f7f8b8ff4fae837aa3",
+  "registry_sha256": "a0312eaa1f7648506c62f09ec4ee1c79d912e785d69572ac7d00da4ff0c3a7d8",
+  "checks": [
+    "advisory_meeting_noticed",
+    "date_words_in_quote",
+    "extractor_checks",
+    "has_window",
+    "independent_source",
+    "names_matched",
+    "pdufa_date_plausible",
+    "phase_matches_registry",
+    "second_reading_agrees",
+    "window_matches_words",
+    "window_not_past"
+  ],
+  "errors": {
+    "wrong_window": {
+      "planted": 48,
+      "caught": 48,
+      "caught_by_rules": 48,
+      "corrected": 48,
+      "missed": 0
+    },
+    "consistent_wrong_date": {
+      "planted": 11,
+      "caught": 11,
+      "caught_by_rules": 1,
+      "corrected": 11,
+      "missed": 0
+    },
+    "past_window": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 17,
+      "corrected": 17,
+      "missed": 0
+    },
+    "pdufa_outside_review": {
+      "planted": 1,
+      "caught": 1,
+      "caught_by_rules": 1,
+      "corrected": 1,
+      "missed": 0
+    },
+    "drug_in_release": {
+      "planted": 29,
+      "caught": 29,
+      "caught_by_rules": 0,
+      "corrected": 29,
+      "missed": 0
+    },
+    "drug_elsewhere": {
+      "planted": 150,
+      "caught": 150,
+      "caught_by_rules": 34,
+      "corrected": 150,
+      "missed": 0
+    },
+    "wrong_type": {
+      "planted": 221,
+      "caught": 221,
+      "caught_by_rules": 17,
+      "corrected": 221,
+      "missed": 0
+    },
+    "wrong_company": {
+      "planted": 153,
+      "caught": 72,
+      "caught_by_rules": 72,
+      "corrected": 0,
+      "missed": 81
+    },
+    "wrong_trial": {
+      "planted": 383,
+      "caught": 128,
+      "caught_by_rules": 128,
+      "corrected": 0,
+      "missed": 255
+    },
+    "wrong_phase": {
+      "planted": 128,
+      "caught": 128,
+      "caught_by_rules": 128,
+      "corrected": 0,
+      "missed": 0
+    },
+    "quote_swap": {
+      "planted": 17,
+      "caught": 17,
+      "caught_by_rules": 17,
+      "corrected": 0,
+      "missed": 0
+    },
+    "quote_same_date": {
+      "planted": 5,
+      "caught": 0,
+      "caught_by_rules": 0,
+      "corrected": 0,
+      "missed": 5
+    }
+  },
+  "clean": {
+    "records": 19,
+    "wrongly_flagged": 2,
+    "neighbours_checked": 3486,
+    "neighbours_wrongly_flagged": 0
+  }
+}

@@ -344,7 +344,10 @@ def test_not_applicable_from_any_check_that_must_pass_means_review(
     broken=st.sampled_from(REQUIRED_CHECKS),
     missing=st.booleans(),
     extra=st.lists(
-        st.text(min_size=1, max_size=20).filter(lambda s: s not in REQUIRED_CHECKS), max_size=3, unique=True
+        # Names shaped like real check names: stored text is trimmed, so blank names cannot be stored.
+        st.from_regex(r"[a-z][a-z_]{0,19}", fullmatch=True).filter(lambda s: s not in REQUIRED_CHECKS),
+        max_size=3,
+        unique=True,
     ),
 )
 def test_any_single_failing_or_missing_required_check_means_review(
