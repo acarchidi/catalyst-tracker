@@ -505,6 +505,53 @@ CP4_CASES = (
         publishes=(PDUFA,),
     ),
 )
+ROUND_TWO_HIDING = tuple(
+    Case(fixture, ((_pdufa(quote=MOVED), HIDES),), kept=(TOPLINE,), publishes=())
+    for fixture in (
+        "offpage-100vw.html",
+        "offpage-200pct.html",
+        "offpage-right.html",
+        "offpage-transform.html",
+        "transparent-text.html",
+        "screen-reader-box.html",
+        "closed-dialog.html",
+        "canvas-fallback.html",
+    )
+)
+ROUND_TWO_CASES = (
+    *ROUND_TWO_HIDING,
+    Case(
+        "date-now-after.html",
+        (
+            (
+                _topline(
+                    TOPLINE_QUOTE.replace(
+                        "are expected in the second half of 2027",
+                        "are now expected after the second half of 2027",
+                    )
+                ),
+                CUT_SHORT,
+            ),
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+    Case(
+        "date-slip-beyond.html",
+        (
+            (
+                _topline(
+                    TOPLINE_QUOTE.replace(
+                        "are expected in the second half of 2027", "will slip beyond the second half of 2027"
+                    )
+                ),
+                CUT_SHORT,
+            ),
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+)
 # What plain code cannot catch when both readers obey: an order worded so the scan misses it, text
 # coloured like its background, and a false statement written as plain fact. A second reading
 # that reads the release honestly still holds each one; ADR 0018 (part 5c) lists them for the owner.
@@ -536,7 +583,7 @@ RESIDUAL = (
         publishes=(TOPLINE,),
     ),
 )
-CASES = (*FIRST_CASES, *CP4_CASES)
+CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES)
 CLEAN = Case("clean-release.html", ())
 
 
@@ -1030,6 +1077,61 @@ def test_visible_text_drops_what_a_style_rule_or_placement_hides(html: str, visi
     assert visible_text(f"<html><head></head><body>{html}</body></html>".encode(), "text/html") == visible
 
 
+ROUND_TWO_HIDDEN = {
+    "left -100vw": '<p style="position:absolute;left:-100vw">Hidden.</p>',
+    "left -200%": '<p style="position:absolute;left:-200%">Hidden.</p>',
+    "right -10000px": '<p style="position:absolute;right:-10000px">Hidden.</p>',
+    "left +10000px": '<p style="position:absolute;left:10000px">Hidden.</p>',
+    "bottom -1000pt": '<p style="position:absolute;bottom:-1000pt">Hidden.</p>',
+    "translateX": '<p style="transform:translateX(-10000px)">Hidden.</p>',
+    "translate %": '<p style="transform: translate(-150%, 0)">Hidden.</p>',
+    "scale 0": '<p style="transform:scale(0)">Hidden.</p>',
+    "screen-reader box": (
+        '<p style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)">Hidden.</p>'
+    ),
+    "1px box": '<div style="height:1px;overflow:hidden"><p>Hidden.</p></div>',
+    "clip rect": '<p style="position:absolute;clip:rect(0 0 0 0)">Hidden.</p>',
+    "clip-path": '<p style="clip-path: inset(50%)">Hidden.</p>',
+    "transparent": '<p style="color:transparent">Hidden.</p>',
+    "zero alpha": '<p style="color: rgba(0, 0, 0, 0)">Hidden.</p>',
+    "zero alpha hex": '<p style="color:#00000000">Hidden.</p>',
+    "closed dialog": "<dialog><p>Hidden.</p></dialog>",
+    "canvas": "<canvas><p>Hidden.</p></canvas>",
+    "iframe": "<iframe><p>Hidden.</p></iframe>",
+    "object": "<object data='x.svg'><p>Hidden.</p></object>",
+    "video": "<video><p>Hidden.</p></video>",
+    "audio": "<audio><p>Hidden.</p></audio>",
+    "noembed": "<noembed>Hidden.</noembed>",
+    "noframes": "<noframes>Hidden.</noframes>",
+    "class transform": "<style>.t { transform: translateY(-2000px) }</style><p class='t'>Hidden.</p>",
+}
+STILL_SEEN = {
+    "open dialog": "<dialog open><p>Seen.</p></dialog>",
+    "small offsets": '<p style="position:relative;left:-18pt;top:-40.5pt;right:-60px">Seen.</p>',
+    "background transparent": '<p style="background-color:transparent;color:#1b3a5c">Seen.</p>',
+    "half alpha": '<p style="color:rgba(0,0,0,0.5)">Seen.</p>',
+    "small translate": '<p style="transform:translateX(-10px)">Seen.</p>',
+    "1px rule": '<hr style="height:1px"><p style="border-top:1px solid">Seen.</p>',
+}
+
+
+@pytest.mark.parametrize("html", ROUND_TWO_HIDDEN.values(), ids=ROUND_TWO_HIDDEN.keys())
+def test_visible_text_drops_the_round_two_hiding_methods(html: str) -> None:
+    """Each hiding method the CP4 round-2 review found, and a few like them.
+
+    Off-page offsets in any unit, transforms, clipped tiny boxes, transparent text, closed dialogs,
+    and the fallback content of canvas, iframe, object, video, and audio.
+    """
+    content = f"<html><head></head><body>{html}<p>Seen.</p></body></html>".encode()
+    assert visible_text(content, "text/html") == "Seen."
+
+
+@pytest.mark.parametrize("html", STILL_SEEN.values(), ids=STILL_SEEN.keys())
+def test_ordinary_layout_is_still_seen(html: str) -> None:
+    content = f"<html><head></head><body>{html}</body></html>".encode()
+    assert visible_text(content, "text/html") == "Seen."
+
+
 def test_a_source_that_hides_words_holds_every_claim() -> None:
     """Hidden words could steer a reader or a check that reads the whole text, such as the drug check."""
     content = (INJECTION / "hidden-fda-notice.html").read_bytes()
@@ -1137,9 +1239,11 @@ def test_the_scan_finds_steering_text_however_it_is_spelled(text: str) -> None:
 
 
 def _recorded_releases() -> Iterator[Path]:
+    """Every recorded web page on file: the gold set's releases and each markup fixture but these."""
     yield from sorted((REPO_ROOT / "evals" / "extract_catalysts" / "documents").glob("*.htm"))
-    yield from sorted((FIXTURES / "sec").glob("*/*.htm"))
-    yield from sorted((FIXTURES / "wires-prnewswire").glob("*"))
+    for path in sorted(FIXTURES.rglob("*")):
+        if path.is_file() and INJECTION not in path.parents and path.read_bytes()[:200].lstrip()[:1] == b"<":
+            yield path
 
 
 def test_no_recorded_release_trips_the_scan_or_hides_a_gold_quote() -> None:
@@ -1154,7 +1258,7 @@ def test_no_recorded_release_trips_the_scan_or_hides_a_gold_quote() -> None:
             path.name
         )
         checked += 1
-    assert checked >= 14
+    assert checked == 19  # 12 gold-set releases, 4 SEC pages, 2 EDGAR listings, 1 wire feed
     gold = [
         json.loads(line)
         for line in (REPO_ROOT / "evals/extract_catalysts/gold.jsonl").read_text().splitlines()

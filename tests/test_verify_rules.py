@@ -141,6 +141,10 @@ NEGATED = [
     ("Topline data, previously expected in Q4 2026, are now expected in 2027.", "Q4 2026"),
     ("The readout, no longer expected in Q4 2026, moves to 2027.", "Q4 2026"),
     ("The readout was delayed from Q4 2026 to 2027.", "Q4 2026"),
+    ("Topline data are now expected after the second half of 2027.", "second half of 2027"),
+    ("Topline data will slip beyond the second half of 2027.", "second half of 2027"),
+    ("The decision is expected no earlier than Q2 2027.", "Q2 2027"),
+    ("The decision will come later than Q2 2027.", "Q2 2027"),
 ]
 
 

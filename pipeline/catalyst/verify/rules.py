@@ -112,12 +112,25 @@ _TAKEN_BACK = re.compile(
 )
 
 
+# Words just before the date words that put the event outside them: "after", "beyond", "no earlier
+# than", "later than" (but not "no later than", a deadline), "not before" (CP4 round 2).
+_OUTSIDE = re.compile(
+    r"\b(?:after|beyond|(?<!no )(?<!not )later\s+than|no\s+earlier\s+than|not\s+before)\s+(?:the\s+)?$",
+    re.IGNORECASE,
+)
+
+
 def _taken_back(quote: str, words: str) -> bool:
-    """Say whether a negation sits within six words before any place the date words appear."""
+    """Say whether, at any place the date words appear, the quote takes them back or points past them.
+
+    That is a negation within six words before them, or "after", "beyond", "no earlier than",
+    "later than", or "not before" right before them.
+    """
     pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, words.split())) + r"(?!\w)"
     for found in re.finditer(pattern, quote):
-        lead = " ".join(quote[: found.start()].split()[-6:])
-        if _TAKEN_BACK.search(lead):
+        before = quote[: found.start()]
+        lead = " ".join(before.split()[-6:])
+        if _TAKEN_BACK.search(lead) or _OUTSIDE.search(before):
             return True
     return False
 
@@ -129,7 +142,10 @@ def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
     if not has_words(facts.quote, text):
         return _failed("date_words_in_quote", f"the date words '{text}' are not in the quote")
     if _taken_back(facts.quote, text):
-        return _failed("date_words_in_quote", f"the quote may say the date words '{text}' no longer hold")
+        return _failed(
+            "date_words_in_quote",
+            f"the quote may say the date words '{text}' no longer hold, or that the event falls after them",
+        )
     cut = cut_short(facts.quote, text, facts.published)
     if cut is not None:
         return _failed("date_words_in_quote", f"the date words '{text}' {cut}")
