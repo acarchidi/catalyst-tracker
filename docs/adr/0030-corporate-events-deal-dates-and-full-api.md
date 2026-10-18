@@ -1,4 +1,4 @@
-# 0030 — Corporate events, deal dates, past catalysts with their price moves, and the full API
+# 0030 — Corporate events, deal dates, growth blockers, past catalysts with their price moves, and the full API
 
 - **Status:** accepted (planned; nothing is built now)
 - **Date:** 2026-10-18
@@ -12,6 +12,8 @@ On 2026-10-18 the owner asked for five things:
 3. In the history of events: departures and arrivals of top executives, major fundraises, and collaboration or deal announcements.
 4. On the upcoming schedule: future merger, deal, and collaboration dates.
 5. All of it added to the end of the roadmap.
+
+Later the same day the owner added a sixth: track what management says is holding back revenue or earnings growth, and how and when it will be fixed. Examples are adding manufacturing capacity to meet demand for a drug on the market or about to be approved, entering new countries, new payment arrangements with insurers, and licensing production to outside manufacturers. Any statement that names a blocker and gives a rough timeline for fixing it should be tracked.
 
 **What the spec already has:**
 - Historical outcomes: free sees the last 90 days, paid sees the full archive. The outcome agent is a Phase 1 item.
@@ -39,17 +41,28 @@ On 2026-10-18 the owner asked for five things:
    - These are not trial or regulatory catalysts, so they appear in their own section and filter ("Corporate events"). They also feed the price statistics as their own event types.
    - **Both readers learn the new types** under new prompt versions, with gold-set entries for each type. Both are scored again before any of these publishes (checkpoint CP13).
    - **Back-fill:** history is filled for covered companies from their past filings, at the 10-requests-per-second EDGAR limit, inside the daily model caps. It runs over several weeks rather than raising any cap.
-3. **The full API.** The public REST API tier moves from "Later" into this phase.
+3. **Growth blockers and their fixes ("commercial milestones").**
+   - **What is recorded:** a statement by the company that names something limiting revenue or earnings growth, together with the step that fixes it and a timeline. Each record has:
+     - the blocker, for example "supply constrained" or "no reimbursement in Germany";
+     - the fix: new or expanded manufacturing capacity, a second supplier or contract manufacturer, a licence to an outside manufacturer, launch in a new country or region, a pricing or reimbursement decision, a payer contract or new payment scheme (for example outcomes-based or instalment pricing), a label or formulation change, or a sales-force expansion;
+     - the drug or device it affects;
+     - the timeline, read by the same date parser as every catalyst ("capacity online in 2H27");
+     - the quote, and the label "company expectation".
+   - **Sources:** only the company's own materials: releases, 8-K and 6-K exhibits (including investor presentations filed as exhibits), 10-K and 10-Q text (risk factors and management's discussion), and presentations and call transcripts that the company itself posts on its own website. Transcripts sold by vendors are not used unless their licence allows it. Each source's terms are checked first.
+   - **Tracking over time:** every later statement about the same blocker is a change in its history: on track, moved, done, or dropped. A timeline that slips is shown and can be alerted on, like any slipped catalyst. A blocker the company stops mentioning is marked "no update since" with the date of the last mention, never "fixed".
+   - **What is never added:** our own view of whether the fix will work, or a guess at a timeline the company did not give. A blocker with no timeline is recorded with "no timeline given" and does not appear on the calendar.
+   - These appear on the calendar under their own type, "Commercial milestones", and in the "Corporate events" section's filters. Both readers learn them under CP13 with the other new types.
+4. **The full API.** The public REST API tier moves from "Later" into this phase.
    - It offers every published dataset: catalysts, history, outcomes, corporate events, deal dates, trials, collaborators, benchmarks, market size, scenarios, price statistics, runway, insider purchases (Phase 7), and devices (Phase 8).
    - Each one comes with its sources, as on the site.
    - It keeps the spec's design: OpenAPI, versioned paths, cursor paging, ETags, and rate limits by tier.
    - Access needs an API key per account, rate limits by plan, and usage metering. Bulk export is at most a daily file of changes, never a price series.
    - **Price:** the spec's "about $50 a month" stands until the owner decides otherwise. Whether the API tier and ADR 0029's possible higher tier are one plan is decided together.
-4. **Every rule stays the same.**
+5. **Every rule stays the same.**
    - Every value has a source document and a verbatim quote.
    - The readers have no tools.
    - Only the publish gate writes live data.
-   - No advice: an executive departure is shown as a fact, never as a signal.
+   - No advice: an executive departure or a growth blocker is shown as a fact the company stated, never as a signal.
 
 ## Alternatives
 
@@ -59,7 +72,7 @@ On 2026-10-18 the owner asked for five things:
 
 ## Consequences
 
-- Coverage of SEC forms grows: 8-K Items 1.01, 3.02, and 5.02; 424B prospectuses; DEFM14A; and Schedule TO.
+- Coverage of SEC forms grows: 8-K Items 1.01, 3.02, and 5.02; 424B prospectuses; DEFM14A; Schedule TO; and the risk-factor and management-discussion text of 10-K and 10-Q filings. Company investor pages become a source, each after a terms check.
 - The readers' prompts change, so the gold set and both scores are redone for the new types.
 - The API tier needs the Phase 3 accounts and billing, and an API key system.
 - The back-fill takes weeks at our caps. That is a trade-off for keeping spending low.
