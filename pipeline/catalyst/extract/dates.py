@@ -274,3 +274,55 @@ def parse_window(text: str, published: date) -> DateWindow | None:
         return None
     start, end, precision = found
     return DateWindow(start, end, precision, text)
+
+
+# --- Date words cut from a longer date (CP4 review of part 5c, B2) ---
+
+_TOKEN = re.compile(r"\S+")
+_REACH = 6  # how many words either side may belong to the same date
+_DATE_PART = (
+    r"(?:\d|q[1-4]|[1-4]q|h[12]|[12]h|early|mid|late|first|second|third|fourth|year|end|"
+    + "|".join(sorted(_MONTHS, key=len, reverse=True))
+    + r")"
+)
+# An unspaced hyphen, slash, or en dash that joins the words to another date part: "Q4 2026-Q1 2027".
+_JOINED_AFTER = re.compile(r"[-/\u2013]" + _DATE_PART, re.IGNORECASE | re.ASCII)
+_JOINED_BEFORE = re.compile(r"(?<![^\W_])" + _DATE_PART + r"[\w.']*[-/\u2013]$", re.IGNORECASE | re.ASCII)
+_FISCAL = re.compile(r"\bfiscal\b|\bFY\s?'?\d", re.IGNORECASE)
+
+
+def _key(window: DateWindow | None) -> tuple[date, date, DatePrecision] | None:
+    return (window.start, window.end, window.precision) if window else None
+
+
+def cut_short(quote: str, words: str, published: date) -> str | None:
+    """Say why the date words, at some place in the quote, are part of a longer date; None when whole.
+
+    Each place the words appear is read with up to six words either side. The words are cut
+    short when a longer phrase there names another window ("second half" of "second half of
+    2027"), when an unspaced joiner ties them to another date part ("Q4 2026-Q1 2027"), or when
+    the date is a fiscal one. One cut place is enough: code cannot tell which place a reader meant.
+    """
+    parts = words.split()
+    if not parts:
+        return None
+    own = _key(parse_window(words, published))
+    pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, parts)) + r"(?!\w)"
+    for found in re.finditer(pattern, quote):
+        before_text, after_text = quote[: found.start()], quote[found.end() :]
+        if _JOINED_AFTER.match(after_text) or _JOINED_BEFORE.search(before_text):
+            return "are joined to more of a date in the quote"
+        before = _TOKEN.findall(before_text)[-_REACH:]
+        after = _TOKEN.findall(after_text)[:_REACH]
+        if _FISCAL.search(" ".join([*before[-3:], found.group(0), *after[:3]])):
+            return "are part of a fiscal-year date, not a calendar one"
+        for left in range(len(before) + 1):
+            for right in range(len(after) + 1):
+                if left == right == 0:
+                    continue
+                phrase = " ".join([*before[len(before) - left :], found.group(0), *after[:right]])
+                phrase = re.sub(r"\s+(?=[,;])", "", phrase).strip(" ,;:.()")
+                window = parse_window(phrase, published)
+                if window is not None and _key(window) != own:
+                    return f"are cut from the longer date '{phrase}' in the quote"
+    return None
