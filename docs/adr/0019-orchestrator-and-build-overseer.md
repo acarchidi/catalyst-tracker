@@ -1,6 +1,7 @@
 # 0019 — Oversight: a pipeline orchestrator and a build overseer that can stop, hold, and re-run
 
 - **Status:** accepted
+- **Amended by:** ADR 0036 (2026-10-19), where this record says the owner merges owner-path changes (thresholds, the overseer, `merge_gate.py`), the coding agent now merges them after a separate Opus review.
 - **Date:** 2026-10-17
 - **Roadmap items:** Phase 1, "Build overseer" and "Orchestrator controls"
 

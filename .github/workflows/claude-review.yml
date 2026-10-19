@@ -2,9 +2,9 @@ name: Claude review
 
 # A fresh Claude reviews every pull request that is ready for review. Its pass or fail is
 # the "Claude review" check, which the merge robot (merge-robot.yml) requires (ADR 0006,
-# ADR 0007). A pull request the owner merges by hand (it changes an owner path, by main's
+# ADR 0007). A pull request the robot leaves out (it changes an owner path, by main's
 # scripts/merge_gate.py) is not reviewed here: a separate reviewer checks it in the coding
-# session, and each review costs API credits (owner decision 2026-10-17; ADR 0022). The check
+# session before the coding agent merges it (ADR 0036), and each review costs API credits (owner decision 2026-10-17; ADR 0022). The check
 # then fails, so an unreviewed commit never carries a passing review the robot could count.
 
 on:
@@ -42,7 +42,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Pull requests the owner merges are not reviewed here
+      - name: Pull requests the robot leaves out are not reviewed here
         id: owner
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -120,7 +120,7 @@ jobs:
           if [ "$OWNER_MERGES" = "true" ]; then
             # A failure, never a pass: the robot's own file list can differ from this one (the
             # base moved, or more files than its list holds), and it must never count this.
-            printf '## Claude review: not run, the owner merges this\n\nIt changes %s. A separate reviewer in the coding session checks pull requests like this one. The check shows as failed on purpose, so the merge robot can never merge an unreviewed commit; the owner merges it by hand.\n' "$OWNER_FILES" > "$RUNNER_TEMP/review.md"
+            printf '## Claude review: not run, the robot leaves this out\n\nIt changes %s. A separate reviewer in the coding session checks pull requests like this one, and the coding agent merges it after that review (ADR 0036). The check shows as failed on purpose, so the merge robot can never merge an unreviewed commit.\n' "$OWNER_FILES" > "$RUNNER_TEMP/review.md"
             status=1
           else
             python3 -I scripts/review_verdict.py "$RUNNER_TEMP/review.md"
