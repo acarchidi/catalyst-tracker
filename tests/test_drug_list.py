@@ -22,6 +22,7 @@ from hypothesis import strategies as st
 from catalyst.collectors.sources.ctgov import lead_sponsor_search
 from catalyst.drug_list import (
     DrugPlan,
+    ListedName,
     SourceRecord,
     fda_records,
     fda_sponsor_key,
@@ -190,7 +191,7 @@ def test_stand_ins_and_combinations_are_not_drug_names(text: str) -> None:
         ("ARIKACE™", [("ARIKACE", DrugNameKind.BRAND)]),
         ("4D-150", [("4D-150", DrugNameKind.CODE)]),
         ("AKCEA-APO(a)-LRx", [("AKCEA-APO(a)-LRx", DrugNameKind.INN)]),
-        ("Previously REOLYSIN", [("REOLYSIN", DrugNameKind.INN)]),
+        ("Previously REOLYSIN", [("REOLYSIN", DrugNameKind.BRAND)]),
         ("IL-23 blocker", []),
     ],
 )
@@ -302,12 +303,19 @@ def test_a_name_an_uncovered_fda_sponsor_also_holds_is_kept_for_review() -> None
 
 
 def test_a_registry_record_that_joins_two_approved_products_is_left_out() -> None:
-    """A copy of one Insmed brensocatib intervention that also names Incyte's ruxolitinib."""
-    study = copy.deepcopy(next(s for s in _studies(INSMED_TRIALS) if "INS1007" in json.dumps(s)))
-    for intervention in study["protocolSection"]["armsInterventionsModule"]["interventions"]:
-        if "INS1007" in json.dumps(intervention):
-            intervention["otherNames"] = [*intervention.get("otherNames", []), "AMIKACIN"]
-    plan = plan_drugs([*_records(), *registry_records(study)], _sponsors())
+    """Two constructed Insmed registry records that share one code: one names brensocatib, one amikacin.
+
+    (Since the Opus review of PR #73 a free-text other name such as "AMIKACIN" is no name, so
+    only a shared code can join two products now.)
+    """
+    shared = ListedName("INS-0001", DrugNameKind.CODE)
+    joining = [
+        SourceRecord(
+            DrugNameSource.CTGOV, ref, "Insmed Incorporated", (ListedName(main, DrugNameKind.INN), shared)
+        )
+        for ref, main in (("NCT00000001", "Brensocatib"), ("NCT00000002", "Amikacin"))
+    ]
+    plan = plan_drugs([*_records(), *joining], _sponsors())
     brensocatib, amikacin = _drug_of(plan, INSMED, "brensocatib"), _drug_of(plan, INSMED, "amikacin")
     assert brensocatib
     assert amikacin

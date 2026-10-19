@@ -10,11 +10,14 @@ decides which names become which company's drug. `catalyst.drug_list_store` writ
   interventions of trials whose lead sponsor is exactly one covered company's registered name.
 
 ADR 0015 kept registry interventions out because they list comparators ("azithromycin"), placebos,
-and short forms ("ETH"). Here a registry name is dropped when:
+and short forms ("ETH"). Here only an intervention's main name gives a generic or brand name (its
+free-text other names give code names only), and a registry name is dropped when:
 - it is used only in comparator arms (placebo, active comparator, sham, no intervention);
 - it names a placebo, vehicle, standard of care, or other stand-in (`_STAND_IN_WORDS`);
-- it joins several drugs ("X + Y", "X/Y", "X and Y");
+- it joins several drugs ("X + Y", "X/Y", "X and Y", "X (+) Y");
+- it is a description or holds an ordinary word (`_DESCRIPTION_WORDS`, `_ORDINARY_WORDS`);
 - it is a short form: a name without digits and with fewer than five letters;
+- another intervention of the same trial lists it too;
 - Drugs@FDA lists it for another sponsor, as it does for every approved comparator.
 
 Any name that two owners' records give, after these rules, is recorded for no one and kept for
@@ -211,6 +214,53 @@ _SHORTEST_RUN = 4  # letters in a run of words the comparator rule looks up ("De
 _MOST_WORDS = 6  # a longer "other name" is a description ("Active BMN 111: Subcutaneous injection ...")
 # Words of a description, not a name: "CAR-T cells", "Anti C1q Antibody", "Autologous Cell Therapy",
 # "Extension", "Safety observation", "Typical Antipsychotics".
+# Ordinary words never in a drug's name ("if necessary", "until May", "in FOLFOX", "brand name").
+_ORDINARY_WORDS = frozenset(
+    [
+        "a",
+        "an",
+        "the",
+        "in",
+        "of",
+        "to",
+        "as",
+        "at",
+        "by",
+        "for",
+        "from",
+        "if",
+        "on",
+        "per",
+        "than",
+        "then",
+        "until",
+        "via",
+        "without",
+        "into",
+        "during",
+        "versus",
+        "vs",
+        "when",
+        "while",
+        "brand",
+        "name",
+        "names",
+        "commercial",
+        "concentration",
+        "administration",
+        "administered",
+        "necessary",
+        "interventional",
+        "non",
+        "only",
+        "alone",
+        "monotherapy",
+        "radiosensitizer",
+        "approved",
+        "marketed",
+        "available",
+    ]
+)
 _DESCRIPTION_WORDS = frozenset(
     [
         "cell",
@@ -329,6 +379,29 @@ _DESCRIPTION_WORDS = frozenset(
         "steroid",
         "steroids",
         "triptan",
+        "pharmacokinetics",
+        "doublet",
+        "triplet",
+        "label",
+        "eye",
+        "drops",
+        "moisturizing",
+        "moisturizer",
+        "moisturizers",
+        "stabilizer",
+        "antiemetic",
+        "antihyperglycemics",
+        "biguanides",
+        "plasma",
+        "frozen",
+        "adequate",
+        "developmental",
+        "prandial",
+        "analog",
+        "mixture",
+        "donor",
+        "tki",
+        "level",
     ]
 )
 # A bracket set off by a space holds a second name ("Selinexor (KPT-330)"); one inside a word is
@@ -345,6 +418,7 @@ class ListedName:
 
     name: str
     kind: DrugNameKind
+    main: bool = True  # False for a registry intervention's other names, never the name shown
 
 
 @dataclass(frozen=True)
@@ -365,10 +439,19 @@ class SourceRecord:
     labelers: tuple[str, ...] = ()  # Drugs@FDA: the companies its labels name ("Kura Oncology, Inc.")
 
 
+def _is_ester(words: list[str]) -> bool:
+    """Say whether the words name a fumarate ester ("DIMETHYL FUMARATE", "DIROXIMEL FUMARATE").
+
+    Such a name is the drug's whole generic name; the alcohol part alone names nothing.
+    """
+    alcohol = words[0].casefold()
+    return len(words) == 2 and words[1].casefold() == "fumarate" and alcohol.endswith(("yl", "el"))
+
+
 def generic_name(ingredient: str) -> str:
     """Return an FDA active ingredient without its biologic suffix and its salt words."""
     words = _BIOLOGIC_SUFFIX.sub("", ingredient.strip()).split()
-    while len(words) > 1 and words[-1].casefold() in _SALT_WORDS:
+    while len(words) > 1 and words[-1].casefold() in _SALT_WORDS and not _is_ester(words):
         words.pop()
     return " ".join(words)
 
@@ -440,12 +523,13 @@ def _trimmed(name: str) -> str:
     return " ".join(words)
 
 
-def _registry_part(text: str, trademark: bool) -> ListedName | None:
+def _registry_part(text: str, trademark: bool, *, main: bool = True) -> ListedName | None:
     name = _EDGE_PUNCTUATION.sub("", _trimmed(text))
     words = [w.casefold() for w in re.findall(r"[^\W_]+", name)]
-    if not words or len(words) > _MOST_WORDS or ":" in name or set(words) & _DESCRIPTION_WORDS:
+    if not words or len(words) > _MOST_WORDS or ":" in name or _JOINS_DRUGS.search(name):
         return None
-    if _JOINS_DRUGS.search(name):
+    # Ordinary words count as whole words between spaces, so "AKCEA-APO(a)-LRx" keeps its "a".
+    if set(words) & _DESCRIPTION_WORDS or {w.casefold() for w in name.split()} & _ORDINARY_WORDS:
         return None
     letters = sum(ch.isalpha() for ch in name)
     if any(ch.isdigit() for ch in name):
@@ -453,26 +537,48 @@ def _registry_part(text: str, trademark: bool) -> ListedName | None:
         short = sum(ch.isalnum() for ch in name) < _SHORTEST_CODE  # "14C" labels a radioactive tracer
         if letters == 0 or short or (prefix and prefix.group(0).upper() in _NOT_DRUG_PREFIXES):
             return None
-        return ListedName(name, DrugNameKind.CODE)
-    if letters < _SHORTEST_GENERIC:
-        return None
-    return ListedName(name, DrugNameKind.BRAND if trademark else DrugNameKind.INN)
+        return ListedName(name, DrugNameKind.CODE, main)
+    if not main or letters < _SHORTEST_GENERIC:
+        return None  # free text beside the main name is no name (Opus review of PR #73, B2)
+    # Generic names are written in small letters in the registry; a name in capitals is a brand ("ELEVIDYS").
+    brand = trademark or name.isupper()
+    return ListedName(name, DrugNameKind.BRAND if brand else DrugNameKind.INN)
+
+
+def _joins_drugs(text: str) -> bool:
+    words = {w.casefold() for w in re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text))}
+    return bool(words & _STAND_IN_WORDS) or bool(_JOINS_DRUGS.search(text))
 
 
 def registry_names(text: str) -> list[ListedName] | None:
-    """Return the drug names in one registry intervention name, or None for a stand-in or a combination.
+    """Return the drug names in a registry intervention's name, or None for a stand-in or a combination.
 
-    Dose and form words at either end are dropped, and "A (B)" gives A and B. A name with a
-    digit is a code name, which matches only its own company's claims. A name without one must
-    have five letters or more, and is a brand when the registry marks it ® or ™. Descriptions
-    ("CAR-T cells", "Anti C1q Antibody"), names of more than six words, and short forms give none.
+    Dose and form words at either end are dropped. A name with a digit is a code name, which
+    matches only its own company's claims. A name without one must have five letters or more,
+    and is a brand when the registry marks it ® or ™. A bracket adds a code name only
+    ("Selinexor (KPT-330)"); free text in it ("(Commercial tablet)") names nothing. A join
+    anywhere, brackets included ("simvastatin (+) ezetimibe"), makes a combination. Descriptions,
+    ordinary words, names of more than six words, and short forms give none.
     """
-    words = {w.casefold() for w in re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text))}
-    if words & _STAND_IN_WORDS or _JOINS_DRUGS.search(_PARENTHESES.sub(" ", text)):
+    if _joins_drugs(text):
         return None
-    parts = [_PARENTHESES.sub(" ", text), *_PARENTHESES.findall(text)]
-    found = (_registry_part(part, bool(_TRADEMARK.search(part))) for part in parts)
+    outside = _PARENTHESES.sub(" ", text)
+    found = [_registry_part(outside, bool(_TRADEMARK.search(outside)))]
+    found += [_registry_part(part, False, main=False) for part in _PARENTHESES.findall(text)]
     return list(dict.fromkeys(filter(None, found)))
+
+
+def registry_other_names(text: str) -> list[ListedName]:
+    """Return the code names in one of an intervention's listed other names.
+
+    Other names are free text ("Brilinta", "Commercial tablet", a misspelled competitor), so
+    only code names are kept from them; brands and generic names come from Drugs@FDA or from a
+    main intervention name (Opus review of PR #73, B2).
+    """
+    if _joins_drugs(text):
+        return []
+    parts = [_PARENTHESES.sub(" ", text), *_PARENTHESES.findall(text)]
+    return list(dict.fromkeys(filter(None, (_registry_part(p, False, main=False) for p in parts))))
 
 
 def _in_trial_arms(intervention: Mapping[str, Any], arm_types: Mapping[str, str | None]) -> bool:
@@ -493,18 +599,38 @@ def registry_records(study: Mapping[str, Any]) -> list[SourceRecord]:
         str(arm.get("label")): arm.get("type")
         for arm in cast(list[dict[str, Any]], module.get("armGroups") or [])
     }
-    records: list[SourceRecord] = []
+    kept: list[tuple[list[ListedName], list[ListedName]]] = []
     for intervention in cast(list[dict[str, Any]], module.get("interventions") or []):
         if intervention.get("type") not in REGISTRY_TYPES or not _in_trial_arms(intervention, arm_types):
             continue
         main = registry_names(str(intervention.get("name") or ""))
-        if main is None:
-            continue  # a stand-in or a combination: its other names may name a partner drug
-        others = [registry_names(str(n)) or [] for n in cast(list[str], intervention.get("otherNames") or [])]
-        names = dict.fromkeys([*main, *(name for found in others for name in found)])
-        if names:
-            records.append(SourceRecord(DrugNameSource.CTGOV, nct_id, sponsor, tuple(names)))
-    return records
+        if not main or not main[0].main:
+            continue  # a stand-in, a combination, or no drug name: its other names name nothing of it
+        others = cast(list[str], intervention.get("otherNames") or [])
+        kept.append((main, [name for other in others for name in registry_other_names(str(other))]))
+    return [
+        SourceRecord(DrugNameSource.CTGOV, nct_id, sponsor, tuple(dict.fromkeys([*main, *others])))
+        for main, others in _unshared(kept)
+    ]
+
+
+def _unshared(
+    interventions: list[tuple[list[ListedName], list[ListedName]]],
+) -> list[tuple[list[ListedName], list[ListedName]]]:
+    """Drop a listed name that another intervention of the same trial also gives.
+
+    NCT07683000 lists teropavimab's code GS-5423 under "Lenacapavir Tablet" too; such a name
+    cannot tell the two drugs apart, so it joins neither (Opus review of PR #73, B1).
+    """
+    keys = [{name_key(n.name) for n in [*main, *others]} for main, others in interventions]
+    mains = [name_key(main[0].name) for main, _ in interventions]
+    kept: list[tuple[list[ListedName], list[ListedName]]] = []
+    for i, (main, others) in enumerate(interventions):
+        apart = [keys[j] for j in range(len(interventions)) if mains[j] != mains[i]]
+        elsewhere = set[str]().union(*apart)
+        named = [n for n in main if n is main[0] or name_key(n.name) not in elsewhere]
+        kept.append((named, [n for n in others if name_key(n.name) not in elsewhere]))
+    return kept
 
 
 @dataclass
@@ -515,6 +641,7 @@ class PlannedName:
     kind: DrugNameKind
     source: DrugNameSource
     refs: list[str]
+    main: bool = True  # some record gives it as a main name: any FDA name, a registry intervention's
 
 
 @dataclass
@@ -526,11 +653,21 @@ class PlannedDrug:
 
     @property
     def preferred_name(self) -> str:
-        """The generic name if any (the registry's spelling first), else a brand, else a code name."""
-        rank = {DrugNameKind.INN: 0, DrugNameKind.BRAND: 1, DrugNameKind.CODE: 2}
-        source_rank = {DrugNameSource.CTGOV: 0, DrugNameSource.OPENFDA: 1, DrugNameSource.CLAIM: 2}
-        best = min(self.names.values(), key=lambda n: (rank[n.kind], source_rank[n.source], n.name))
-        return best.name.lower() if best.kind is DrugNameKind.INN and best.name.isupper() else best.name
+        """The name shown: Drugs@FDA's first, its generic name before its brand; else the registry's.
+
+        A registry intervention's other name is never shown (Opus review of PR #73, B1).
+        """
+        best = min(self.names.values(), key=_shown_rank)
+        fda_generic = best.kind is DrugNameKind.INN and best.source is DrugNameSource.OPENFDA
+        return best.name.lower() if fda_generic and best.name.isupper() else best.name  # FDA writes capitals
+
+
+_SOURCE_RANK = {DrugNameSource.OPENFDA: 0, DrugNameSource.CTGOV: 1, DrugNameSource.CLAIM: 2}
+_KIND_RANK = {DrugNameKind.INN: 0, DrugNameKind.BRAND: 1, DrugNameKind.CODE: 2}
+
+
+def _shown_rank(name: PlannedName) -> tuple[bool, int, int, str]:
+    return (not name.main, _SOURCE_RANK[name.source], _KIND_RANK[name.kind], name.name)
 
 
 @dataclass
@@ -686,16 +823,21 @@ def _joined(entries: Iterable[tuple[SourceRecord, list[ListedName]]]) -> _Groups
     return groups
 
 
+def _product(record: SourceRecord) -> str:
+    """Name an FDA product: its one ingredient, or, for a combination, its brand (VYTORIN is not ZETIA)."""
+    return record.ingredient or "+" + name_key(record.names[0].name)
+
+
 def _company_drugs(
     plan: DrugPlan, company: UUID, entries: list[tuple[SourceRecord, list[ListedName]]]
 ) -> list[PlannedDrug]:
     """Join one company's names into drugs; a registry record that joins two approved products is left out."""
     groups = _joined(entries)
-    ingredients: defaultdict[str, set[str]] = defaultdict(set)
+    products: defaultdict[str, set[str]] = defaultdict(set)
     for record, names in entries:
-        if record.ingredient:
-            ingredients[groups.find(name_key(names[0].name))].add(record.ingredient)
-    joined = {root for root, found in ingredients.items() if len(found) > 1}
+        if record.source is DrugNameSource.OPENFDA:
+            products[groups.find(name_key(names[0].name))].add(_product(record))
+    joined = {root for root, found in products.items() if len(found) > 1}
     if joined:
         kept = [
             (r, ns)
@@ -710,8 +852,9 @@ def _company_drugs(
         drug = drugs.setdefault(groups.find(name_key(names[0].name)), PlannedDrug(company, {}))
         for name in names:
             planned = drug.names.setdefault(
-                name_key(name.name), PlannedName(name.name, name.kind, record.source, [])
+                name_key(name.name), PlannedName(name.name, name.kind, record.source, [], name.main)
             )
+            planned.main = planned.main or name.main
             if record.ref not in planned.refs:
                 planned.refs.append(record.ref)
     return list(drugs.values())
@@ -726,6 +869,7 @@ class DrugWrite:
     preferred_name: str
     names: list[PlannedName]
     known_refs: dict[str, list[str]] = field(default_factory=dict[str, list[str]])  # name on file: refs
+    rename: bool = False  # a drug on file is shown by FDA's generic name from now on
 
 
 @dataclass
@@ -767,6 +911,8 @@ def merge_with_existing(plan: DrugPlan, existing: Iterable[DrugRef]) -> Merged:
             continue
         target = next(iter(own.values()), None)
         known = {name_key(n): n for n, _ in target.names} if target else {}
+        best = min(names.values(), key=_shown_rank)
+        fda_generic = (best.source, best.kind) == (DrugNameSource.OPENFDA, DrugNameKind.INN)
         merged.writes.append(
             DrugWrite(
                 planned.company_id,
@@ -774,6 +920,8 @@ def merge_with_existing(plan: DrugPlan, existing: Iterable[DrugRef]) -> Merged:
                 PlannedDrug(planned.company_id, names).preferred_name,
                 [n for k, n in names.items() if k not in known],
                 {known[k]: n.refs for k, n in names.items() if k in known},
+                # The spec shows a drug by its generic name; FDA's replaces a code name on file.
+                rename=target is not None and fda_generic,
             )
         )
     return merged

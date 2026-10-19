@@ -27,6 +27,7 @@ from catalyst.collectors.sources import ctgov, openfda
 from catalyst.db.tables import TABLES
 from catalyst.drug_list import (
     DrugPlan,
+    Merged,
     SourceRecord,
     fda_records,
     fda_sponsor_key,
@@ -105,10 +106,14 @@ def sponsor_maps(session: Session, companies: Iterable[Listed]) -> dict[DrugName
     }
 
 
-def store_plan(session: Session, plan: DrugPlan, now: datetime) -> DrugListReport:
+def store_plan(
+    session: Session, plan: DrugPlan, now: datetime, *, replace_withheld: bool = True
+) -> DrugListReport:
     """Write the plan against the drugs on file, and replace the withheld names.
 
     Writes go in batches, so a run over the whole coverage list is a few statements, not one per name.
+    A run that read only some sources (`replace_withheld=False`) keeps the withheld names it did
+    not see again, and only adds its own.
     """
     report = DrugListReport(
         records=plan.records,
@@ -122,6 +127,9 @@ def store_plan(session: Session, plan: DrugPlan, now: datetime) -> DrugListRepor
     drugs: list[dict[str, Any]] = []
     names: list[dict[str, Any]] = []
     refs: dict[UUID, list[str]] = {}
+    renames = [
+        {"drug": w.drug_id, "shown": w.preferred_name} for w in merged.writes if w.drug_id and w.rename
+    ]
     for write in merged.writes:
         drug_id = write.drug_id
         if drug_id is None:
@@ -148,10 +156,22 @@ def store_plan(session: Session, plan: DrugPlan, now: datetime) -> DrugListRepor
     if refs:
         statement = update(_NAME).where(_NAME.c.id == bindparam("row")).values(source_refs=bindparam("refs"))
         session.execute(statement, [{"row": row, "refs": found} for row, found in refs.items()])
+    if renames:
+        rename = (
+            update(_DRUG).where(_DRUG.c.id == bindparam("drug")).values(preferred_name=bindparam("shown"))
+        )
+        session.execute(rename, renames)
     report.drugs_created, report.names_added = len(drugs), len(names)
     report.names_on_file = sum(len(write.known_refs) for write in merged.writes)
     report.conflicts = merged.conflicts
-    session.execute(delete(_WITHHELD))
+    report.withheld = _store_withheld(session, merged, now, replace_withheld)
+    return report
+
+
+def _store_withheld(session: Session, merged: Merged, now: datetime, replace: bool) -> int:
+    """Store the withheld names (replacing the old ones when `replace`); return how many are on file."""
+    if replace:
+        session.execute(delete(_WITHHELD))
     rows = [
         WithheldDrugName(
             name=withheld.name,
@@ -164,8 +184,7 @@ def store_plan(session: Session, plan: DrugPlan, now: datetime) -> DrugListRepor
     ]
     if rows:
         session.execute(insert(_WITHHELD).on_conflict_do_nothing(index_elements=["name"]), rows)
-    report.withheld = session.execute(select(func.count()).select_from(_WITHHELD)).scalar_one()
-    return report
+    return session.execute(select(func.count()).select_from(_WITHHELD)).scalar_one()
 
 
 def fetch_records(
@@ -198,6 +217,6 @@ def load_drugs(
     records = fetch_records(client, companies, sources)
     with session_factory.begin() as session:
         plan = plan_drugs(records, sponsor_maps(session, companies))
-        report = store_plan(session, plan, now())
+        report = store_plan(session, plan, now(), replace_withheld=sources >= set(SOURCES))
     log_event(_log, "drug_list_loaded", **report.summary())
     return report

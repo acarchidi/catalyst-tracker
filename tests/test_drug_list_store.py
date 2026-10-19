@@ -46,6 +46,7 @@ INSMED = PilotCompany(ticker="INSM", cik=1104506, ctgov_sponsors=frozenset({"Ins
 KURA = PilotCompany(ticker="KURA", cik=1422143, ctgov_sponsors=frozenset({"Kura Oncology, Inc."}))
 PFIZER = PilotCompany(ticker="PFE", cik=78003)
 COMPANIES = [INSMED, KURA, PFIZER]
+BOTH = frozenset({"openfda", "ctgov"})
 
 
 @pytest.fixture
@@ -70,9 +71,11 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> RecordedServer:
     return RecordedServer(FIXTURE)
 
 
-def _load(session_factory: sessionmaker[Session], server: RecordedServer) -> dict[str, Any]:
+def _load(
+    session_factory: sessionmaker[Session], server: RecordedServer, sources: frozenset[str] = BOTH
+) -> dict[str, Any]:
     client = build_clients("data@example.org", server.transport, rate_limits=False).web
-    return load_drugs(session_factory, client, COMPANIES, lambda: NOW).summary()
+    return load_drugs(session_factory, client, COMPANIES, lambda: NOW, sources).summary()
 
 
 def _names(session_factory: sessionmaker[Session]) -> list[dict[str, Any]]:
@@ -140,7 +143,8 @@ def test_the_company_s_code_name_drug_on_file_gains_its_generic_and_brand_names(
     assert names["ins1007"]["source"] == "claim"  # first found in the company's own release
     assert names["ins1007"]["source_refs"]  # and now also backed by its registry records
     assert {"brensocatib", "brinsupri"} <= set(names)
-    assert names["ins1007"]["preferred_name"] == "INS1007"  # a drug on file keeps its shown name
+    # The spec shows a drug by its generic name: FDA's replaces the code name (Opus review of PR #73).
+    assert names["ins1007"]["preferred_name"] == "brensocatib"
 
 
 def test_a_name_another_company_s_drug_already_has_is_withheld_for_review(
@@ -174,6 +178,25 @@ def test_a_failed_request_stores_nothing(
     with pytest.raises(httpx.HTTPStatusError, match="404"):
         _load(session_factory, recorded)
     assert _names(session_factory) == []
+
+
+def test_a_run_of_drugs_at_fda_alone_keeps_the_names_withheld_for_registry_records(
+    session_factory: sessionmaker[Session], companies: dict[str, UUID], recorded: RecordedServer
+) -> None:
+    """Kura's registry name darlifarnib, already on file under Pfizer here, is withheld as shared."""
+    with session_factory.begin() as session:
+        drug = Drug(company_id=companies["PFE"], preferred_name="Darlifarnib")
+        session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
+        name = DrugName(drug_id=drug.id, name="Darlifarnib", kind=DrugNameKind.INN)
+        session.execute(insert(TABLES[DrugName]).values(**name.model_dump()))
+    _load(session_factory, recorded)
+    withheld = TABLES[WithheldDrugName]
+    with session_factory() as session:
+        before = set(session.execute(select(withheld.c.name)).scalars())
+    assert "Darlifarnib" in before
+    _load(session_factory, recorded, frozenset({"openfda"}))
+    with session_factory() as session:
+        assert set(session.execute(select(withheld.c.name)).scalars()) >= before
 
 
 def test_registry_names_need_drugs_at_fda(
