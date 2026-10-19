@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from catalyst.extract.dates import DateWindow, parse_window
+from catalyst.extract.dates import DateWindow, borrows_year, parse_window
 from catalyst.schemas.enums import DatePrecision
 
 PUBLISHED = date(2026, 10, 14)
@@ -377,3 +377,39 @@ def _digits(text: str, zero: int) -> str:
 def test_digits_from_other_scripts_name_no_window(phrase: str) -> None:
     """A reader may see "28" where code reads another digit; only ASCII digits count (CP4, B3)."""
     assert parse_window(phrase, date(2026, 10, 14)) is None
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    ["second half", "December 15", "by year-end", "third quarter", "November 16 to December 2"],
+)
+def test_words_without_a_year_borrow_the_documents(phrase: str) -> None:
+    """Their window moves with the document's year, so a year near them matters (CP4 final review, B1)."""
+    assert parse_window(phrase, PUBLISHED) is not None
+    assert borrows_year(phrase, PUBLISHED) is True
+
+
+@pytest.mark.parametrize(
+    "phrase",
+    [
+        "second half of 2027",
+        "2H26",
+        "Q4 '27",
+        "December 15, 2027",
+        "November 16 to December 2, 2027",
+        "by the end of 2027",
+        "this year",
+        "second half of next year",
+        "this quarter",
+        "later this year",
+        "soon",
+    ],
+)
+def test_words_that_write_or_count_their_year_do_not_borrow_it(phrase: str) -> None:
+    """A written year, or one counted from the document ("this year", "next year"), is the words' own."""
+    assert borrows_year(phrase, PUBLISHED) is False
+
+
+def test_a_leap_day_document_still_tells_whether_words_borrow_its_year() -> None:
+    assert borrows_year("December 15", date(2028, 2, 29)) is True
+    assert borrows_year("December 15, 2028", date(2028, 2, 29)) is False

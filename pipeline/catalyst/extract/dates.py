@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import calendar
 import re
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
@@ -325,4 +326,69 @@ def cut_short(quote: str, words: str, published: date) -> str | None:
                 window = parse_window(phrase, published)
                 if window is not None and _key(window) != own:
                     return f"are cut from the longer date '{phrase}' in the quote"
+    return None
+
+
+# --- Date words with no year beside a year code cannot read (CP4 final review, B1) ---
+
+# Words that count the year from the document itself: it is their own year, not a borrowed one.
+_COUNTED = re.compile(r"\b(?:this|next)\s+year\b|\bthis\s+quarter\b", re.IGNORECASE)
+# Words near year-less date words that may name, or count, another year.
+_YEAR_WORDS = re.compile(
+    r"\b(?:year|calendar|following|next|coming|fiscal|fy|thousand|twenty)\b", re.IGNORECASE
+)
+
+
+def _a_year_later(published: date) -> date:
+    return date(published.year + 1, published.month, min(published.day, 28 if published.month == 2 else 31))
+
+
+def borrows_year(words: str, published: date) -> bool:
+    """Say whether the date words name a window only by taking the document's year.
+
+    "Second half", "December 15", and "by year-end" do: read a year later, they give a window a
+    year later. Words that write a year ("2027", "'27", "2H26") or count it from the document
+    ("this year", "next year", "this quarter") do not.
+    """
+    if _COUNTED.search(words):
+        return False
+    here, later = parse_window(words, published), parse_window(words, _a_year_later(published))
+    return here is not None and later is not None and here.end != later.end
+
+
+def _may_be_year(word: str) -> bool:
+    """Say whether a word near the date words may write or count a year that code cannot read.
+
+    That is a number in any script ("2O27", a fullwidth or Bengali "2027", a year in Chinese
+    numerals, a superscript), a letter outside the Latin alphabet (a Greek or Cyrillic "O" can
+    stand in for a zero), or a year word.
+    """
+    for character in word:
+        if character.isnumeric():
+            return True
+        if character.isalpha() and not unicodedata.name(character, "").startswith("LATIN"):
+            return True
+    return _YEAR_WORDS.search(word) is not None
+
+
+def year_nearby(quote: str, words: str, published: date) -> str | None:
+    """Say why date words with no year may not take the document's year; None when they may.
+
+    Words with no year take the document's. That is wrong when the quote gives a year beside them
+    that code cannot read ("December 15, 2O27", a fullwidth "2027"), or counts one from something
+    else ("second half of the following year", "December 15 of next year"). So at every place the
+    words appear, the six words either side must hold no number in any script, no letter outside
+    the Latin alphabet, and none of "year", "calendar", "following", "next", "coming", "fiscal",
+    "FY", "thousand", or "twenty".
+    """
+    parts = words.split()
+    if not parts or not borrows_year(words, published):
+        return None
+    pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, parts)) + r"(?!\w)"
+    for found in re.finditer(pattern, quote):
+        before = _TOKEN.findall(quote[: found.start()])[-_REACH:]
+        after = _TOKEN.findall(quote[found.end() :])[:_REACH]
+        for word in [*before, *after]:
+            if _may_be_year(word):
+                return f"have no year, so they take the release's, but the quote has '{word}' near them"
     return None

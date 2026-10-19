@@ -240,9 +240,63 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
 
           Every gold claim still passes the type check (0 held), and no planted-error count fell;
         - **O2, a tie.** Claims are placed best first, and among claims of the same rank (tier and publication time) the reading time and then the id decided which created the catalyst; the other was counted as lower rank and silently wrote nothing. A tie decides nothing now: `safe_to_write` fails, with "a source of the same rank gives other dates for this event", for every unpublished claim that another of the same rank states as the same event (as `place` matches: company, type, drugs, indication, and the same trials or one side naming none) with another window (start, end, or precision). Both wait for a person. Only claims from each document's latest reading with the current extractor prompt count, so a superseded reading never holds the one that replaced it, and a claim without a window ties with nothing (`has_window` holds it). The check job and the writer find ties the same way, from every such claim, so the decision job holds what the writer holds. A claim of the same rank as a published catalyst's source, with other dates, also waits, instead of writing nothing. The same dates from a source of the same rank still pass and write nothing.
+      - **after the CP4 final review** (part 5e; Opus, 2026-10-19):
+        - **B1, a borrowed year.** Date words with no year ("second half", "December 15", "by year-end") take the release's year. When the year beside them was written in a form the parser cannot read, the claim took the release's year and published a wrong date whenever both readings obeyed. With a release dated 2026-10-14:
+          - "second half of calendar 2027", with the date words "second half", published July to December 2026;
+          - "December 15, 2O27" (a letter O), a fullwidth "２０２７", and a Bengali "২০২৭", with the date words "December 15", published 2026-12-15;
+          - so did "the second half of the following year" and "December 15 of next year".
+        - **the fix.** `date_words_in_quote` also fails (`catalyst.extract.dates.year_nearby`) when the date words have no year of their own and, at any place they appear in the quote, one of the six words either side:
+          - holds a number in any script: an ASCII digit, as in "2O27" (so "mixes digits and letters" needs no rule of its own), a fullwidth, Bengali, or other script's digit, a superscript, or Chinese numerals;
+          - holds a letter outside the Latin alphabet, since a Greek or Cyrillic "O" looks like a zero;
+          - or is one of "year", "calendar", "following", "next", "coming", "fiscal", "FY", "thousand", or "twenty", as whole words, with case not counting.
+
+          Words "have no year of their own" when their window moves a year if the release is read a year later (`borrows_year`). Words that write a year ("2027", "'27", "2H26") do not, and neither do words that count it from the release ("this year", "next year", "this quarter"), since that year is theirs, not borrowed.
+
+          Three changes to the reviewer's proposal, each for a stated reason:
+          - the six words *before* the date words count too, as in `cut_short`: "2027's second half" published July to December 2026 the same way;
+          - "thousand" and "twenty" join the list, so a year in words ("two thousand twenty-seven") counts;
+          - a letter outside the Latin alphabet counts, so a year written in look-alike letters with no digit counts too.
+        - **`non_ascii_digits` reads the whole quote**, not only the date words. In the quote, only true digits from another script count (fullwidth, Bengali, Arabic-Indic). Superscript digits do not, because filings mark footnotes with them: two of the 412 live claims in the 2026-10-19 export have a superscript footnote marker in the quote. A superscript beside year-less date words is still held by the rule above.
+        - **what it changed.** No gold-set claim is held: none of the 20 has year-less date words except Mirum's "Q3", which the extractor already flags. The planted-error page and counts are unchanged (1,162 of 1,163 caught; 1,148 without the second reading). Offline, on the 2026-10-19 live export, no claim changes outcome: 0 of the 38 published catalysts would now be held, and no held claim gets a new reason. Only 2 of its 412 claims have year-less date words ("by the end of the year", "by year-end"), and neither has a number or year word near them. Seven new fixtures (`year-*.html`) hold the reviewer's cases and the new phrasings.
+        - **what it still cannot catch.** A year written more than six words away ("For calendar 2027, the company expects to report topline data from its pivotal trial in the second half") is still read as the release's year when both readings obey. An honest second reading holds it. Plain code cannot tell which year a sentence's other numbers belong to.
+        - **owner decision (2026-10-19).** The owner accepts the residual risks listed in part 5c for launch, with SEC filings as the only sources and no second AI provider at this step. A second provider, the auditor, and Gate 2's independent sample remain the planned defences.
 
       CP4 then runs (Opus review).
 3. **A failing check never deletes or changes a claim.** It only blocks publication and gives the reason. Corrections come from evidence: a second extraction or another source that passes every check.
+
+## Every check and what it blocks
+
+A claim publishes only when every check below passes. Any other answer sends it to the review queue with the reason.
+
+1. **Quote matches stored copy** (`quote_matches_stored_copy`). It blocks a quote that is not, character for character, at its stored place in our saved copy of the source.
+2. **Extractor claim, current prompt.** It blocks claims from the verifier or any other reader, and claims read with an older version of the extractor's instructions.
+3. **Extractor checks** (`extractor_checks`). It blocks anything the extractor's own code checks flagged:
+   - quote not found: the quote is not the source's words, so no claim is made at all;
+   - date words not in quote;
+   - no window: the date words name no dates;
+   - date passed: the dates ended before the release came out;
+   - hidden quote: the quote is text the page hides from readers;
+   - hidden page text: the page hides words, so every claim from it waits;
+   - invisible characters in the quote, date words, title, drug, or indication;
+   - non-ASCII digits: a digit from another script in the date words or the quote;
+   - text steering a model: the source holds words written to steer an AI.
+4. **Date words in quote** (`date_words_in_quote`). It blocks date words that are not in the quote whole, are cut from a longer date, are taken back or pointed past, or have no year while a year may be written near them.
+5. **Window matches words** (`window_matches_words`). It blocks stored dates that are not exactly what the date words give as of the release date.
+6. **Has window** (`has_window`). It blocks a claim with no dates.
+7. **Window not past** (`window_not_past`). It blocks a new event whose dates have already ended.
+8. **Names matched** (`names_matched`). It blocks a claim whose company, drug, or trial does not match exactly one record.
+9. **Phase matches registry** (`phase_matches_registry`). It blocks a quote whose trial phase disagrees with ClinicalTrials.gov.
+10. **Trial named in quote** (`trial_named_in_quote`). It blocks a match to a trial that the quote does not name.
+11. **FDA date plausible** (`pdufa_date_plausible`). It blocks an FDA decision date that is not after the release or is more than 15 months after it.
+12. **Second reading agrees** (`second_reading_agrees`). It blocks a claim that a separate reading of the release does not confirm, with the same type, dates, and drug.
+13. **Independent source** (`independent_source`). It blocks a claim from a non-SEC, non-regulator source that no other source confirms.
+14. **Advisory meeting noticed** (`advisory_meeting_noticed`). It blocks an advisory meeting with no matching FDA notice in the Federal Register.
+15. **Company named in source** (`company_named_in_source`). It blocks a claim whose source does not name the company it is linked to.
+16. **Drug named near quote** (`drug_named_near_quote`). It blocks a claim whose drug is not named in or just before the quote.
+17. **Type named near quote** (`type_named_near_quote`). It blocks a claim whose quote has no words for its kind of event.
+18. **Safe to write** (`safe_to_write`). It blocks a claim that needs a person to place it: it fits several events, has an unclear drug role, makes a large or conflicting date change, or ties with an equal source.
+
+Checks 7, 9, 10, 11, 14 and 16 may answer "not applicable" when their fact is absent; every other check must pass.
 
 ## Alternatives
 

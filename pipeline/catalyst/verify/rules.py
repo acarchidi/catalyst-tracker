@@ -15,7 +15,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from catalyst.extract.agent import has_words
-from catalyst.extract.dates import cut_short, parse_window
+from catalyst.extract.dates import cut_short, parse_window, year_nearby
 from catalyst.resolve import names_trial
 from catalyst.schemas import CheckOutcome, TrialPhase
 
@@ -146,7 +146,7 @@ def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
             "date_words_in_quote",
             f"the quote may say the date words '{text}' no longer hold, or that the event falls after them",
         )
-    cut = cut_short(facts.quote, text, facts.published)
+    cut = cut_short(facts.quote, text, facts.published) or year_nearby(facts.quote, text, facts.published)
     if cut is not None:
         return _failed("date_words_in_quote", f"the date words '{text}' {cut}")
     return _passed("date_words_in_quote")
