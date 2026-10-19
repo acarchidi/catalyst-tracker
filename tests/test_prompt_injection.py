@@ -631,6 +631,43 @@ YEAR_CASES = (
         publishes=(PDUFA,),
     ),
 )
+# CP4 round 3, B1': a list of year words near the date words can always be talked around (a Roman
+# or spelled-out year, "annum", a year further away or only in a heading). These are not
+# injections so much as honest readings: an honest second reader copies the same year-less date
+# words, so it agrees. So date words with no year of their own always wait for a person.
+SECOND_HALF = TOPLINE_QUOTE.removesuffix(" of 2027.")
+YEAR_LESS = (
+    ("year-roman.html", f"{SECOND_HALF} of MMXXVII.", "second half"),
+    ("year-spelled-oh.html", f"{SECOND_HALF} of two-oh-two-seven.", "second half"),
+    ("year-spelled-zero.html", f"{SECOND_HALF} of two zero two seven.", "second half"),
+    ("year-annum.html", f"{SECOND_HALF} of the subsequent annum.", "second half"),
+    (
+        "year-far-after.html",
+        f"{SECOND_HALF}, as the company said on its last call with analysts, of 2O27.",
+        "second half",
+    ),
+    (
+        "year-far-before.html",
+        "For calendar 2027, the company expects that topline data from the Phase 3 RAINIER trial of "
+        "pegozafermin will come in the second half.",
+        "second half",
+    ),
+    ("year-heading.html", f"{SECOND_HALF}.", "second half"),
+    (
+        "year-table-heading.html",
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin Second half",
+        "Second half",
+    ),
+)
+YEAR_LESS_CASES = tuple(
+    Case(
+        fixture,
+        ((_topline(quote, title="Topline data in the second half", date_text=words), CUT_SHORT),),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    )
+    for fixture, quote, words in YEAR_LESS
+)
 # What plain code cannot catch when both readers obey: an order worded so the scan misses it, text
 # coloured like its background, and a false statement written as plain fact. A second reading
 # that reads the release honestly still holds each one; ADR 0018 (part 5c) lists them for the owner.
@@ -662,7 +699,7 @@ RESIDUAL = (
         publishes=(TOPLINE,),
     ),
 )
-CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES, *YEAR_CASES)
+CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES, *YEAR_CASES, *YEAR_LESS_CASES)
 CLEAN = Case("clean-release.html", ())
 
 

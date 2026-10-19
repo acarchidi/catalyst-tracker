@@ -241,24 +241,30 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
           Every gold claim still passes the type check (0 held), and no planted-error count fell;
         - **O2, a tie.** Claims are placed best first, and among claims of the same rank (tier and publication time) the reading time and then the id decided which created the catalyst; the other was counted as lower rank and silently wrote nothing. A tie decides nothing now: `safe_to_write` fails, with "a source of the same rank gives other dates for this event", for every unpublished claim that another of the same rank states as the same event (as `place` matches: company, type, drugs, indication, and the same trials or one side naming none) with another window (start, end, or precision). Both wait for a person. Only claims from each document's latest reading with the current extractor prompt count, so a superseded reading never holds the one that replaced it, and a claim without a window ties with nothing (`has_window` holds it). The check job and the writer find ties the same way, from every such claim, so the decision job holds what the writer holds. A claim of the same rank as a published catalyst's source, with other dates, also waits, instead of writing nothing. The same dates from a source of the same rank still pass and write nothing.
       - **after the CP4 final review** (part 5e; Opus, 2026-10-19):
-        - **B1, a borrowed year.** Date words with no year ("second half", "December 15", "by year-end") take the release's year. When the year beside them was written in a form the parser cannot read, the claim took the release's year and published a wrong date whenever both readings obeyed. With a release dated 2026-10-14:
+        - **B1, a borrowed year.** Date words with no year ("second half", "December 15", "by year-end") take the release's year. When the real year was written in a form the parser cannot read, a wrong date published whenever both readings obeyed. With a release dated 2026-10-14:
           - "second half of calendar 2027", with the date words "second half", published July to December 2026;
           - "December 15, 2O27" (a letter O), a fullwidth "２０２７", and a Bengali "২০২৭", with the date words "December 15", published 2026-12-15;
           - so did "the second half of the following year" and "December 15 of next year".
-        - **the fix.** `date_words_in_quote` also fails (`catalyst.extract.dates.year_nearby`) when the date words have no year of their own and, at any place they appear in the quote, one of the six words either side:
-          - holds a number in any script: an ASCII digit, as in "2O27" (so "mixes digits and letters" needs no rule of its own), a fullwidth, Bengali, or other script's digit, a superscript, or Chinese numerals;
-          - holds a letter outside the Latin alphabet, since a Greek or Cyrillic "O" looks like a zero;
-          - or is one of "year", "calendar", "following", "next", "coming", "fiscal", "FY", "thousand", or "twenty", as whole words, with case not counting.
+        - **a first fix that was not enough (round 3, B1′).** The first fix failed year-less date words only when a number, a non-Latin letter, or a year word ("year", "calendar", "following", "next", "coming", "fiscal", "FY", "thousand", "twenty") sat within six words of them. The round-3 review talked around that list. These still published July to December 2026 instead of 2027:
+          - "second half of MMXXVII";
+          - "second half of two-oh-two-seven" and "second half of two zero two seven";
+          - "December 15 of the subsequent annum";
+          - a year more than six words away, before or after ("For calendar 2027, … will come in the second half");
+          - a year only in a heading outside the quote ("Anticipated 2027 milestones" over a bullet "… in the second half").
 
-          Words "have no year of their own" when their window moves a year if the release is read a year later (`borrows_year`). Words that write a year ("2027", "'27", "2H26") do not, and neither do words that count it from the release ("this year", "next year", "this quarter"), since that year is theirs, not borrowed.
-
-          Three changes to the reviewer's proposal, each for a stated reason:
-          - the six words *before* the date words count too, as in `cut_short`: "2027's second half" published July to December 2026 the same way;
-          - "thousand" and "twenty" join the list, so a year in words ("two thousand twenty-seven") counts;
-          - a letter outside the Latin alphabet counts, so a year written in look-alike letters with no digit counts too.
-        - **`non_ascii_digits` reads the whole quote**, not only the date words. In the quote, only true digits from another script count (fullwidth, Bengali, Arabic-Indic). Superscript digits do not, because filings mark footnotes with them: two of the 412 live claims in the 2026-10-19 export have a superscript footnote marker in the quote. A superscript beside year-less date words is still held by the rule above.
-        - **what it changed.** No gold-set claim is held: none of the 20 has year-less date words except Mirum's "Q3", which the extractor already flags. The planted-error page and counts are unchanged (1,162 of 1,163 caught; 1,148 without the second reading). Offline, on the 2026-10-19 live export, no claim changes outcome: 0 of the 38 published catalysts would now be held, and no held claim gets a new reason. Only 2 of its 412 claims have year-less date words ("by the end of the year", "by year-end"), and neither has a number or year word near them. Seven new fixtures (`year-*.html`) hold the reviewer's cases and the new phrasings.
-        - **what it still cannot catch.** A year written more than six words away ("For calendar 2027, the company expects to report topline data from its pivotal trial in the second half") is still read as the release's year when both readings obey. An honest second reading holds it. Plain code cannot tell which year a sentence's other numbers belong to.
+          They published with an honest second reading too. These are honest misreadings rather than injections, so an honest second reader copies the same year-less date words and agrees.
+        - **the rule (owner direction, 2026-10-19, the reviewer's recommended fix).** `date_words_in_quote` fails whenever the date words have no year of their own (`catalyst.extract.dates.borrows_year`), whatever the quote or the page says about the year. The reason given is "the date words '…' have no year of their own, so they would take the release's; a person must check the year".
+          - Words "have no year of their own" when their window moves a year if the release is read a year later: "second half", "December 15", "by year-end", "by the end of the year", "second half of the year", "fourth quarter".
+          - Words that write a year ("2027", "'27", "2H26") pass. So do words that count it from the release ("this year", "next year", "this quarter", "later this year"), since that year is stated, not borrowed.
+          - The word list and the six-word search are removed; the rule makes them unnecessary.
+          - A year-less claim never publishes on its own words. A person reads the year from the source in the review queue.
+        - **`non_ascii_digits` reads the whole quote**, not only the date words. In the quote, only true digits from another script count (fullwidth, Bengali, Arabic-Indic). Superscript digits do not, because filings mark footnotes with them: two of the 412 live claims in the 2026-10-19 export have one in the quote.
+        - **what it changed.**
+          - Gold set: no claim is held. None of the 20 has date words without a year of their own; Mirum's "Q3" names no window by itself and the extractor already flags it.
+          - Planted-error test: the page and counts are unchanged (1,162 of 1,163 caught; 1,148 without the second reading).
+          - Live data, checked offline on the 2026-10-19 export: none of the 38 published catalysts would now be held. Two of the 412 claims have year-less date words ("by the end of the year", "by year-end"); both were already held for other reasons and now also fail this check.
+          - Fixtures: fifteen new hostile pages (`year-*.html`). Fourteen are the cases from both reviews; one is a table whose column heading alone gives the year.
+        - **the cost.** Releases that write "in the second half" or "by year-end" without a year send their claims to review. That is 2 of 412 claims in the live export.
         - **owner decision (2026-10-19).** The owner accepts the residual risks listed in part 5c for launch, with SEC filings as the only sources and no second AI provider at this step. A second provider, the auditor, and Gate 2's independent sample remain the planned defences.
 
       CP4 then runs (Opus review).
@@ -280,7 +286,7 @@ A claim publishes only when every check below passes. Any other answer sends it 
    - invisible characters in the quote, date words, title, drug, or indication;
    - non-ASCII digits: a digit from another script in the date words or the quote;
    - text steering a model: the source holds words written to steer an AI.
-4. **Date words in quote** (`date_words_in_quote`). It blocks date words that are not in the quote whole, are cut from a longer date, are taken back or pointed past, or have no year while a year may be written near them.
+4. **Date words in quote** (`date_words_in_quote`). It blocks date words that are not in the quote whole, are cut from a longer date, are taken back or pointed past, or have no year of their own ("second half", "December 15"), since the real year could be written anywhere.
 5. **Window matches words** (`window_matches_words`). It blocks stored dates that are not exactly what the date words give as of the release date.
 6. **Has window** (`has_window`). It blocks a claim with no dates.
 7. **Window not past** (`window_not_past`). It blocks a new event whose dates have already ended.

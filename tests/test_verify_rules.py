@@ -173,7 +173,12 @@ def test_whole_date_words_pass(quote: str, date_text: str) -> None:
     assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
 
 
-YEAR_NEAR = [
+YEAR_LESS = [
+    ("Topline data are expected in the second half.", "second half"),
+    ("Acme will present results at a medical meeting on December 15 in Boston.", "December 15"),
+    ("Enrollment keeps us on track for completion by year-end.", "by year-end"),
+    ("We expect to submit the BLA by the end of the year.", "by the end of the year"),
+    ("Topline data are expected in the second half of the year.", "second half of the year"),
     ("Topline data are expected in the second half of calendar 2027.", "second half"),
     ("Results at a medical meeting on December 15, 2O27.", "December 15"),
     ("Results at a medical meeting on December 15, \uff12\uff10\uff12\uff17.", "December 15"),
@@ -182,22 +187,30 @@ YEAR_NEAR = [
     ("Results at a medical meeting on December 15, \u00b2\u2070\u00b2\u2077.", "December 15"),
     ("Results at a medical meeting on December 15, \u0396\u039f\u0396\u0396.", "December 15"),
     ("Results at a medical meeting on December 15 of next year.", "December 15"),
+    ("Results at a medical meeting on December 15 of the subsequent annum.", "December 15"),
     ("Topline data are expected in the second half of the following year.", "second half"),
     ("Topline data are expected in the second half of the coming year.", "second half"),
     ("Topline data are expected in the second half of two thousand twenty-seven.", "second half"),
+    ("Topline data are expected in the second half of two-oh-two-seven.", "second half"),
+    ("Topline data are expected in the second half of MMXXVII.", "second half"),
     ("Topline data are expected in 2027's second half.", "second half"),
     ("Enrollment completes by year-end, calendar 2027.", "by year-end"),
     ("Topline data are expected in the fourth quarter of the year after next.", "fourth quarter"),
+    (
+        "For calendar 2027, the company expects that topline data from its pivotal trial will come in "
+        "the second half.",
+        "second half",
+    ),
 ]
 
 
-@pytest.mark.parametrize(("quote", "date_text"), YEAR_NEAR, ids=[q[-30:] for q, _ in YEAR_NEAR])
-def test_date_words_without_a_year_fail_when_the_quote_may_give_one_near_them(
-    quote: str, date_text: str
-) -> None:
-    """Words with no year take the release's (2026), so a year near them must not be one code cannot read.
+@pytest.mark.parametrize(("quote", "date_text"), YEAR_LESS, ids=[q[-30:] for q, _ in YEAR_LESS])
+def test_date_words_without_a_year_of_their_own_fail(quote: str, date_text: str) -> None:
+    """Words with no year take the release's (2026); the real year may be anywhere (CP4, B1 and B1').
 
-    Nor one counted from something else: either would give a wrong window (CP4 final review, B1).
+    It may be written so code cannot read it ("2O27", "MMXXVII", "two-oh-two-seven"), counted from
+    something else ("the following year"), far from the words, or only in a heading. An honest second
+    reading copies the same words, so it cannot catch this either: a person checks the year.
     """
     outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
     assert outcome is Outcome.FAIL
@@ -205,18 +218,19 @@ def test_date_words_without_a_year_fail_when_the_quote_may_give_one_near_them(
     assert reason.startswith(f"the date words '{date_text}' ")
 
 
-YEAR_ALONE = [
-    ("Topline data are expected in the second half.", "second half"),
-    ("Acme will present results at a medical meeting on December 15 in Boston.", "December 15"),
-    ("Enrollment keeps us on track for completion by year-end.", "by year-end"),
+OWN_YEAR = [
     ("Data in the second half of this year, with 52-week data in 2027.", "second half of this year"),
     ("Data are expected in the second half of 2027, two years after the first.", "second half of 2027"),
+    ("We expect to complete enrollment by the end of next year.", "by the end of next year"),
+    ("We plan to submit the NDA later this year.", "later this year"),
+    ("We expect to submit the BLA in the fourth quarter of this year.", "fourth quarter of this year"),
+    ("Topline data are expected in the second half of 2027.\u00b9", "second half of 2027"),
 ]
 
 
-@pytest.mark.parametrize(("quote", "date_text"), YEAR_ALONE, ids=[w for _, w in YEAR_ALONE])
-def test_date_words_without_a_year_pass_when_nothing_near_them_may_be_one(quote: str, date_text: str) -> None:
-    """Words that write a year, or count from the release ("this year"), are not affected."""
+@pytest.mark.parametrize(("quote", "date_text"), OWN_YEAR, ids=[w for _, w in OWN_YEAR])
+def test_date_words_with_a_year_of_their_own_pass(quote: str, date_text: str) -> None:
+    """Words that write a year, or count it from the release ("this year", "next year"), still pass."""
     assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
 
 
