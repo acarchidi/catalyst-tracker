@@ -240,9 +240,77 @@ Gate 2 now requires under 1% errors at 95% confidence (PR #24).
 
           Every gold claim still passes the type check (0 held), and no planted-error count fell;
         - **O2, a tie.** Claims are placed best first, and among claims of the same rank (tier and publication time) the reading time and then the id decided which created the catalyst; the other was counted as lower rank and silently wrote nothing. A tie decides nothing now: `safe_to_write` fails, with "a source of the same rank gives other dates for this event", for every unpublished claim that another of the same rank states as the same event (as `place` matches: company, type, drugs, indication, and the same trials or one side naming none) with another window (start, end, or precision). Both wait for a person. Only claims from each document's latest reading with the current extractor prompt count, so a superseded reading never holds the one that replaced it, and a claim without a window ties with nothing (`has_window` holds it). The check job and the writer find ties the same way, from every such claim, so the decision job holds what the writer holds. A claim of the same rank as a published catalyst's source, with other dates, also waits, instead of writing nothing. The same dates from a source of the same rank still pass and write nothing.
+      - **after the CP4 final review** (part 5e; Opus, 2026-10-19):
+        - **B1, a borrowed year.** Date words with no year ("second half", "December 15", "by year-end") take the release's year. When the real year was written in a form the parser cannot read, a wrong date published whenever both readings obeyed. With a release dated 2026-10-14:
+          - "second half of calendar 2027", with the date words "second half", published July to December 2026;
+          - "December 15, 2O27" (a letter O), a fullwidth "２０２７", and a Bengali "২০২৭", with the date words "December 15", published 2026-12-15;
+          - so did "the second half of the following year" and "December 15 of next year".
+        - **a first fix that was not enough (round 3, B1′).** The first fix failed year-less date words only when a number, a non-Latin letter, or a year word ("year", "calendar", "following", "next", "coming", "fiscal", "FY", "thousand", "twenty") sat within six words of them. The round-3 review talked around that list. These still published July to December 2026 instead of 2027:
+          - "second half of MMXXVII";
+          - "second half of two-oh-two-seven" and "second half of two zero two seven";
+          - "December 15 of the subsequent annum";
+          - a year more than six words away, before or after ("For calendar 2027, … will come in the second half");
+          - a year only in a heading outside the quote ("Anticipated 2027 milestones" over a bullet "… in the second half").
+
+          They published with an honest second reading too. These are honest misreadings rather than injections, so an honest second reader copies the same year-less date words and agrees.
+        - **a second fix that was not enough (round 4, B1″).** The second fix failed date words that took the release's year, but let pass words that count it from the release ("this year", "next year", "this quarter"). The round-4 review showed that counting can be wrong too. With an obedient verifier, a release dated 2026-10-14 published January to December 2027 for:
+          - "… expected to complete in 2027, with topline data in the next year", with the date words "the next year" or "next year";
+          - "… are expected within the next year".
+
+          The release means the year after its own "2027", or the twelve months after the release, not calendar 2027. The two-failures rule then applied (AGENTS.md), and the owner decided.
+        - **the rule: the year must be written (owner decision, 2026-10-19).** A date publishes without a person only when its year is written in ASCII digits in the date words themselves (`catalyst.extract.dates.writes_year`). Any other date words with a window fail `date_words_in_quote`, with "the date words '…' do not write their year; a person must check it".
+          - Forms that count as a written year: a four-digit year ("second half of 2027", "December 15, 2027", "Q4 2027", "by the end of 2027"); a two-digit year after an apostrophe ("Q4 '27"); and the compact forms with a two-digit year ("2H27", "1Q27", "Q1 27"). A range counts only when every part takes a written year ("Q3 to Q4 2027", "November 16 to December 2, 2027", "late 2026 or early 2027").
+          - Forms that do not count: no year ("second half", "December 15", "by year-end", "by the end of the year"); a year counted from the release ("this year", "next year", "the next year", "later this year", "this quarter", "early next year", "fourth quarter of this year"); and a range with any such part ("first half or next year", "between Q4 2026 and next year"). "FY2027" does not read as a window at all, and the fiscal rule above holds it.
+          - How code tells: the words must give the same window when read as of a release four years earlier (four, so that "February 29" is read in a leap year both times). For "by" phrases, which always start on the release date, only the end must stay the same. A day that does not exist in the earlier reading, or a release date that has no such day four years before, counts as not written. So a year-less "February 29" in a release dated 2028-01-10 is held.
+          - Words that name no window at all ("soon") are held by `has_window` and `window_matches_words`, so they get no second reason here.
+          - Parsing is unchanged, so a held claim still shows the window code proposes for it in the review queue.
+          - The second fix's exemption for counted years and the first fix's six-word year-word list are both gone.
+          - **A known limit this makes moot for relative words.** An SEC copy's publication time is the filing's acceptance time (`catalyst.collectors.sec.press_release`, `published_at=filing.accepted_at`), which can fall after the date printed on the release (a release dated December 30 and filed January 2). "This year" read as of the acceptance date would then be the wrong year. Relative words now always wait for a person, so this cannot publish a wrong year. It still sets the start of "by" windows and the release date the past-window checks use.
+        - **`non_ascii_digits` reads the whole quote**, not only the date words. In the quote, only true digits from another script count (fullwidth, Bengali, Arabic-Indic). Superscript digits do not, because filings mark footnotes with them: two of the 412 live claims in the 2026-10-19 export have one in the quote, and neither is flagged.
+        - **what it changed.**
+          - Gold set: 0 of 20 claims newly held. All write their year, except Mirum's "Q3", which names no window by itself and which the extractor already flags.
+          - Planted-error test: the page and counts are unchanged (1,162 of 1,163 caught; 1,148 without the second reading), because every clean gold claim writes its year.
+          - Live data, checked offline on the 2026-10-19 export: 15 of its 412 claims newly fail this check. One is a published catalyst whose date words are "the fourth quarter of this year": its claim goes to the review queue, but the catalyst stays published until a person acts, because the writer never unpublishes (`publish/write.py`). The other 14 were already held for other reasons: "this year" and "this quarter" three times each, and once each "By next year", "later this year", "by the end of the year", "by year-end", "September of this year", "by the end of this year", "fourth quarter of this year", and "the fourth quarter of this year". The whole-quote digit flag changes none of the 412.
+          - Fixtures: seventeen new hostile pages (`year-*.html`). Sixteen are the cases from the three reviews; one is a table whose column heading alone gives the year.
+        - **the cost.** Every claim whose date words do not write their year waits for a person, including correct ones ("in the fourth quarter of this year"). That is 15 of 412 claims in the live export, 1 of them published today.
+        - **owner decision (2026-10-19).** The owner accepts the residual risks listed in part 5c for launch, with SEC filings as the only sources and no second AI provider at this step. A second provider, the auditor, and Gate 2's independent sample remain the planned defences.
 
       CP4 then runs (Opus review).
 3. **A failing check never deletes or changes a claim.** It only blocks publication and gives the reason. Corrections come from evidence: a second extraction or another source that passes every check.
+
+## Every check and what it blocks
+
+A claim publishes only when every check below passes. Any other answer sends it to the review queue with the reason.
+
+1. **Quote matches stored copy** (`quote_matches_stored_copy`). It blocks a quote that is not, character for character, at its stored place in our saved copy of the source.
+2. **Extractor claim, current prompt.** It blocks claims from the verifier or any other reader, and claims read with an older version of the extractor's instructions.
+3. **Extractor checks** (`extractor_checks`). It blocks anything the extractor's own code checks flagged:
+   - quote not found: the quote is not the source's words, so no claim is made at all;
+   - date words not in quote;
+   - no window: the date words name no dates;
+   - date passed: the dates ended before the release came out;
+   - hidden quote: the quote is text the page hides from readers;
+   - hidden page text: the page hides words, so every claim from it waits;
+   - invisible characters in the quote, date words, title, drug, or indication;
+   - non-ASCII digits: a digit from another script in the date words or the quote;
+   - text steering a model: the source holds words written to steer an AI.
+4. **Date words in quote** (`date_words_in_quote`). It blocks date words that are not in the quote whole, are cut from a longer date, are taken back or pointed past, or do not write their year in digits ("second half", "this year", "next year"), since only a written year is safe to publish without a person.
+5. **Window matches words** (`window_matches_words`). It blocks stored dates that are not exactly what the date words give as of the release date.
+6. **Has window** (`has_window`). It blocks a claim with no dates.
+7. **Window not past** (`window_not_past`). It blocks a new event whose dates have already ended.
+8. **Names matched** (`names_matched`). It blocks a claim whose company, drug, or trial does not match exactly one record.
+9. **Phase matches registry** (`phase_matches_registry`). It blocks a quote whose trial phase disagrees with ClinicalTrials.gov.
+10. **Trial named in quote** (`trial_named_in_quote`). It blocks a match to a trial that the quote does not name.
+11. **FDA date plausible** (`pdufa_date_plausible`). It blocks an FDA decision date that is not after the release or is more than 15 months after it.
+12. **Second reading agrees** (`second_reading_agrees`). It blocks a claim that a separate reading of the release does not confirm, with the same type, dates, and drug.
+13. **Independent source** (`independent_source`). It blocks a claim from a non-SEC, non-regulator source that no other source confirms.
+14. **Advisory meeting noticed** (`advisory_meeting_noticed`). It blocks an advisory meeting with no matching FDA notice in the Federal Register.
+15. **Company named in source** (`company_named_in_source`). It blocks a claim whose source does not name the company it is linked to.
+16. **Drug named near quote** (`drug_named_near_quote`). It blocks a claim whose drug is not named in or just before the quote.
+17. **Type named near quote** (`type_named_near_quote`). It blocks a claim whose quote has no words for its kind of event.
+18. **Safe to write** (`safe_to_write`). It blocks a claim that needs a person to place it: it fits several events, has an unclear drug role, makes a large or conflicting date change, or ties with an equal source.
+
+Checks 7, 9, 10, 11, 14 and 16 may answer "not applicable" when their fact is absent; every other check must pass.
 
 ## Alternatives
 
