@@ -3,6 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-19
 - **Roadmap item:** none; a change to how work proceeds (owner decision, 2026-10-19)
+- **Amends:** ADR 0006 (decision 4), ADR 0007 (decision 2), ADR 0019 (owner-merged overseer changes), ADR 0022 (decision 2): owner-path pull requests are now merged by the coding agent under the rules below
 
 ## Context
 
@@ -12,11 +13,12 @@ The merge robot (ADR 0007) leaves pull requests that change the rules, the revie
 
 1. The repository's `.claude/settings.json` allows the GitHub merge tool, so a coding session can merge without an approval prompt.
 2. The coding agent merges an owner-only pull request itself only when all of these hold:
+   - it comes from a `claude/` branch of this repository or from Dependabot;
    - the required CI checks ("Lint, types, tests, migrations", "Dependency audit", "Secret scan") passed on its latest commit;
-   - a separate reviewer subagent said OK with no open blocking finding. The reviewer runs on the Opus model when the change touches the review, the merge robot, the publish gate, a spending cap, or a score floor;
-   - it has no `hold` or `overseer-hold` label.
+   - a separate reviewer subagent said OK with no open blocking finding, reading the rules from main and reviewing the same head commit that passed CI (a later push needs a new review). The reviewer runs on the Opus model when the change touches the review, the merge robot, the overseer, the publish gate, a workflow, `.claude/`, AGENTS.md, CLAUDE.md, a spending cap, or a score floor, and for Dependabot updates of GitHub Actions;
+   - it has no open blocking Overseer finding and no `hold` or `overseer-hold` label.
 3. After merging, the agent tells the owner in one plain line what merged and what the reviewer found.
-4. A change that raises a spending cap or lowers a score floor still needs the owner's written OK in the conversation before the agent merges it.
+4. A change that raises a spending cap, lowers a score floor, weakens a required check, or adds any permission to `.claude/settings.json` still needs the owner's written OK in the conversation before the agent merges it.
 5. Ordinary `claude/` pull requests are unchanged: the merge robot merges them after CI and the Claude review.
 
 ## Alternatives
@@ -28,4 +30,6 @@ The merge robot (ADR 0007) leaves pull requests that change the rules, the revie
 
 - No human checks a rule change before it lands. The checks on it are the CI tests, a separate reviewer, and the owner's `hold` label.
 - A mistaken or manipulated instruction could change the guardrails. The reviewer judges each change against main's AGENTS.md and the spec, and any change can be reverted with a new pull request.
-- `.claude/settings.json` itself is an owner-only path, so changing this permission again also goes through this rule.
+- `.claude/settings.json` itself is an owner-only path, so changing it also goes through this rule, and widening it needs the owner's written OK (decision 4).
+- The merge permission in `.claude/settings.json` cannot be limited to this repository; the AGENTS.md rule is what limits what the agent merges.
+- The robot's and the review's messages still say "the owner merges it by hand"; a follow-up pull request updates them.
