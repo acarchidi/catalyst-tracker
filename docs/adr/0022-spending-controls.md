@@ -1,6 +1,7 @@
 # 0022 — Spending controls: lower daily caps, no paid review on owner-merged pull requests
 
 - **Status:** accepted
+- **Amended by:** ADR 0036 (2026-10-19), decision 2: owner-path pull requests are now merged by the coding agent after a separate review; the paid review still does not run on them.
 - **Date:** 2026-10-17
 - **Changes:** ADR 0004 (the caps), ADR 0006 (the Claude review), ADR 0013 (the extractor's cap)
 
