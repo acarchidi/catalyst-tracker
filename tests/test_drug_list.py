@@ -278,17 +278,22 @@ def test_trials_of_an_uncovered_sponsor_name_no_drug() -> None:
 
 
 def test_a_name_two_companies_records_give_is_kept_for_neither() -> None:
-    """A copy of one Insmed brensocatib trial, registered as led by Kura."""
+    """A copy of one Insmed treprostinil palmitil (INS1009) trial, registered as led by Kura."""
+    copied = copy.deepcopy(next(s for s in _studies(INSMED_TRIALS) if "INS1009" in json.dumps(s)))
+    copied["protocolSection"]["sponsorCollaboratorsModule"]["leadSponsor"]["name"] = "Kura Oncology, Inc."
+    plan = plan_drugs([*_records(), *registry_records(copied)], _sponsors())
+    assert "ins1009" not in _names_of(plan, INSMED) | _names_of(plan, KURA)
+    assert plan.withheld["ins1009"].company_ids == {INSMED, KURA}
+    assert plan.withheld["ins1009"].reason == "shared"
+
+
+def test_a_trial_of_another_company_s_approved_drug_names_nothing_of_its_sponsor() -> None:
+    """A copy of one Insmed brensocatib trial, led by Kura: FDA approved brensocatib for Insmed."""
     copied = copy.deepcopy(next(s for s in _studies(INSMED_TRIALS) if "INS1007" in json.dumps(s)))
     copied["protocolSection"]["sponsorCollaboratorsModule"]["leadSponsor"]["name"] = "Kura Oncology, Inc."
     plan = plan_drugs([*_records(), *registry_records(copied)], _sponsors())
-    for key in ("ins1007",):
-        assert key not in _names_of(plan, INSMED) | _names_of(plan, KURA)
-        assert plan.withheld[key].company_ids == {INSMED, KURA}
-        assert plan.withheld[key].reason == "shared"
-    # FDA approved brensocatib for Insmed, so in Kura's copy it is a comparator: it stays Insmed's.
-    assert "brensocatib" in _names_of(plan, INSMED)
-    assert "brensocatib" not in _names_of(plan, KURA)
+    assert {"brensocatib", "ins1007"} <= _names_of(plan, INSMED)
+    assert not {"brensocatib", "ins1007", "azd7986"} & _names_of(plan, KURA)
 
 
 def test_a_name_an_uncovered_fda_sponsor_also_holds_is_kept_for_review() -> None:
@@ -354,13 +359,14 @@ def test_a_generic_name_already_another_company_s_is_withheld() -> None:
     assert "brinsupri" in added
 
 
-def test_a_code_name_another_company_uses_is_still_the_company_s_own() -> None:
-    """Code names count only for their own company (ADR 0015), so they never clash."""
+def test_a_code_name_another_company_s_drug_has_on_file_is_withheld() -> None:
+    """One code under two companies is usually one partnered drug (second review of PR #73)."""
     plan = plan_drugs(_records(), _sponsors())
     theirs = DrugRef(uuid4(), PFIZER, (("INS1007", DrugNameKind.CODE),))
     merged = merge_with_existing(plan, [theirs])
     added = {name_key(n.name) for w in merged.writes if w.company_id == INSMED for n in w.names}
-    assert "ins1007" in added
+    assert "ins1007" not in added
+    assert merged.withheld["ins1007"].company_ids == {INSMED, PFIZER}
 
 
 def test_a_planned_drug_that_two_drugs_on_file_share_waits_for_a_person() -> None:

@@ -10,15 +10,20 @@ decides which names become which company's drug. `catalyst.drug_list_store` writ
   interventions of trials whose lead sponsor is exactly one covered company's registered name.
 
 ADR 0015 kept registry interventions out because they list comparators ("azithromycin"), placebos,
-and short forms ("ETH"). Here only an intervention's main name gives a generic or brand name (its
-free-text other names give code names only), and a registry name is dropped when:
+and short forms ("ETH"). Here an intervention needs a main name that names a drug; its other names
+count too (owner decision 2026-10-19), held to more rules, and never shown. A registry name is
+dropped when:
 - it is used only in comparator arms (placebo, active comparator, sham, no intervention);
-- it names a placebo, vehicle, standard of care, or other stand-in (`_STAND_IN_WORDS`);
+- it names a placebo, vehicle, standard of care, or other stand-in (`STAND_IN_WORDS`);
 - it joins several drugs ("X + Y", "X/Y", "X and Y", "X (+) Y");
-- it is a description or holds an ordinary word (`_DESCRIPTION_WORDS`, `_ORDINARY_WORDS`);
+- it is a description, a trial, or holds an ordinary word (`drug_list_words`);
 - it is a short form: a name without digits and with fewer than five letters;
-- another intervention of the same trial lists it too;
-- Drugs@FDA lists it for another sponsor, as it does for every approved comparator.
+- it is a target, antibody class, isotope, or the like written as a code ("CTLA-4", "IgG1", "64Cu"),
+  or, as an other name, it is a code not shaped like a drug code;
+- another intervention of the same trial lists it too, or records with different main names do;
+- Drugs@FDA lists it for another sponsor, as it does for every approved comparator. When that is
+  the intervention's main name, or one of its names is another sponsor's brand, the whole
+  intervention is that sponsor's drug, and none of its names are recorded.
 
 Any name that two owners' records give, after these rules, is recorded for no one and kept for
 review as shared: a generic or brand name matches across companies, so it would link one
@@ -36,6 +41,15 @@ from typing import Any, cast
 from uuid import UUID
 
 from catalyst.collectors.coverage import normalize_name
+from catalyst.drug_list_words import (
+    DESCRIPTION_WORDS,
+    FORM_WORDS,
+    METALS,
+    ORDINARY_WORDS,
+    SALT_WORDS,
+    STAND_IN_WORDS,
+    TRIAL_WORDS,
+)
 from catalyst.resolve import DrugRef, name_key
 from catalyst.schemas import DrugNameKind, DrugNameSource
 
@@ -44,52 +58,6 @@ _APPLICATION_TYPES = ("NDA", "BLA")
 _APPROVED = "AP"
 # FDA's four-letter suffix for a biologic ("DOSTARLIMAB-GXLY"); the generic name is the part before it.
 _BIOLOGIC_SUFFIX = re.compile(r"-[A-Za-z]{4}$")
-# Salt and water words after an active moiety ("RUXOLITINIB PHOSPHATE", "OLEZARSEN SODIUM").
-# Esters ("propionate", "furoate") stay: they name different products.
-_SALT_WORDS = frozenset(
-    [
-        "sodium",
-        "disodium",
-        "potassium",
-        "dipotassium",
-        "calcium",
-        "magnesium",
-        "hydrochloride",
-        "dihydrochloride",
-        "hcl",
-        "hydrobromide",
-        "mesylate",
-        "dimesylate",
-        "besylate",
-        "tosylate",
-        "tartrate",
-        "bitartrate",
-        "maleate",
-        "fumarate",
-        "hemifumarate",
-        "succinate",
-        "citrate",
-        "phosphate",
-        "diphosphate",
-        "sulfate",
-        "bisulfate",
-        "chloride",
-        "bromide",
-        "malate",
-        "lactate",
-        "gluconate",
-        "meglumine",
-        "tromethamine",
-        "hyclate",
-        "acetate",
-        "monohydrate",
-        "dihydrate",
-        "trihydrate",
-        "hemihydrate",
-        "sesquihydrate",
-        "anhydrous",
-    ]
-)
 # FDA abbreviates sponsor names ("VERTEX PHARMS INC"); spelled out, they compare as the
 # resolver compares company names (ADR 0015).
 _SPONSOR_WORDS = {
@@ -102,6 +70,9 @@ _SPONSOR_WORDS = {
     "lab": "laboratories",
     "labs": "laboratories",
     "laboratory": "laboratories",
+    # FDA's own misspelling, checked by hand on 2026-10-19: BLA761400 (LYNOZYFIC) is filed under
+    # "RENGENERON PHARMACEUTICALS, INC." and labelled by Regeneron (second review of PR #73).
+    "rengeneron": "regeneron",
 }
 
 # ClinicalTrials.gov
@@ -109,99 +80,7 @@ REGISTRY_TYPES = frozenset({"DRUG", "BIOLOGICAL", "GENETIC"})
 _COMPARATOR_ARMS = frozenset(
     {"PLACEBO_COMPARATOR", "ACTIVE_COMPARATOR", "SHAM_COMPARATOR", "NO_INTERVENTION"}
 )
-_STAND_IN_WORDS = frozenset(
-    [
-        "placebo",
-        "placebos",
-        "vehicle",
-        "sham",
-        "saline",
-        "dummy",
-        "matching",
-        "matched",
-        "comparator",
-        "control",
-        "standard",
-        "soc",
-        "chemotherapy",
-        "chemo",
-        "supportive",
-        "investigator",
-        "investigators",
-        "physician",
-        "physicians",
-        "choice",
-        "background",
-        "usual",
-        "care",
-        "rescue",
-        "medication",
-        "medications",
-        "regimen",
-    ]
-)
 _JOINS_DRUGS = re.compile(r"[+/,;&]|\b(?:and|plus|with|or|in combination)\b", re.IGNORECASE)
-# Dose, route, and form words at either end of a registry name ("Brensocatib 25 mg", "Oral X").
-_FORM_WORDS = frozenset(
-    [
-        "tablet",
-        "tablets",
-        "capsule",
-        "capsules",
-        "injection",
-        "injectable",
-        "infusion",
-        "oral",
-        "iv",
-        "sc",
-        "im",
-        "intravenous",
-        "subcutaneous",
-        "intramuscular",
-        "intravitreal",
-        "topical",
-        "solution",
-        "suspension",
-        "cream",
-        "ointment",
-        "gel",
-        "inhalation",
-        "inhaled",
-        "powder",
-        "for",
-        "dose",
-        "doses",
-        "dosing",
-        "low",
-        "high",
-        "mg",
-        "mcg",
-        "µg",
-        "ug",
-        "ml",
-        "g",
-        "kg",
-        "mg/kg",
-        "mg/m2",
-        "%",
-        "iu",
-        "units",
-        "kit",
-        "qd",
-        "bid",
-        "tid",
-        "qw",
-        "q2w",
-        "q3w",
-        "q4w",
-        "daily",
-        "weekly",
-        "once",
-        "twice",
-        "formerly",
-        "previously",
-    ]
-)
 _DOSE = re.compile(r"^[\d.,]+(?:mg|mcg|µg|ug|ml|g|kg|mg/kg|mg/m2|%|iu|x)?$", re.IGNORECASE)
 _TRADEMARK = re.compile(r"[®™©℠]")
 # Things shaped like code names that are not drugs (as in `catalyst.resolve_claims`).
@@ -211,199 +90,38 @@ _NOT_DRUG_PREFIXES = frozenset(
 _SHORTEST_CODE = 4  # letters and digits in a code name: "AP01" and "4D-150" are drugs, "14C" is not
 _SHORTEST_GENERIC = 5  # letters in a name without digits; "ETH" and "ATEV" are short forms
 _SHORTEST_RUN = 4  # letters in a run of words the comparator rule looks up ("Dexamethasone Ophthalmic")
-_MOST_WORDS = 6  # a longer "other name" is a description ("Active BMN 111: Subcutaneous injection ...")
-# Words of a description, not a name: "CAR-T cells", "Anti C1q Antibody", "Autologous Cell Therapy",
-# "Extension", "Safety observation", "Typical Antipsychotics".
-# Ordinary words never in a drug's name ("if necessary", "until May", "in FOLFOX", "brand name").
-_ORDINARY_WORDS = frozenset(
-    [
-        "a",
-        "an",
-        "the",
-        "in",
-        "of",
-        "to",
-        "as",
-        "at",
-        "by",
-        "for",
-        "from",
-        "if",
-        "on",
-        "per",
-        "than",
-        "then",
-        "until",
-        "via",
-        "without",
-        "into",
-        "during",
-        "versus",
-        "vs",
-        "when",
-        "while",
-        "brand",
-        "name",
-        "names",
-        "commercial",
-        "concentration",
-        "administration",
-        "administered",
-        "necessary",
-        "interventional",
-        "non",
-        "only",
-        "alone",
-        "monotherapy",
-        "radiosensitizer",
-        "approved",
-        "marketed",
-        "available",
-    ]
+_MOST_WORDS = 6  # a longer main name is a description ("Active BMN 111: Subcutaneous injection ...")
+_MOST_OTHER_WORDS = 4  # the same for an other name, which is free text
+# A drug code, as an other name must be shaped (second review of PR #73, B2'): a letter prefix
+# (one dash-joined part allowed: "Cu-AKY", "GR-MD"), then two to seven digits, then up to two short
+# parts ("ENTR-601-45", "MK-3475-D79"). "REGN5458", "GS-5423", "SCH 58235", "X4P-001".
+_DASH = "\\-\u2010-\u2013"
+_CODE_SHAPE = re.compile(
+    rf"^(?P<prefix>[A-Za-z][A-Za-z0-9]{{0,5}}?(?:[{_DASH}][A-Za-z]{{1,5}})?)[\s{_DASH}]?(?P<number>\d{{2,7}})"
+    rf"(?:[{_DASH}]?[A-Za-z0-9]{{1,4}}){{0,2}}$"
 )
-_DESCRIPTION_WORDS = frozenset(
-    [
-        "cell",
-        "cells",
-        "antibody",
-        "antibodies",
-        "vaccine",
-        "vaccines",
-        "peptide",
-        "protein",
-        "therapy",
-        "therapies",
-        "autologous",
-        "allogeneic",
-        "recombinant",
-        "inhibitor",
-        "inhibitors",
-        "agonist",
-        "antagonist",
-        "active",
-        "drug",
-        "drugs",
-        "study",
-        "investigational",
-        "product",
-        "agent",
-        "agents",
-        "enhancer",
-        "formulation",
-        "formulations",
-        "biosimilar",
-        "generic",
-        "reference",
-        "arm",
-        "cohort",
-        "group",
-        "part",
-        "period",
-        "sequence",
-        "intervention",
-        "treatment",
-        "treatments",
-        "other",
-        "dual",
-        "conventional",
-        "reduced",
-        "prophylaxis",
-        "manufactured",
-        "lot",
-        "protocol",
-        "amendment",
-        "before",
-        "after",
-        "post",
-        "pre",
-        "medium",
-        "release",
-        "extended",
-        "immediate",
-        "delayed",
-        "single",
-        "multiple",
-        "concomitant",
-        "blood",
-        "healthy",
-        "volunteer",
-        "volunteers",
-        "participant",
-        "participants",
-        "patient",
-        "patients",
-        "outpatient",
-        "inpatient",
-        "fasted",
-        "fed",
-        "food",
-        "meal",
-        "risk",
-        "day",
-        "days",
-        "week",
-        "weeks",
-        "month",
-        "months",
-        "extension",
-        "observation",
-        "safety",
-        "approved",
-        "patch",
-        "application",
-        "phase",
-        "challenge",
-        "generation",
-        "tracer",
-        "test",
-        "tests",
-        "diagnostic",
-        "mitigation",
-        "strategy",
-        "strategies",
-        "profile",
-        "explore",
-        "infiltration",
-        "site",
-        "typical",
-        "atypical",
-        "local",
-        "plain",
-        "tradename",
-        "new",
-        "seed",
-        "process",
-        "antipsychotic",
-        "antipsychotics",
-        "antacid",
-        "steroid",
-        "steroids",
-        "triptan",
-        "pharmacokinetics",
-        "doublet",
-        "triplet",
-        "label",
-        "eye",
-        "drops",
-        "moisturizing",
-        "moisturizer",
-        "moisturizers",
-        "stabilizer",
-        "antiemetic",
-        "antihyperglycemics",
-        "biguanides",
-        "plasma",
-        "frozen",
-        "adequate",
-        "developmental",
-        "prandial",
-        "analog",
-        "mixture",
-        "donor",
-        "tki",
-        "level",
-    ]
+# Targets, receptors, antibody classes, and viruses written like codes: "CTLA-4", "PI3K", "IgG1",
+# "B7-H4", "LPA1", "ILT4", "5-HT3 RA", "CD19", "IL-17A", "HER2", "HPV16", "BCMAxCD3".
+_TARGETS = (
+    "ctla|pi3k|kras|nras|braf|egfr|fgfr|tigit|lag|tim|trop|b7|cldn|dll|tl1a|stat|btk|jak|mek|erk|akt|"
+    "mtor|parp|cdk|vegfr?|ret|alk|ros|axl|flt|pdgfr|ig[gmae]|lpa|ilt|apoc|pcsk|angptl|tnf|tcr|aav|"
+    "gprc|5-?ht|gaba|nmda|ampa|mglur|hla|fxia?|hbv|hiv|hcv|rsv|cmv|ebv|hpv|h[1-9]n|bcma|gd|sstr|fap|"
+    "mage|wt|glp|gip|gcgr|tlr|ido|cxcr|ccr|cd|il|her|pd|nk|car"
 )
+_TARGET = re.compile(
+    rf"^(?:anti[\s{_DASH}]?)?(?:{_TARGETS})[\s{_DASH}./]?(?:\d{{0,2}}[A-Za-z]{{0,2}}|[A-Za-z]\d{{1,2}}[A-Za-z]?)"
+    rf"(?:x[A-Za-z]{{2,4}}\d{{0,2}})?(?:\s?[A-Za-z]{{1,2}})?$",
+    re.IGNORECASE,
+)
+# Isotopes ("131I", "64Cu", "Lu-177", "Tc-99m"), insulin strengths ("U100"), variants ("B.1.1.7"),
+# excipients and adjuvants ("PS80", "QS-21", "AS01B", "MF59", "PEG 400").
+_ELEMENTS = "Lu|Ga|Cu|Zr|In|Y|I|F|Tc|Ac|Pb|Ra|Th|Sm|Sr|C|N|O|Bi|At|Re|Ho|Tb|Er"
+_NOT_A_DRUG_CODE = re.compile(
+    rf"^\d{{1,3}}m?(?:{_ELEMENTS})$|^(?:{_ELEMENTS})[{_DASH}]?\d{{1,3}}m?$|^U[{_DASH}]?\d{{2,3}}$|\d\.\d|"
+    rf"[A-Za-z]\.\d|^(?:PS|Tween)[\s{_DASH}]?(?:20|80)$|^QS[\s{_DASH}]?21$|^AS0\d[A-Z]?$|^MF[\s{_DASH}]?59$|"
+    rf"^PEG[\s{_DASH}]?\d+$|^[A-Z]\d{{2,4}}[A-Z]$"  # the last: a mutation, "G12C", "V600E", "T790M"
+)
+_CODE_PREFIX = re.compile(r"^[A-Z]{2,6}$")  # the letters of a code written apart from its number
 # A bracket set off by a space holds a second name ("Selinexor (KPT-330)"); one inside a word is
 # part of the name ("AKCEA-APO(a)-LRx").
 _PARENTHESES = re.compile(r"(?:^|(?<=\s))[(\[]([^()\[\]]*)[)\]]")
@@ -451,7 +169,9 @@ def _is_ester(words: list[str]) -> bool:
 def generic_name(ingredient: str) -> str:
     """Return an FDA active ingredient without its biologic suffix and its salt words."""
     words = _BIOLOGIC_SUFFIX.sub("", ingredient.strip()).split()
-    while len(words) > 1 and words[-1].casefold() in _SALT_WORDS and not _is_ester(words):
+    while len(words) > 1 and words[-1].casefold() in SALT_WORDS and not _is_ester(words):
+        if len(words) == 2 and words[0].casefold() in METALS:
+            break  # "FERRIC CITRATE" and "POTASSIUM CHLORIDE" stay whole: the metal alone names nothing
         words.pop()
     return " ".join(words)
 
@@ -516,69 +236,102 @@ def fda_sponsor_key(name: str) -> str:
 
 def _trimmed(name: str) -> str:
     words = unicodedata.normalize("NFKC", _TRADEMARK.sub(" ", name)).split()
-    while words and (words[0].casefold() in _FORM_WORDS or _DOSE.match(words[0])):
+    while words and (words[0].casefold() in FORM_WORDS or _DOSE.match(words[0])):
         words.pop(0)
-    while words and (words[-1].casefold() in _FORM_WORDS or _DOSE.match(words[-1])):
+    while words and (words[-1].casefold() in FORM_WORDS or _DOSE.match(words[-1])):
+        if len(words) > 1 and words[-1].isdigit() and _CODE_PREFIX.match(words[-2]):
+            break  # "SCH 58235" and "BMN 333" are codes, not a name and a dose
         words.pop()
     return " ".join(words)
+
+
+def _code_name(name: str, *, main: bool) -> bool:
+    """Say whether a name with a digit is a drug code.
+
+    Every code must not be a target, receptor, antibody class, virus, isotope, insulin strength,
+    variant, excipient, or adjuvant ("CTLA-4", "IgG1", "64Cu", "U100", "B.1.1.7", "PS80"), nor a
+    disease, congress, or fiscal-year prefix (as in `catalyst.resolve_claims`). An other name, which
+    is free text, must also be shaped like a drug code (`_CODE_SHAPE`); a main name, which names
+    the intervention, may be shaped as its sponsor writes it ("Descartes-08", "OPGx-BEST1").
+    """
+    if sum(ch.isalnum() for ch in name) < _SHORTEST_CODE or not any(ch.isalpha() for ch in name):
+        return False  # "14C" labels a radioactive tracer
+    prefix = re.match(r"[^\W\d_]+", name)
+    if prefix and prefix.group(0).upper() in _NOT_DRUG_PREFIXES:
+        return False
+    if _TARGET.match(name) or _NOT_A_DRUG_CODE.search(name):
+        return False
+    if main:
+        return True
+    shape = _CODE_SHAPE.match(name)
+    if shape is None or not any(ch.isupper() for ch in shape.group("prefix")):
+        return False
+    one_letter = sum(ch.isalpha() for ch in shape.group("prefix")) == 1
+    return not one_letter or len(shape.group("number")) >= 4  # "R115777", not "U100" or "C225"
 
 
 def _registry_part(text: str, trademark: bool, *, main: bool = True) -> ListedName | None:
     name = _EDGE_PUNCTUATION.sub("", _trimmed(text))
     words = [w.casefold() for w in re.findall(r"[^\W_]+", name)]
-    if not words or len(words) > _MOST_WORDS or ":" in name or _JOINS_DRUGS.search(name):
+    most = _MOST_WORDS if main else _MOST_OTHER_WORDS
+    if not words or len(words) > most or ":" in name or _JOINS_DRUGS.search(name):
         return None
     # Ordinary words count as whole words between spaces, so "AKCEA-APO(a)-LRx" keeps its "a".
-    if set(words) & _DESCRIPTION_WORDS or {w.casefold() for w in name.split()} & _ORDINARY_WORDS:
+    if (
+        set(words) & (DESCRIPTION_WORDS | TRIAL_WORDS)
+        or {w.casefold() for w in name.split()} & ORDINARY_WORDS
+    ):
         return None
-    letters = sum(ch.isalpha() for ch in name)
+    if set(words) <= SALT_WORDS | METALS:
+        return None  # "fumarate" or "sodium" alone names no drug
     if any(ch.isdigit() for ch in name):
-        prefix = re.match(r"[^\W\d_]+", name)
-        short = sum(ch.isalnum() for ch in name) < _SHORTEST_CODE  # "14C" labels a radioactive tracer
-        if letters == 0 or short or (prefix and prefix.group(0).upper() in _NOT_DRUG_PREFIXES):
-            return None
-        return ListedName(name, DrugNameKind.CODE, main)
-    if not main or letters < _SHORTEST_GENERIC:
-        return None  # free text beside the main name is no name (Opus review of PR #73, B2)
+        return ListedName(name, DrugNameKind.CODE, main) if _code_name(name, main=main) else None
+    if sum(ch.isalpha() for ch in name) < _SHORTEST_GENERIC:
+        return None
     # Generic names are written in small letters in the registry; a name in capitals is a brand ("ELEVIDYS").
     brand = trademark or name.isupper()
-    return ListedName(name, DrugNameKind.BRAND if brand else DrugNameKind.INN)
+    return ListedName(name, DrugNameKind.BRAND if brand else DrugNameKind.INN, main)
 
 
 def _joins_drugs(text: str) -> bool:
     words = {w.casefold() for w in re.findall(r"[^\W_]+", unicodedata.normalize("NFKC", text))}
-    return bool(words & _STAND_IN_WORDS) or bool(_JOINS_DRUGS.search(text))
+    return bool(words & STAND_IN_WORDS) or bool(_JOINS_DRUGS.search(text))
 
 
 def registry_names(text: str) -> list[ListedName] | None:
     """Return the drug names in a registry intervention's name, or None for a stand-in or a combination.
 
-    Dose and form words at either end are dropped. A name with a digit is a code name, which
-    matches only its own company's claims. A name without one must have five letters or more,
-    and is a brand when the registry marks it ® or ™. A bracket adds a code name only
-    ("Selinexor (KPT-330)"); free text in it ("(Commercial tablet)") names nothing. A join
-    anywhere, brackets included ("simvastatin (+) ezetimibe"), makes a combination. Descriptions,
-    ordinary words, names of more than six words, and short forms give none.
+    The first name returned is the main name, unless the text names no drug. Dose and form words
+    at either end are dropped. A name with a digit is a code name, which matches only its own
+    company's claims. A name without one must have five letters or more, and is a brand when the
+    registry marks it ® or ™ or writes it in capitals. Text in a bracket is an other name
+    ("Selinexor (KPT-330)"). A join anywhere, brackets included ("simvastatin (+) ezetimibe"),
+    makes a combination. Descriptions, ordinary words, trial names, targets, isotopes, names of more
+    than six words, and short forms give none.
     """
     if _joins_drugs(text):
         return None
     outside = _PARENTHESES.sub(" ", text)
     found = [_registry_part(outside, bool(_TRADEMARK.search(outside)))]
-    found += [_registry_part(part, False, main=False) for part in _PARENTHESES.findall(text)]
+    found += [
+        _registry_part(part, bool(_TRADEMARK.search(part)), main=False) for part in _PARENTHESES.findall(text)
+    ]
     return list(dict.fromkeys(filter(None, found)))
 
 
 def registry_other_names(text: str) -> list[ListedName]:
-    """Return the code names in one of an intervention's listed other names.
+    """Return the names in one of an intervention's listed other names.
 
-    Other names are free text ("Brilinta", "Commercial tablet", a misspelled competitor), so
-    only code names are kept from them; brands and generic names come from Drugs@FDA or from a
-    main intervention name (Opus review of PR #73, B2).
+    Other names are free text ("Brilinta", "Commercial tablet", "Recombinant humanized
+    immunoglobulin G1 (IgG1) Fab"), so they are held to more rules than a main name: at most four
+    words, and a code must be shaped like a drug code. They are never the name shown (owner
+    decision 2026-10-19: other names stay, filtered).
     """
     if _joins_drugs(text):
         return []
     parts = [_PARENTHESES.sub(" ", text), *_PARENTHESES.findall(text)]
-    return list(dict.fromkeys(filter(None, (_registry_part(p, False, main=False) for p in parts))))
+    found = (_registry_part(part, bool(_TRADEMARK.search(part)), main=False) for part in parts)
+    return list(dict.fromkeys(filter(None, found)))
 
 
 def _in_trial_arms(intervention: Mapping[str, Any], arm_types: Mapping[str, str | None]) -> bool:
@@ -642,6 +395,7 @@ class PlannedName:
     source: DrugNameSource
     refs: list[str]
     main: bool = True  # some record gives it as a main name: any FDA name, a registry intervention's
+    mains: int = 0  # how many records give it as a main name
 
 
 @dataclass
@@ -666,8 +420,15 @@ _SOURCE_RANK = {DrugNameSource.OPENFDA: 0, DrugNameSource.CTGOV: 1, DrugNameSour
 _KIND_RANK = {DrugNameKind.INN: 0, DrugNameKind.BRAND: 1, DrugNameKind.CODE: 2}
 
 
-def _shown_rank(name: PlannedName) -> tuple[bool, int, int, str]:
-    return (not name.main, _SOURCE_RANK[name.source], _KIND_RANK[name.kind], name.name)
+def _shown_rank(name: PlannedName) -> tuple[bool, int, int, int, int, str]:
+    """Rank names to show: FDA's first, generic before brand before code.
+
+    Then, of FDA's, the shortest ("trametinib", not "trametinib dimethyl sulfoxide"); of the
+    registry's, the main name most records give.
+    """
+    common = -name.mains if name.source is DrugNameSource.CTGOV else 0
+    fda_short = len(name.name) if name.source is DrugNameSource.OPENFDA else 0
+    return (not name.main, _SOURCE_RANK[name.source], _KIND_RANK[name.kind], common, fda_short, name.name)
 
 
 @dataclass
@@ -690,6 +451,8 @@ class DrugPlan:
     unlinked_records: int = 0  # the sponsor is no covered company, or more than one
     comparators: int = 0  # registry names Drugs@FDA lists for another sponsor
     split_drugs: int = 0  # registry records that joined two approved products, left out
+    foreign_records: int = 0  # registry interventions that are another sponsor's approved drug
+    bridges: int = 0  # other names that would join two records with different main names, dropped
 
 
 class _Groups:
@@ -750,13 +513,37 @@ def _approved_for_another(name: str, owner: Owner, fda_owners: Mapping[str, set[
     return any(fda_owners.get(key, {owner}) - {owner} for key in runs)
 
 
-def _fda_owners(kept: Iterable[tuple[SourceRecord, Owner]]) -> dict[str, set[Owner]]:
-    """Index every name Drugs@FDA gives, with each owner that holds it."""
+def _another_s_drug(
+    record: SourceRecord,
+    owner: Owner,
+    fda_owners: Mapping[str, set[Owner]],
+    brand_owners: Mapping[str, set[Owner]],
+) -> bool:
+    """Say whether a registry intervention is another sponsor's approved drug, so none of its names are ours.
+
+    That is when Drugs@FDA lists its main name, or a run of its words, for another sponsor
+    ("Nivolumab" with ONO-4538 and BMS-936658), or lists any of its names exactly as another
+    sponsor's brand ("Gazyvaro" with "Gazyva", Genentech's) (second review of PR #73, B3). A
+    molecule another sponsor sells, listed beside the sponsor's own code ("AP01" with
+    "Pirfenidone"), takes only itself out: the code may be a new form of it.
+    """
+    main = record.names[0]
+    if main.main and _approved_for_another(main.name, owner, fda_owners):
+        return True
+    return any(brand_owners.get(name_key(n.name), {owner}) - {owner} for n in record.names)
+
+
+def _fda_owners(kept: Iterable[tuple[SourceRecord, Owner]], *, brands: bool = False) -> dict[str, set[Owner]]:
+    """Index every name Drugs@FDA gives (only its brands, with `brands`), with each owner that holds it."""
     found: defaultdict[str, set[Owner]] = defaultdict(set)
     for record, owner in kept:
-        if record.source is DrugNameSource.OPENFDA:
-            for name in [*(n.name for n in record.names), *record.other_names]:
-                found[name_key(name)].add(owner)
+        if record.source is not DrugNameSource.OPENFDA:
+            continue
+        names = [n.name for n in record.names if n.kind is DrugNameKind.BRAND or not brands]
+        if not brands:
+            names += record.other_names
+        for name in names:
+            found[name_key(name)].add(owner)
     return found
 
 
@@ -770,11 +557,15 @@ def _owned_names(
     plan: DrugPlan, kept: list[tuple[SourceRecord, Owner]]
 ) -> tuple[dict[str, set[Owner]], list[tuple[SourceRecord, UUID, list[ListedName]]]]:
     """Drop registry comparators; return every owner of each name, and the covered companies' names."""
-    fda_owners = _fda_owners(kept)
+    fda_owners, brand_owners = _fda_owners(kept), _fda_owners(kept, brands=True)
     owners: defaultdict[str, set[Owner]] = defaultdict(set)
     listed: list[tuple[SourceRecord, UUID, list[ListedName]]] = []
     for record, owner in kept:
         names = list(record.names)
+        if record.source is DrugNameSource.CTGOV and _another_s_drug(record, owner, fda_owners, brand_owners):
+            plan.comparators += len(names)
+            plan.foreign_records += 1
+            continue
         if record.source is DrugNameSource.CTGOV:
             names = [n for n in names if not _approved_for_another(n.name, owner, fda_owners)]
             plan.comparators += len(record.names) - len(names)
@@ -809,6 +600,10 @@ def plan_drugs(
             _withhold(plan, key, name.name, (o for o in owners[key] if isinstance(o, UUID)), [record.ref])
     by_company: defaultdict[UUID, list[tuple[SourceRecord, list[ListedName]]]] = defaultdict(list)
     for record, owner, names in listed:
+        if names and not names[0].main:
+            continue  # the main name went (another sponsor's): its other names name no drug of ours
+        if record.source is DrugNameSource.CTGOV and names and name_key(names[0].name) in shared:
+            continue  # the main name is shared: its other names would make a drug named by them alone
         if names := [n for n in names if name_key(n.name) not in shared]:
             by_company[owner].append((record, names))
     for company, entries in by_company.items():
@@ -823,6 +618,44 @@ def _joined(entries: Iterable[tuple[SourceRecord, list[ListedName]]]) -> _Groups
     return groups
 
 
+def _without_bridges(
+    plan: DrugPlan, entries: list[tuple[SourceRecord, list[ListedName]]]
+) -> list[tuple[SourceRecord, list[ListedName]]]:
+    """Drop an other name that records with different main names list (second review of PR #73, B1').
+
+    Aktis's two imaging agents both list "64Cu"; Regeneron's linvoseltamab and vonsetamig both
+    list "BCMAxCD3". Such a name says what the drugs share, not which drug it is. Main names are
+    first joined only by the records that give them together (an FDA product's brand and generic
+    name). An other name that is itself another record's main name ("INS1007" under brensocatib,
+    and a trial of "INS1007") still joins the two, if only one main name lists it.
+    """
+    mains = _Groups()
+    main_keys: set[str] = set()
+    for _, names in entries:
+        keys = [name_key(n.name) for n in names if n.main]
+        main_keys.update(keys)
+        mains.join(keys)
+    # An other name that is another record's main name, listed under one main name only, is an alias.
+    for key, roots in _listing(entries, mains).items():
+        if key in main_keys and len(roots) == 1:
+            mains.join([key, next(iter(roots))])
+    bridges = {key for key, roots in _listing(entries, mains).items() if len(roots) > 1}
+    plan.bridges += len(bridges)
+    kept = [(r, [n for n in ns if n.main or name_key(n.name) not in bridges]) for r, ns in entries]
+    return [(r, ns) for r, ns in kept if ns]
+
+
+def _listing(entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups) -> dict[str, set[str]]:
+    """Map each other name to the joined main names of the records that list it."""
+    found: defaultdict[str, set[str]] = defaultdict(set)
+    for _, names in entries:
+        main = next((name_key(n.name) for n in names if n.main), None)
+        for name in names:
+            if not name.main and main is not None:
+                found[name_key(name.name)].add(mains.find(main))
+    return found
+
+
 def _product(record: SourceRecord) -> str:
     """Name an FDA product: its one ingredient, or, for a combination, its brand (VYTORIN is not ZETIA)."""
     return record.ingredient or "+" + name_key(record.names[0].name)
@@ -832,6 +665,7 @@ def _company_drugs(
     plan: DrugPlan, company: UUID, entries: list[tuple[SourceRecord, list[ListedName]]]
 ) -> list[PlannedDrug]:
     """Join one company's names into drugs; a registry record that joins two approved products is left out."""
+    entries = _without_bridges(plan, entries)
     groups = _joined(entries)
     products: defaultdict[str, set[str]] = defaultdict(set)
     for record, names in entries:
@@ -855,6 +689,7 @@ def _company_drugs(
                 name_key(name.name), PlannedName(name.name, name.kind, record.source, [], name.main)
             )
             planned.main = planned.main or name.main
+            planned.mains += name.main
             if record.ref not in planned.refs:
                 planned.refs.append(record.ref)
     return list(drugs.values())
@@ -897,7 +732,7 @@ def merge_with_existing(plan: DrugPlan, existing: Iterable[DrugRef]) -> Merged:
         names = dict(planned.names)
         for key, name in list(names.items()):
             others = [d for d in on_file.get(key, []) if d.company_id != planned.company_id]
-            if name.kind is not DrugNameKind.CODE and others:
+            if others:  # a code name too: one code under two companies is one partnered drug
                 companies = {planned.company_id} | {d.company_id for d in others if d.company_id}
                 entry = merged.withheld.setdefault(key, Withheld(name.name, "shared", set(), set()))
                 entry.company_ids |= companies
