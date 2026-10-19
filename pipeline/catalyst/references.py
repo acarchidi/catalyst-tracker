@@ -2,8 +2,9 @@
 
 Company names and tickers come from the SEC company record each collection run already
 fetches. Trials, their study names, and their phases come from each ClinicalTrials.gov record as
-it is collected. Registry intervention lists are not imported as drugs: they mix in comparator
-drugs, placebos, and short forms such as "ETH", which would match the wrong company's drug.
+it is collected. Registry intervention lists are not imported as drugs here: they mix in
+comparator drugs, placebos, and short forms such as "ETH", which would match the wrong company's
+drug. The drug list (`catalyst.drug_list`, ADR 0035) reads them with rules that drop those.
 Every write is safe to repeat.
 """
 

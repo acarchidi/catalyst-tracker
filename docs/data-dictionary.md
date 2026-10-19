@@ -118,10 +118,31 @@ One name for a drug: code name, generic (INN), or brand.
 | `drug_id` | link to `drug` | yes | The drug. |
 | `name` | text, up to 300 characters | yes | The name as written by its source. |
 | `kind` | one of: `code`, `inn`, `brand` | yes | Code name, generic (INN) name, or brand name. |
+| `source` | one of: `claim`, `openfda`, `ctgov` | yes | Where the name was first found: a claim's document, Drugs@FDA, or ClinicalTrials.gov. |
+| `source_refs` | structured value (JSON) | yes | The records that give this name, as a list: FDA application or registry numbers. |
 
 Rules:
 
 - Unique: `drug_id`, `name`
+- Database check `source_refs_is_list`: `jsonb_typeof(source_refs) = 'array'`
+
+## `withheld_drug_name`
+
+A drug name the drug list did not record because several companies' records give it (ADR 0035). Such a name would match the wrong company's drug, so it waits for a person. Each run of the drug list replaces these rows.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `name` | text, up to 300 characters | yes | The name as one of its sources wrote it. |
+| `reason` | text, up to 100 characters | yes | Why it was not recorded, for example 'shared'. |
+| `company_ids` | structured value (JSON) | yes | Covered companies whose records give the name, as a list; other sponsors are not listed. |
+| `source_refs` | structured value (JSON) | yes | The records that give the name, as a list: FDA application or registry numbers. |
+| `recorded_at` | date and time (with time zone) | yes | When the drug list last found it shared. |
+
+Rules:
+
+- Unique: `name`
+- Database check `lists`: `jsonb_typeof(company_ids) = 'array' AND jsonb_typeof(source_refs) = 'array'`
 
 ## `target`
 

@@ -140,18 +140,46 @@ def _create_drug(session: Session, references: ReferenceData, name: str, company
     return drug.id
 
 
+# "TRYNGOLZA (olezarsen)": one drug written by two of its names (ADR 0035).
+_TWO_NAMES = re.compile(r"^(?P<first>[^()]+?)\s*\((?P<second>[^()]+)\)$")
+
+
+def _two_names(references: ReferenceData, name: str, company_id: UUID | None) -> Resolution | None:
+    """Match "A (B)": one drug when both names are that drug's, ambiguous when they name two.
+
+    A part that matches nothing leaves the whole unknown, so a person checks it.
+    """
+    shape = _TWO_NAMES.match(name.strip())
+    if shape is None:
+        return None
+    first, second = (known_drug(references, shape.group(g), company_id) for g in ("first", "second"))
+    if Status.UNKNOWN in (first.status, second.status):
+        return None
+    if first.id is not None and first.id == second.id:
+        return first
+    candidates = tuple(dict.fromkeys(first.candidates + second.candidates))
+    return Resolution(candidates, first.matched_by, needs_review=True)
+
+
 def known_drug(references: ReferenceData, name: str, company_id: UUID | None) -> Resolution:
     """Match a drug name among the reference tables' drugs, as this job does before creating one.
 
     A code name that belongs to another company is ambiguous for review, never this company's drug.
+    So is a generic or brand name whose one drug another company develops (CP4 review, O1; ADR
+    0035): a partner's or a competitor's drug named in a release must not become the company's
+    catalyst without a person. A drug with no known company still matches.
     """
     drug = references.resolve_drug(name, company_id)
+    if drug.id is not None and company_id is not None:
+        owner = references.drug_company(drug.id)
+        if owner is not None and owner != company_id:
+            return Resolution(drug.candidates, drug.matched_by, needs_review=True)
     if drug.status is not Status.UNKNOWN:
         return drug
     elsewhere = references.resolve_drug(name)
     if elsewhere.candidates:
         return Resolution(elsewhere.candidates, elsewhere.matched_by, needs_review=True)
-    return drug
+    return _two_names(references, name, company_id) or drug
 
 
 def _drug(

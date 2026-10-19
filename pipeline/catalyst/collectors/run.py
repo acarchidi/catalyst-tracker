@@ -24,6 +24,7 @@ from catalyst.collectors.sec.edgar import SEC_LIMITER, SUBMISSIONS_URL, EdgarCli
 from catalyst.collectors.sec.filings import DEFAULT_FORMS, collect_filings
 from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
 from catalyst.db.repository import known_source_keys, upsert_company
+from catalyst.drug_list_store import load_drugs
 from catalyst.logs import log_alert, log_event
 from catalyst.references import company_identity, record_company_identity, recording_trials
 from catalyst.schemas import DocumentMatch
@@ -32,6 +33,9 @@ from catalyst.snapshots import SnapshotStore
 _log = logging.getLogger(__name__)
 # Every source a run collects, by the name that starts its counts: "sec:VRTX", "fedreg", "wire:...".
 SOURCES = ("sec", "ctgov", "openfda", "fedreg", "wire")
+# Run only when named: "drugs" fills the drug list from Drugs@FDA and ClinicalTrials.gov (ADR 0035)
+# for companies already collected, in about 13 minutes of polite requests.
+ON_REQUEST = ("drugs",)
 _PER_COMPANY = frozenset({"sec", "ctgov", "openfda"})
 
 
@@ -164,7 +168,7 @@ def collect_all(
     Only the collectors named in `sources` run. Any per-company source still reads the company's
     SEC record, which names the company; with none of them, no company is read at all.
     """
-    if unknown := sources - set(SOURCES):
+    if unknown := sources - set(SOURCES) - set(ON_REQUEST):
         raise ValueError(f"unknown sources: {', '.join(sorted(unknown))}")
     collector = Collector(store, session_factory, now)
     results: list[CollectionStats] = []
@@ -211,7 +215,26 @@ def collect_all(
                     (company_id, DocumentMatch.OPENFDA_SPONSOR),
                 )
             )
-    return results + _feeds(collector, clients.web, since, sources)
+    results += _feeds(collector, clients.web, since, sources)
+    if "drugs" in sources:
+        results.append(_drug_list(session_factory, clients.web, companies, now))
+    return results
+
+
+def _drug_list(
+    session_factory: sessionmaker[Session],
+    web: PoliteHttpClient,
+    companies: list[PilotCompany],
+    now: Callable[[], datetime],
+) -> CollectionStats:
+    """Fill the drug list; on failure, alert and store nothing (ADR 0035)."""
+    try:
+        report = load_drugs(session_factory, web, companies, now)
+    except Exception as error:
+        stats = CollectionStats("drugs", error=f"{type(error).__name__}: {error}")
+        log_alert(_log, "collector_failed", source=stats.source, error=stats.error)
+        return stats
+    return CollectionStats("drugs", created=report.names_added, existing=report.names_on_file)
 
 
 def _feeds(

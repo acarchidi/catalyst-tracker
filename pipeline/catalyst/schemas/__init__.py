@@ -27,6 +27,7 @@ from catalyst.schemas.entities import (
     Outcome,
     Target,
     Trial,
+    WithheldDrugName,
 )
 from catalyst.schemas.enums import (
     CatalystField,
@@ -38,6 +39,7 @@ from catalyst.schemas.enums import (
     DatePrecision,
     DocumentMatch,
     DrugNameKind,
+    DrugNameSource,
     DrugRole,
     GateDecision,
     LineOfTherapy,
@@ -60,6 +62,7 @@ ALL_MODELS: tuple[type[Entity], ...] = (
     CompanyName,
     Drug,
     DrugName,
+    WithheldDrugName,
     Target,
     DrugTarget,
     Indication,
@@ -104,6 +107,7 @@ __all__ = [
     "DrugComponent",
     "DrugName",
     "DrugNameKind",
+    "DrugNameSource",
     "DrugRole",
     "DrugTarget",
     "Entity",
@@ -124,4 +128,5 @@ __all__ = [
     "Target",
     "Trial",
     "TrialPhase",
+    "WithheldDrugName",
 ]

@@ -255,6 +255,90 @@ def test_another_company_s_code_name_is_ambiguous_not_a_new_drug(
     assert report.drugs_created == 1
 
 
+def _owned_drug(session: Session, company: UUID | None, name: str, kind: DrugNameKind) -> UUID:
+    drug = Drug(company_id=company, preferred_name=name)
+    session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
+    row = DrugName(drug_id=drug.id, name=name, kind=kind)
+    session.execute(insert(TABLES[DrugName]).values(**row.model_dump()))
+    return drug.id
+
+
+@pytest.mark.parametrize("kind", [DrugNameKind.INN, DrugNameKind.BRAND])
+def test_another_company_s_generic_or_brand_name_waits_for_review(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID], kind: DrugNameKind
+) -> None:
+    """CP4 review, O1: a name of another company's drug must not link this company's catalyst."""
+    with session_factory.begin() as session:
+        other = upsert_company(session, 1178670, "ALNYLAM PHARMACEUTICALS, INC.", "2834").id
+        theirs = _owned_drug(session, other, "cemdisiran", kind)
+        _claim(session, spyre["release"], "Cemdisiran data are expected in 2027.", "cemdisiran", 1)
+    resolve_claims(session_factory, lambda: NOW)
+    drug = _by(_matches(session_factory), MatchedEntity.DRUG)["cemdisiran"]
+    assert (drug["status"], drug["matched_id"], drug["candidates"]) == ("ambiguous", None, [str(theirs)])
+    assert drug["matched_by"] == kind.value
+
+
+def test_the_company_s_own_generic_name_and_one_with_no_owner_still_resolve(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        own = _owned_drug(session, spyre["company"], "brelovitug", DrugNameKind.INN)
+        _claim(session, spyre["release"], "Brelovitug data are expected in 2027.", "brelovitug", 1)
+        _claim(session, spyre["release"], "Maralixibat data are expected in 2027.", "maralixibat", 2)
+    resolve_claims(session_factory, lambda: NOW)
+    drugs = _by(_matches(session_factory), MatchedEntity.DRUG)
+    assert (drugs["brelovitug"]["status"], drugs["brelovitug"]["matched_id"]) == ("resolved", own)
+    assert (drugs["maralixibat"]["status"], drugs["maralixibat"]["matched_id"]) == (
+        "resolved",
+        spyre["maralixibat"],
+    )
+
+
+def _named_drug(session: Session, company: UUID, *names: tuple[str, DrugNameKind]) -> UUID:
+    drug = Drug(company_id=company, preferred_name=names[0][0])
+    session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
+    for name, kind in names:
+        row = DrugName(drug_id=drug.id, name=name, kind=kind)
+        session.execute(insert(TABLES[DrugName]).values(**row.model_dump()))
+    return drug.id
+
+
+def test_a_brand_with_its_generic_in_brackets_resolves_when_both_name_one_drug(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    """ADR 0035: "TRYNGOLZA (olezarsen)" names one drug when both names are that drug's."""
+    with session_factory.begin() as session:
+        own = _named_drug(
+            session, spyre["company"], ("olezarsen", DrugNameKind.INN), ("TRYNGOLZA", DrugNameKind.BRAND)
+        )
+        other = _named_drug(session, spyre["company"], ("SPY001", DrugNameKind.CODE))
+        quote = "Data for TRYNGOLZA are expected in 2027."
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (olezarsen)", 1)
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (sefaxersen)", 2)
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (SPY001)", 3)
+    resolve_claims(session_factory, lambda: NOW)
+    drugs = _by(_matches(session_factory), MatchedEntity.DRUG)
+    both = drugs["TRYNGOLZA (olezarsen)"]
+    assert (both["status"], both["matched_id"], both["matched_by"]) == ("resolved", own, "brand")
+    # A part that names no drug on file, or another drug, never resolves the whole.
+    assert drugs["TRYNGOLZA (sefaxersen)"]["status"] == "unknown"
+    two = drugs["TRYNGOLZA (SPY001)"]
+    assert (two["status"], sorted(two["candidates"])) == ("ambiguous", sorted([str(own), str(other)]))
+
+
+def test_a_name_of_two_drugs_one_of_them_the_company_s_stays_ambiguous(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    with session_factory.begin() as session:
+        other = upsert_company(session, 1178670, "ALNYLAM PHARMACEUTICALS, INC.", "2834").id
+        _owned_drug(session, other, "cemdisiran", DrugNameKind.INN)
+        _owned_drug(session, spyre["company"], "cemdisiran", DrugNameKind.INN)
+        _claim(session, spyre["release"], "Cemdisiran data are expected in 2027.", "cemdisiran", 1)
+    resolve_claims(session_factory, lambda: NOW)
+    drug = _by(_matches(session_factory), MatchedEntity.DRUG)["cemdisiran"]
+    assert (drug["status"], len(drug["candidates"])) == ("ambiguous", 2)
+
+
 @pytest.mark.parametrize(
     ("drug", "quote"),
     [

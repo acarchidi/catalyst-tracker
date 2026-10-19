@@ -21,6 +21,7 @@ from catalyst.schemas.enums import (
     DatePrecision,
     DocumentMatch,
     DrugNameKind,
+    DrugNameSource,
     DrugRole,
     GateDecision,
     LineOfTherapy,
@@ -147,10 +148,43 @@ class DrugName(Entity):
 
     __tablename__ = "drug_name"
     __unique__ = (("drug_id", "name"),)
+    __checks__: ClassVar[dict[str, str]] = {"source_refs_is_list": "jsonb_typeof(source_refs) = 'array'"}
 
     drug_id: Annotated[UUID, References("drug")] = Field(description="The drug.")
     name: Name = Field(description="The name as written by its source.")
     kind: DrugNameKind = Field(description="Code name, generic (INN) name, or brand name.")
+    source: DrugNameSource = Field(
+        default=DrugNameSource.CLAIM,
+        description="Where the name was first found: a claim's document, Drugs@FDA, or ClinicalTrials.gov.",
+    )
+    source_refs: list[str] = Field(
+        default_factory=list[str],
+        description="The records that give this name, as a list: FDA application or registry numbers.",
+    )
+
+
+class WithheldDrugName(Entity):
+    """A drug name the drug list did not record because several companies' records give it (ADR 0035).
+
+    Such a name would match the wrong company's drug, so it waits for a person. Each run of the
+    drug list replaces these rows.
+    """
+
+    __tablename__ = "withheld_drug_name"
+    __unique__ = (("name",),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "lists": "jsonb_typeof(company_ids) = 'array' AND jsonb_typeof(source_refs) = 'array'"
+    }
+
+    name: Name = Field(description="The name as one of its sources wrote it.")
+    reason: ShortText = Field(description="Why it was not recorded, for example 'shared'.")
+    company_ids: list[str] = Field(
+        description="Covered companies whose records give the name, as a list; other sponsors are not listed."
+    )
+    source_refs: list[str] = Field(
+        description="The records that give the name, as a list: FDA application or registry numbers."
+    )
+    recorded_at: AwareDatetime = Field(description="When the drug list last found it shared.")
 
 
 class Target(Entity):
