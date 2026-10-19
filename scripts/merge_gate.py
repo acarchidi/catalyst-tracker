@@ -6,7 +6,8 @@ JSON object, `{"action": ..., "reason": ...}`, where action is:
 
 - "merge": every rule below holds;
 - "owner": everything passed, but the pull request changes a path in OWNER_PATHS or
-  an instruction file in OWNER_FILE_NAMES, so the owner merges it by hand;
+  an instruction file in OWNER_FILE_NAMES, so the robot leaves it out and the coding agent
+  merges it after a separate review (ADR 0036);
 - "wait": a required check has not finished on this commit yet;
 - "skip": the pull request is not eligible, or a required check did not succeed.
 
@@ -26,7 +27,7 @@ HOLD_LABEL = "hold"
 # Paths that change who or what decides a merge: the robot and the review, the rules the
 # reviewer judges by (it reads them from the pull request), settings that make a required
 # check weaker, the spending caps, and the score floors. The robot never merges these;
-# the owner does.
+# the coding agent does, after a separate review (ADR 0036).
 OWNER_PATHS = (
     ".github/workflows/",
     ".github/rulesets/",
