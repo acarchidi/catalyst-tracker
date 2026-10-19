@@ -73,7 +73,7 @@ jobs:
                 --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | contains(\"$marker\")))] | length" \
                 | jq -s add)
               if [ "${seen:-0}" -eq 0 ]; then
-                printf '%s\n\n**Waiting for the owner.** Every check passed, but the robot does not merge this pull request because %s. The owner merges it by hand.\n' \
+                printf '%s\n\n**Not merged by the robot.** Every check passed, but the robot does not merge this pull request because %s. The coding agent merges it after a separate review (ADR 0036). A `hold` label stops that.\n' \
                   "$marker" "$reason" > "$RUNNER_TEMP/owner.md"
                 gh pr comment "$pr" --repo "$REPO" --body-file "$RUNNER_TEMP/owner.md"
               fi

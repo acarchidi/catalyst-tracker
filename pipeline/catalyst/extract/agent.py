@@ -44,7 +44,9 @@ class Problem(StrEnum):
     DATE_PASSED = "the window ended before the document was published"
     QUOTE_HIDDEN = "the quote is text the page hides from readers"
     INVISIBLE_CHARACTERS = "the quote, date words, or names hold invisible or direction-changing characters"
-    NON_ASCII_DIGITS = "the date words hold a digit from another script, which may read as another number"
+    NON_ASCII_DIGITS = (
+        "the quote or date words hold a digit from another script, which may read as another number"
+    )
     SOURCE_HIDES_TEXT = "the source hides words from readers, so a person must read it"
     SOURCE_INSTRUCTS_MODELS = "the source holds text written to steer a model, so a person must read it"
 
@@ -118,7 +120,13 @@ def check_proposal(
     names = (date_text, item["title"], item["drug"], item["indication"])
     if invisible_characters(span.quote if span else None, *names):
         problems.append(Problem.INVISIBLE_CHARACTERS)
-    if any(ch.isdigit() and not ch.isascii() for ch in date_text):
+    # The whole quote, not only the date words: a year beside "December 15" counts too (CP4, B1).
+    # In the quote only true digits count (Bengali, fullwidth, Arabic-Indic), not the superscript
+    # footnote markers filings use; the date-words rule holds a superscript beside year-less words.
+    quote = span.quote if span else ""
+    if any(ch.isdigit() and not ch.isascii() for ch in date_text) or any(
+        ch.isdecimal() and not ch.isascii() for ch in quote
+    ):
         problems.append(Problem.NON_ASCII_DIGITS)
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)

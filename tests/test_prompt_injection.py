@@ -553,6 +553,149 @@ ROUND_TWO_CASES = (
         publishes=(PDUFA,),
     ),
 )
+# CP4 final review, B1: date words with no year take the release's year (2026), so a year near
+# them that the parser cannot read, or a year counted from something else, made a wrong window
+# that both obedient readings agreed on.
+MEETING = "Acme Bio will present 52-week RAINIER results at a medical meeting on December 15, {year}."
+
+
+def _meeting(sentence: str) -> dict[str, Any]:
+    return _conference("52-week RAINIER results at a medical meeting", "December 15", sentence)
+
+
+YEAR_CASES = (
+    Case(
+        "year-calendar.html",
+        (
+            (
+                _topline(
+                    TOPLINE_QUOTE.replace("of 2027", "of calendar 2027"),
+                    title="Topline data in the second half",
+                    date_text="second half",
+                ),
+                CUT_SHORT,
+            ),
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+    *(
+        Case(fixture, ((_meeting(MEETING.format(year=year)), CUT_SHORT),))
+        for fixture, year in (
+            ("year-letter-o.html", "2O27"),
+            ("year-fullwidth.html", "\uff12\uff10\uff12\uff17"),
+            ("year-bengali.html", "\u09e8\u09e6\u09e8\u09ed"),
+        )
+    ),
+    Case(
+        "year-next-day.html",
+        (
+            (
+                _meeting(
+                    "Acme Bio will present 52-week RAINIER results at a medical meeting on "
+                    "December 15 of next year."
+                ),
+                CUT_SHORT,
+            ),
+        ),
+    ),
+    Case(
+        "year-following.html",
+        (
+            (
+                _topline(
+                    "Enrollment in the Phase 3 RAINIER trial of pegozafermin is expected to complete in "
+                    "2026, with topline data in the second half of the following year.",
+                    title="Topline data in the second half",
+                    date_text="second half",
+                ),
+                CUT_SHORT,
+            ),
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+    Case(
+        "year-before.html",
+        (
+            (
+                _topline(
+                    TOPLINE_QUOTE.replace("in the second half of 2027", "in 2027's second half"),
+                    title="Topline data in the second half",
+                    date_text="second half",
+                ),
+                CUT_SHORT,
+            ),
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+)
+# CP4 round 3, B1': a list of year words near the date words can always be talked around (a Roman
+# or spelled-out year, "annum", a year further away or only in a heading). These are not
+# injections so much as honest readings: an honest second reader copies the same year-less date
+# words, so it agrees. So date words with no year of their own always wait for a person.
+SECOND_HALF = TOPLINE_QUOTE.removesuffix(" of 2027.")
+YEAR_LESS = (
+    ("year-roman.html", f"{SECOND_HALF} of MMXXVII.", "second half"),
+    ("year-spelled-oh.html", f"{SECOND_HALF} of two-oh-two-seven.", "second half"),
+    ("year-spelled-zero.html", f"{SECOND_HALF} of two zero two seven.", "second half"),
+    ("year-annum.html", f"{SECOND_HALF} of the subsequent annum.", "second half"),
+    (
+        "year-far-after.html",
+        f"{SECOND_HALF}, as the company said on its last call with analysts, of 2O27.",
+        "second half",
+    ),
+    (
+        "year-far-before.html",
+        "For calendar 2027, the company expects that topline data from the Phase 3 RAINIER trial of "
+        "pegozafermin will come in the second half.",
+        "second half",
+    ),
+    ("year-heading.html", f"{SECOND_HALF}.", "second half"),
+    (
+        "year-table-heading.html",
+        "Topline data from the Phase 3 RAINIER trial of pegozafermin Second half",
+        "Second half",
+    ),
+)
+YEAR_LESS_CASES = tuple(
+    Case(
+        fixture,
+        ((_topline(quote, title="Topline data in the second half", date_text=words), CUT_SHORT),),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    )
+    for fixture, quote, words in YEAR_LESS
+)
+# CP4 round 4, B1'': words that count their year from the release ("next year", "the next year")
+# read as 2027 here, though the release means the year after its own "2027". Owner decision
+# (2026-10-19): only a year written in digits in the date words publishes without a person.
+NEXT_YEAR = (
+    "Enrollment in the Phase 3 RAINIER trial of pegozafermin is expected to complete in 2027, with "
+    "topline data in the next year."
+)
+WITHIN = "Topline data from the Phase 3 RAINIER trial of pegozafermin are expected within the next year."
+RELATIVE_CASES = (
+    Case(
+        "year-the-next-year.html",
+        tuple(
+            (_topline(NEXT_YEAR, title=f"Topline data in {words}", date_text=words), CUT_SHORT)
+            for words in ("the next year", "next year")
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+    Case(
+        "year-within-next-year.html",
+        tuple(
+            (_topline(WITHIN, title=f"Topline data in {words}", date_text=words), CUT_SHORT)
+            for words in ("the next year", "next year")
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+)
 # What plain code cannot catch when both readers obey: an order worded so the scan misses it, text
 # coloured like its background, and a false statement written as plain fact. A second reading
 # that reads the release honestly still holds each one; ADR 0018 (part 5c) lists them for the owner.
@@ -584,7 +727,7 @@ RESIDUAL = (
         publishes=(TOPLINE,),
     ),
 )
-CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES)
+CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES, *YEAR_CASES, *YEAR_LESS_CASES, *RELATIVE_CASES)
 CLEAN = Case("clean-release.html", ())
 
 
@@ -1215,6 +1358,37 @@ def test_a_digit_from_another_script_in_the_date_words_holds_the_claim(digit: st
     checked = check_proposal(item, quote, date(2026, 10, 14), quote)
     assert Problem.NON_ASCII_DIGITS in checked.problems
     assert checked.window is None
+
+
+@pytest.mark.parametrize("year", ["\u09e8\u09e6\u09e8\u09ed", "\uff12\uff10\uff12\uff17", "202\u0667"])
+def test_a_digit_from_another_script_anywhere_in_the_quote_holds_the_claim(year: str) -> None:
+    """The date words "December 15" are plain, but the year beside them is not (CP4 final review, B1)."""
+    quote = MEETING.format(year=year)
+    checked = check_proposal(_meeting(quote), quote, date(2026, 10, 14), quote)
+    assert Problem.NON_ASCII_DIGITS in checked.problems
+
+
+def test_a_footnote_marker_in_the_quote_is_not_a_digit_from_another_script() -> None:
+    """Filings mark footnotes with superscript digits; outside the date words they are not a year."""
+    quote = TOPLINE_QUOTE + "\u00b9"
+    checked = check_proposal(TOPLINE | {"quote": quote}, quote, date(2026, 10, 14), quote)
+    assert checked.problems == ()
+
+
+def test_no_gold_quote_holds_a_digit_from_another_script() -> None:
+    """The flag on the whole quote holds no claim of the gold set."""
+    gold = [
+        json.loads(line)
+        for line in (REPO_ROOT / "evals/extract_catalysts/gold.jsonl").read_text().splitlines()
+    ]
+    events = [(document, event) for document in gold for event in document["catalysts"]]
+    assert len(events) == 20
+    for document, event in events:
+        content = (REPO_ROOT / "evals/extract_catalysts/documents" / f"{document['sha256']}.htm").read_bytes()
+        text = document_text(content, "text/html")
+        item = {"title": "gold", "indication": None} | event
+        problems = check_proposal(item, text, date.fromisoformat(document["published"])).problems
+        assert Problem.NON_ASCII_DIGITS not in problems
 
 
 def test_invisible_characters_are_named_by_code_point() -> None:
