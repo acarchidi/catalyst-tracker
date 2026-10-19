@@ -144,8 +144,15 @@ def known_drug(references: ReferenceData, name: str, company_id: UUID | None) ->
     """Match a drug name among the reference tables' drugs, as this job does before creating one.
 
     A code name that belongs to another company is ambiguous for review, never this company's drug.
+    So is a generic or brand name whose one drug another company develops (CP4 review, O1; ADR
+    0037): a partner's or a competitor's drug named in a release must not become the company's
+    catalyst without a person. A drug with no known company still matches.
     """
     drug = references.resolve_drug(name, company_id)
+    if drug.id is not None and company_id is not None:
+        owner = references.drug_company(drug.id)
+        if owner is not None and owner != company_id:
+            return Resolution(drug.candidates, drug.matched_by, needs_review=True)
     if drug.status is not Status.UNKNOWN:
         return drug
     elsewhere = references.resolve_drug(name)

@@ -23,6 +23,7 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [x] Extractor agents and prompt evaluation sets
 - [x] Entity resolver and reference tables. Includes trials of several drugs: every drug and combination is listed, each from a quoted source sentence, marked as tested alone or in combination (owner ruling, 2026-10-17; `evals/extract_catalysts/README.md`, rule 3)
 - [ ] Verification checks and publish gate
+  - [x] A generic or brand name of another company's drug waits for review instead of being linked to the release's company (CP4 review, finding O1; ADR 0037)
 - [ ] Build overseer: a GitHub Actions job on every pull-request event and once a day that checks each pull request against the roadmap and `AGENTS.md`, comments, holds the merge on a blocking finding, re-runs a failed CI job once, escalates owner decisions, and keeps a pinned "Build status" issue. The model only answers in JSON; `scripts/overseer_verdict.py` acts and touches only its own `overseer-hold` label. The workflow lands first; then "Overseer" becomes a required check, the robot also respects `overseer-hold`, and the Overseer workflow wakes the robot. The verdict script joins `OWNER_PATHS`; checkpoint CP8 (owner request 2026-10-17; ADR 0019)
 - [ ] Review-queue screen
 - [ ] Change history and outcome agent
@@ -156,6 +157,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-10-19 | ADR 0037 (amends ADR 0015, decision 4): a generic or brand name whose one drug another company develops no longer matches for any company; the matching job marks it ambiguous with that drug as the candidate, so `names_matched` holds the claim for a person; a drug with no known company still matches; code names, the gate, and `MAY_NOT_APPLY` are unchanged (CP4 review, finding O1) |
 | 2026-10-19 | ADR 0036: the coding agent merges owner-only pull requests itself after the required CI checks pass and a separate reviewer (Opus for the review, merge robot, publish gate, caps, or floors) says OK, with no `hold` label; it tells the owner in one line; raising a cap or lowering a floor still needs the owner's written OK; `.claude/settings.json` allows the merge tool (owner decision) |
 | 2026-10-18 | ADR 0034: `catalyst export-catalysts` writes the live data as one JSON file for the private prototype: published catalysts exactly as the read API shows them, each source naming its claim, and held claims only on request, in their own list marked "held for review"; `catalyst collect --sources` runs only the named collectors, and a company whose SEC record fails no longer stops the run (owner request) |
 | 2026-10-18 | ADR 0033: several roadmap items may be in progress at once (owner decision), each with its own branch and pull request; an item starts only if it needs nothing unmerged; earlier items first; at most three item pull requests open at a time; main is merged into another open pull request only when it conflicts or needs the merged work; the overseer's one-item check, the spec, and ADR 0019 follow |
