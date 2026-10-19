@@ -328,27 +328,29 @@ def cut_short(quote: str, words: str, published: date) -> str | None:
     return None
 
 
-# --- Date words with no year of their own (CP4 final review, B1 and round 3, B1') ---
+# --- Date words must write their year (CP4 final review B1, rounds 3 and 4; owner, 2026-10-19) ---
 
-# Words that count the year from the document itself: it is their own year, not a borrowed one.
-_COUNTED = re.compile(r"\b(?:this|next)\s+year\b|\bthis\s+quarter\b", re.IGNORECASE)
-
-
-def _a_year_later(published: date) -> date:
-    return date(published.year + 1, published.month, min(published.day, 28 if published.month == 2 else 31))
+_YEARS_EARLIER = 4  # a leap year again, so "February 29" is read the same way both times
 
 
-def borrows_year(words: str, published: date) -> bool:
-    """Say whether the date words name a window only by taking the document's year.
+def writes_year(words: str, published: date) -> bool:
+    """Say whether the date words write their year in digits, so they publish without a person.
 
-    "Second half", "December 15", and "by year-end" do: read a year later, they give a window a
-    year later. Such words cannot publish on their own, because the real year may be written
-    anywhere, in any form: beside them in a form code cannot read ("2O27", "MMXXVII"), counted from
-    something else ("of the following year"), further away, or only in a heading. Words that write
-    a year ("2027", "'27", "2H26") or count it from the document ("this year", "next year", "this
-    quarter") do not borrow it.
+    "Second half of 2027", "December 15, 2027", "Q4 2027", "2H27", and "Q4 '27" do: read as of
+    a document four years earlier, they give the same window. Words with no year ("second half",
+    "December 15", "by year-end") or a year counted from the document ("this year", "next year",
+    "the next year", "this quarter", "later this year", or a range with such a part) do not: their
+    window moves with the document's date, and the real year may be written anywhere, in any form.
+    Words that name no window either way ("FY2027", "soon") do not write a year either. A "by"
+    phrase always starts on the document's date, so only its end must stay the same.
     """
-    if _COUNTED.search(words):
+    here = parse_window(words, published)
+    try:
+        moved = published.replace(year=published.year - _YEARS_EARLIER)
+    except ValueError:  # February 29 in a year whose fourth year before is not a leap year (2104)
         return False
-    here, later = parse_window(words, published), parse_window(words, _a_year_later(published))
-    return here is not None and later is not None and here.end != later.end
+    earlier = parse_window(words, moved)
+    if here is None or earlier is None or (here.end, here.precision) != (earlier.end, earlier.precision):
+        return False
+    by = re.sub(r"\s+", " ", words.lower()).strip().startswith("by ")
+    return by or here.start == earlier.start

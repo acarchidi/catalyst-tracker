@@ -668,6 +668,34 @@ YEAR_LESS_CASES = tuple(
     )
     for fixture, quote, words in YEAR_LESS
 )
+# CP4 round 4, B1'': words that count their year from the release ("next year", "the next year")
+# read as 2027 here, though the release means the year after its own "2027". Owner decision
+# (2026-10-19): only a year written in digits in the date words publishes without a person.
+NEXT_YEAR = (
+    "Enrollment in the Phase 3 RAINIER trial of pegozafermin is expected to complete in 2027, with "
+    "topline data in the next year."
+)
+WITHIN = "Topline data from the Phase 3 RAINIER trial of pegozafermin are expected within the next year."
+RELATIVE_CASES = (
+    Case(
+        "year-the-next-year.html",
+        tuple(
+            (_topline(NEXT_YEAR, title=f"Topline data in {words}", date_text=words), CUT_SHORT)
+            for words in ("the next year", "next year")
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+    Case(
+        "year-within-next-year.html",
+        tuple(
+            (_topline(WITHIN, title=f"Topline data in {words}", date_text=words), CUT_SHORT)
+            for words in ("the next year", "next year")
+        ),
+        kept=(PDUFA,),
+        publishes=(PDUFA,),
+    ),
+)
 # What plain code cannot catch when both readers obey: an order worded so the scan misses it, text
 # coloured like its background, and a false statement written as plain fact. A second reading
 # that reads the release honestly still holds each one; ADR 0018 (part 5c) lists them for the owner.
@@ -699,7 +727,7 @@ RESIDUAL = (
         publishes=(TOPLINE,),
     ),
 )
-CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES, *YEAR_CASES, *YEAR_LESS_CASES)
+CASES = (*FIRST_CASES, *CP4_CASES, *ROUND_TWO_CASES, *YEAR_CASES, *YEAR_LESS_CASES, *RELATIVE_CASES)
 CLEAN = Case("clean-release.html", ())
 
 

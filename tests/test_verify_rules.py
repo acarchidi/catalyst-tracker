@@ -175,6 +175,18 @@ def test_whole_date_words_pass(quote: str, date_text: str) -> None:
 
 YEAR_LESS = [
     ("Topline data are expected in the second half.", "second half"),
+    ("Data in the second half of this year, with 52-week data in 2027.", "second half of this year"),
+    ("We expect to complete enrollment by the end of next year.", "by the end of next year"),
+    ("We plan to submit the NDA later this year.", "later this year"),
+    ("We expect to submit the BLA in the fourth quarter of this year.", "fourth quarter of this year"),
+    ("Enrollment completes in 2027, with topline data in the next year.", "the next year"),
+    ("Enrollment completes in 2027, with topline data in the next year.", "next year"),
+    ("Topline data are expected this year.", "this year"),
+    ("Topline data are expected this quarter.", "this quarter"),
+    ("Topline data are expected in early next year.", "early next year"),
+    ("Topline data are expected in the first half or next year.", "first half or next year"),
+    ("Topline data are expected in late 2026 or early next year.", "late 2026 or early next year"),
+    ("Topline data are expected between Q4 2026 and next year.", "between Q4 2026 and next year"),
     ("Acme will present results at a medical meeting on December 15 in Boston.", "December 15"),
     ("Enrollment keeps us on track for completion by year-end.", "by year-end"),
     ("We expect to submit the BLA by the end of the year.", "by the end of the year"),
@@ -205,12 +217,12 @@ YEAR_LESS = [
 
 
 @pytest.mark.parametrize(("quote", "date_text"), YEAR_LESS, ids=[q[-30:] for q, _ in YEAR_LESS])
-def test_date_words_without_a_year_of_their_own_fail(quote: str, date_text: str) -> None:
-    """Words with no year take the release's (2026); the real year may be anywhere (CP4, B1 and B1').
+def test_date_words_that_do_not_write_their_year_fail(quote: str, date_text: str) -> None:
+    """Words without a written year take the release's, or count from it (CP4, B1, B1', B1'').
 
-    It may be written so code cannot read it ("2O27", "MMXXVII", "two-oh-two-seven"), counted from
-    something else ("the following year"), far from the words, or only in a heading. An honest second
-    reading copies the same words, so it cannot catch this either: a person checks the year.
+    The real year may be written so code cannot read it ("2O27", "MMXXVII"), counted from something
+    else ("the following year", "in 2027 ... the next year"), far from the words, or only in a
+    heading. An honest second reading copies the same words, so a person checks the year.
     """
     outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
     assert outcome is Outcome.FAIL
@@ -218,20 +230,41 @@ def test_date_words_without_a_year_of_their_own_fail(quote: str, date_text: str)
     assert reason.startswith(f"the date words '{date_text}' ")
 
 
-OWN_YEAR = [
-    ("Data in the second half of this year, with 52-week data in 2027.", "second half of this year"),
+WRITTEN_YEAR = [
     ("Data are expected in the second half of 2027, two years after the first.", "second half of 2027"),
-    ("We expect to complete enrollment by the end of next year.", "by the end of next year"),
-    ("We plan to submit the NDA later this year.", "later this year"),
-    ("We expect to submit the BLA in the fourth quarter of this year.", "fourth quarter of this year"),
+    ("The PDUFA date is December 15, 2027.", "December 15, 2027"),
+    ("Topline data are expected in Q4 2027.", "Q4 2027"),
+    ("Topline data are expected in 2H27.", "2H27"),
+    ("Topline data are expected in Q4 '27.", "Q4 '27"),
+    ("Topline data are expected by Q4 2027.", "by Q4 2027"),
+    ("Topline data are expected in late 2026 or early 2027.", "late 2026 or early 2027"),
     ("Topline data are expected in the second half of 2027.\u00b9", "second half of 2027"),
 ]
 
 
-@pytest.mark.parametrize(("quote", "date_text"), OWN_YEAR, ids=[w for _, w in OWN_YEAR])
-def test_date_words_with_a_year_of_their_own_pass(quote: str, date_text: str) -> None:
-    """Words that write a year, or count it from the release ("this year", "next year"), still pass."""
+@pytest.mark.parametrize(("quote", "date_text"), WRITTEN_YEAR, ids=[w for _, w in WRITTEN_YEAR])
+def test_date_words_that_write_their_year_in_digits_pass(quote: str, date_text: str) -> None:
+    """Only a year written in digits in the date words publishes without a person (owner, 2026-10-19)."""
     assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
+
+
+def test_a_february_29_without_a_year_fails_for_a_release_in_a_leap_year() -> None:
+    """Released 2028-01-10, "February 29" reads as 2028-02-29; it still does not write its year."""
+    facts = replace(
+        _facts("The meeting is on February 29.", date_text="February 29"), published=date(2028, 1, 10)
+    )
+    outcome, reason = _outcomes(facts)["date_words_in_quote"]
+    assert (outcome, reason) == (
+        Outcome.FAIL,
+        "the date words 'February 29' do not write their year; a person must check it",
+    )
+
+
+def test_date_words_that_name_no_window_are_held_by_the_window_checks_not_this_one() -> None:
+    """The word "soon" writes no year either, but it names no window, so `has_window` already holds it."""
+    outcomes = _outcomes(_facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon"))
+    assert outcomes["date_words_in_quote"][0] is Outcome.PASS
+    assert outcomes["window_matches_words"][0] is Outcome.FAIL
 
 
 def test_date_words_that_name_no_window_fail() -> None:

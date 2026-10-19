@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from catalyst.extract.dates import DateWindow, borrows_year, parse_window
+from catalyst.extract.dates import DateWindow, parse_window, writes_year
 from catalyst.schemas.enums import DatePrecision
 
 PUBLISHED = date(2026, 10, 14)
@@ -381,35 +381,57 @@ def test_digits_from_other_scripts_name_no_window(phrase: str) -> None:
 
 @pytest.mark.parametrize(
     "phrase",
-    ["second half", "December 15", "by year-end", "third quarter", "November 16 to December 2"],
+    [
+        "second half of 2027",
+        "2H26",
+        "Q4 '27",
+        "Q1 2027",
+        "December 15, 2027",
+        "November 16 to December 2, 2027",
+        "November 2027 to December",
+        "late 2026 or early 2027",
+        "by the end of 2027",
+        "by Q4 2027",
+        "year-end 2026/first quarter 2027",
+    ],
 )
-def test_words_without_a_year_borrow_the_documents(phrase: str) -> None:
-    """Their window moves with the document's year, so a year near them matters (CP4 final review, B1)."""
-    assert parse_window(phrase, PUBLISHED) is not None
-    assert borrows_year(phrase, PUBLISHED) is True
+def test_words_that_write_their_year_in_digits(phrase: str) -> None:
+    """Their window is the same whenever the document came out (owner decision, 2026-10-19)."""
+    assert writes_year(phrase, PUBLISHED) is True
 
 
 @pytest.mark.parametrize(
     "phrase",
     [
-        "second half of 2027",
-        "2H26",
-        "Q4 '27",
-        "December 15, 2027",
-        "November 16 to December 2, 2027",
-        "by the end of 2027",
+        "second half",
+        "December 15",
+        "by year-end",
+        "third quarter",
+        "November 16 to December 2",
         "this year",
+        "next year",
+        "the next year",
         "second half of next year",
         "this quarter",
         "later this year",
+        "early next year",
+        "first half or next year",
+        "late 2026 or early next year",
+        "between Q4 2026 and next year",
+        "FY2027",
         "soon",
     ],
 )
-def test_words_that_write_or_count_their_year_do_not_borrow_it(phrase: str) -> None:
-    """A written year, or one counted from the document ("this year", "next year"), is the words' own."""
-    assert borrows_year(phrase, PUBLISHED) is False
+def test_words_that_do_not_write_their_year(phrase: str) -> None:
+    """Missing, counted from the document, or not read as a year at all: a person checks it."""
+    assert writes_year(phrase, PUBLISHED) is False
 
 
-def test_a_leap_day_document_still_tells_whether_words_borrow_its_year() -> None:
-    assert borrows_year("December 15", date(2028, 2, 29)) is True
-    assert borrows_year("December 15, 2028", date(2028, 2, 29)) is False
+def test_a_february_29_without_a_year_does_not_write_its_year() -> None:
+    """Read a year later the day does not exist; that must never count as a written year (round 4)."""
+    released = date(2028, 1, 10)
+    assert parse_window("February 29", released) is not None
+    assert writes_year("February 29", released) is False
+    assert writes_year("February 29, 2028", released) is True
+    assert writes_year("December 15", date(2028, 2, 29)) is False
+    assert writes_year("December 15, 2028", date(2028, 2, 29)) is True
