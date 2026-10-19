@@ -1,6 +1,7 @@
 # 0007 — Merge robot on the free plan; no stops at checkpoints
 
 - **Status:** accepted
+- **Amended by:** ADR 0036 (2026-10-19), decision 2 and the alternative "the developer agent merges its own pull requests": the coding agent now merges owner-path pull requests itself after a separate review; ordinary `claude/` pull requests still go through the robot.
 - **Date:** 2026-10-16
 - **Roadmap item:** Repository skeleton: branch protection for main (owner request, 2026-10-16)
 

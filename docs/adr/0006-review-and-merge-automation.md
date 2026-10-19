@@ -1,6 +1,7 @@
 # 0006 — Automatic review and merging
 
 - **Status:** accepted; the auto-merge part (decisions 3–5) is superseded by ADR 0007
+- **Amended by:** ADR 0036 (2026-10-19), decision 4: owner-path pull requests are now merged by the coding agent after a separate review, not by the owner with the bypass.
 - **Date:** 2026-10-16
 - **Roadmap item:** Repository skeleton: branch protection for main (owner request, 2026-10-16)
 
