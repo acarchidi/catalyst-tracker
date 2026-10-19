@@ -173,6 +173,100 @@ def test_whole_date_words_pass(quote: str, date_text: str) -> None:
     assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
 
 
+YEAR_LESS = [
+    ("Topline data are expected in the second half.", "second half"),
+    ("Data in the second half of this year, with 52-week data in 2027.", "second half of this year"),
+    ("We expect to complete enrollment by the end of next year.", "by the end of next year"),
+    ("We plan to submit the NDA later this year.", "later this year"),
+    ("We expect to submit the BLA in the fourth quarter of this year.", "fourth quarter of this year"),
+    ("Enrollment completes in 2027, with topline data in the next year.", "the next year"),
+    ("Enrollment completes in 2027, with topline data in the next year.", "next year"),
+    ("Topline data are expected this year.", "this year"),
+    ("Topline data are expected this quarter.", "this quarter"),
+    ("Topline data are expected in early next year.", "early next year"),
+    ("Topline data are expected in the first half or next year.", "first half or next year"),
+    ("Topline data are expected in late 2026 or early next year.", "late 2026 or early next year"),
+    ("Topline data are expected between Q4 2026 and next year.", "between Q4 2026 and next year"),
+    ("Acme will present results at a medical meeting on December 15 in Boston.", "December 15"),
+    ("Enrollment keeps us on track for completion by year-end.", "by year-end"),
+    ("We expect to submit the BLA by the end of the year.", "by the end of the year"),
+    ("Topline data are expected in the second half of the year.", "second half of the year"),
+    ("Topline data are expected in the second half of calendar 2027.", "second half"),
+    ("Results at a medical meeting on December 15, 2O27.", "December 15"),
+    ("Results at a medical meeting on December 15, \uff12\uff10\uff12\uff17.", "December 15"),
+    ("Results at a medical meeting on December 15, \u09e8\u09e6\u09e8\u09ed.", "December 15"),
+    ("Results at a medical meeting on December 15, \u4e8c\u3007\u4e8c\u4e03.", "December 15"),
+    ("Results at a medical meeting on December 15, \u00b2\u2070\u00b2\u2077.", "December 15"),
+    ("Results at a medical meeting on December 15, \u0396\u039f\u0396\u0396.", "December 15"),
+    ("Results at a medical meeting on December 15 of next year.", "December 15"),
+    ("Results at a medical meeting on December 15 of the subsequent annum.", "December 15"),
+    ("Topline data are expected in the second half of the following year.", "second half"),
+    ("Topline data are expected in the second half of the coming year.", "second half"),
+    ("Topline data are expected in the second half of two thousand twenty-seven.", "second half"),
+    ("Topline data are expected in the second half of two-oh-two-seven.", "second half"),
+    ("Topline data are expected in the second half of MMXXVII.", "second half"),
+    ("Topline data are expected in 2027's second half.", "second half"),
+    ("Enrollment completes by year-end, calendar 2027.", "by year-end"),
+    ("Topline data are expected in the fourth quarter of the year after next.", "fourth quarter"),
+    (
+        "For calendar 2027, the company expects that topline data from its pivotal trial will come in "
+        "the second half.",
+        "second half",
+    ),
+]
+
+
+@pytest.mark.parametrize(("quote", "date_text"), YEAR_LESS, ids=[q[-30:] for q, _ in YEAR_LESS])
+def test_date_words_that_do_not_write_their_year_fail(quote: str, date_text: str) -> None:
+    """Words without a written year take the release's, or count from it (CP4, B1, B1', B1'').
+
+    The real year may be written so code cannot read it ("2O27", "MMXXVII"), counted from something
+    else ("the following year", "in 2027 ... the next year"), far from the words, or only in a
+    heading. An honest second reading copies the same words, so a person checks the year.
+    """
+    outcome, reason = _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"]
+    assert outcome is Outcome.FAIL
+    assert reason is not None
+    assert reason.startswith(f"the date words '{date_text}' ")
+
+
+WRITTEN_YEAR = [
+    ("Data are expected in the second half of 2027, two years after the first.", "second half of 2027"),
+    ("The PDUFA date is December 15, 2027.", "December 15, 2027"),
+    ("Topline data are expected in Q4 2027.", "Q4 2027"),
+    ("Topline data are expected in 2H27.", "2H27"),
+    ("Topline data are expected in Q4 '27.", "Q4 '27"),
+    ("Topline data are expected by Q4 2027.", "by Q4 2027"),
+    ("Topline data are expected in late 2026 or early 2027.", "late 2026 or early 2027"),
+    ("Topline data are expected in the second half of 2027.\u00b9", "second half of 2027"),
+]
+
+
+@pytest.mark.parametrize(("quote", "date_text"), WRITTEN_YEAR, ids=[w for _, w in WRITTEN_YEAR])
+def test_date_words_that_write_their_year_in_digits_pass(quote: str, date_text: str) -> None:
+    """Only a year written in digits in the date words publishes without a person (owner, 2026-10-19)."""
+    assert _outcomes(_facts(quote, date_text=date_text))["date_words_in_quote"][0] is Outcome.PASS
+
+
+def test_a_february_29_without_a_year_fails_for_a_release_in_a_leap_year() -> None:
+    """Released 2028-01-10, "February 29" reads as 2028-02-29; it still does not write its year."""
+    facts = replace(
+        _facts("The meeting is on February 29.", date_text="February 29"), published=date(2028, 1, 10)
+    )
+    outcome, reason = _outcomes(facts)["date_words_in_quote"]
+    assert (outcome, reason) == (
+        Outcome.FAIL,
+        "the date words 'February 29' do not write their year; a person must check it",
+    )
+
+
+def test_date_words_that_name_no_window_are_held_by_the_window_checks_not_this_one() -> None:
+    """The word "soon" writes no year either, but it names no window, so `has_window` already holds it."""
+    outcomes = _outcomes(_facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon"))
+    assert outcomes["date_words_in_quote"][0] is Outcome.PASS
+    assert outcomes["window_matches_words"][0] is Outcome.FAIL
+
+
 def test_date_words_that_name_no_window_fail() -> None:
     facts = _facts("Phase 3 AZURE-1 topline data expected soon.", date_text="soon")
     outcome, reason = _outcomes(facts)["window_matches_words"]

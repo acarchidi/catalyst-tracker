@@ -15,7 +15,7 @@ from typing import Any, cast
 from uuid import UUID
 
 from catalyst.extract.agent import has_words
-from catalyst.extract.dates import cut_short, parse_window
+from catalyst.extract.dates import cut_short, parse_window, writes_year
 from catalyst.resolve import names_trial
 from catalyst.schemas import CheckOutcome, TrialPhase
 
@@ -149,6 +149,13 @@ def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
     cut = cut_short(facts.quote, text, facts.published)
     if cut is not None:
         return _failed("date_words_in_quote", f"the date words '{text}' {cut}")
+    if parse_window(text, facts.published) is not None and not writes_year(text, facts.published):
+        # Only a year written in digits in the date words publishes without a person (owner
+        # decision 2026-10-19, after CP4 B1, B1', and B1''). Words that name no window at all are
+        # held by `has_window` and `window_matches_words`, so they get no second reason here.
+        return _failed(
+            "date_words_in_quote", f"the date words '{text}' do not write their year; a person must check it"
+        )
     return _passed("date_words_in_quote")
 
 

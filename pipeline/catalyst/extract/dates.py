@@ -326,3 +326,31 @@ def cut_short(quote: str, words: str, published: date) -> str | None:
                 if window is not None and _key(window) != own:
                     return f"are cut from the longer date '{phrase}' in the quote"
     return None
+
+
+# --- Date words must write their year (CP4 final review B1, rounds 3 and 4; owner, 2026-10-19) ---
+
+_YEARS_EARLIER = 4  # a leap year again, so "February 29" is read the same way both times
+
+
+def writes_year(words: str, published: date) -> bool:
+    """Say whether the date words write their year in digits, so they publish without a person.
+
+    "Second half of 2027", "December 15, 2027", "Q4 2027", "2H27", and "Q4 '27" do: read as of
+    a document four years earlier, they give the same window. Words with no year ("second half",
+    "December 15", "by year-end") or a year counted from the document ("this year", "next year",
+    "the next year", "this quarter", "later this year", or a range with such a part) do not: their
+    window moves with the document's date, and the real year may be written anywhere, in any form.
+    Words that name no window either way ("FY2027", "soon") do not write a year either. A "by"
+    phrase always starts on the document's date, so only its end must stay the same.
+    """
+    here = parse_window(words, published)
+    try:
+        moved = published.replace(year=published.year - _YEARS_EARLIER)
+    except ValueError:  # February 29 in a year whose fourth year before is not a leap year (2104)
+        return False
+    earlier = parse_window(words, moved)
+    if here is None or earlier is None or (here.end, here.precision) != (earlier.end, earlier.precision):
+        return False
+    by = re.sub(r"\s+", " ", words.lower()).strip().startswith("by ")
+    return by or here.start == earlier.start
