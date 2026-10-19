@@ -1,8 +1,10 @@
-# 0035 — A drug list from Drugs@FDA and ClinicalTrials.gov; another company's drug waits for review
+# 0035 — A drug list from Drugs@FDA and ClinicalTrials.gov
 
 - **Status:** accepted
 - **Date:** 2026-10-19
-- **Roadmap item:** none; fixes the top hold reason of the live run of 2026-10-18 (Phase 1, "Entity resolver and reference tables", is ticked)
+- **Roadmap item:** Phase 1, "Drug reference list" (owner request, 2026-10-19)
+- **Amends:** ADR 0015, part 3 (registry intervention lists are not imported as drugs)
+- **Needs:** ADR 0037 (another company's drug waits for review; PR #77), which merges first
 
 ## Context
 
@@ -11,6 +13,21 @@ The live run of 2026-10-18 (466 companies, 878 press releases) held 374 of 412 c
 ADR 0015 (part 3) left registry intervention lists out of the drug tables. Insmed's records list a comparator (azithromycin), placebos ("ELC (matching placebo for ALIS)"), and short forms ("ETH"), any of which would match the wrong drug. That reason stands; this ADR answers it with rules, not by trusting the lists.
 
 The CP4 review (finding O1) also noted that a generic or brand name matched for any company. A release that names a partner's or a competitor's drug could then link that drug to the release's company. More drug names on file make that likelier.
+
+## What changes from ADR 0015, and why
+
+- **ADR 0015, part 3, said:** "Registry intervention lists are **not** imported as drugs", because Insmed's records list a comparator (azithromycin), placebos, and short forms ("ETH"), any of which would match the wrong drug. Drugs were to come only from the company's own documents.
+- **This ADR changes that:** a covered company's own ClinicalTrials.gov interventions, and Drugs@FDA's approved products, now fill the drug tables.
+- **Why:** the owner asked for it on 2026-10-19 ("Yes, add it"), after the live run of 2026-10-18 held 313 claims as "drug unknown".
+- **How this answers ADR 0015's objection** (the wrong matches it feared): none of its examples can become a drug here.
+  - Azithromycin is a comparator that Drugs@FDA lists for Pfizer, so the comparator rule drops it, and drops a whole intervention that is another sponsor's approved drug (rule 3).
+  - Placebos are stand-ins (rule 3).
+  - "ETH" is a short form (rule 3).
+  - A name two companies' records give is withheld for review, not linked (rule 4).
+  - A target, isotope, or trial written like a code is not a code (rule 3).
+  - A generic or brand name whose drug another company develops makes a claim wait for review instead of linking it (ADR 0037).
+  - Offline, the list matches 156 held claims and none wrongly (Measurement).
+- **What stays from ADR 0015:** matching is exact, in plain code, with no model. Code names count only for their own company. Ambiguous and unknown names go to review.
 
 ## Decision
 
@@ -65,7 +82,7 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
    - Registry names need Drugs@FDA (for the comparator rule), so `ctgov` alone is refused.
    - A run of both sources replaces the withheld names. A run of `openfda` alone keeps the withheld names it did not read again and adds its own.
    - Re-running adds nothing. Only companies already collected get drugs.
-8. **Another company's drug waits for review** (CP4 review, O1).
+8. **Another company's drug waits for review** (CP4 review, O1). This rule is ADR 0037, in its own pull request (#77), which merges first; this list needs it.
    - In the matching job (`known_drug`), a generic or brand name whose one drug another company develops is ambiguous, with that drug as the candidate, so `names_matched` holds the claim.
    - A drug with no known company still matches. A name of two drugs, one of them the company's own, stays ambiguous, as before.
    - So a co-owned or licensed drug matches only when its name is not shared and belongs to the claim's company.

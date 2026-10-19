@@ -3,6 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-17
 - **Roadmap item:** Phase 1, "Entity resolver and reference tables"
+- **Amended by:** ADR 0035 (part 3: registry interventions are now read as drug names, through the filters ADR 0035 sets; owner request 2026-10-19)
 
 ## Context
 

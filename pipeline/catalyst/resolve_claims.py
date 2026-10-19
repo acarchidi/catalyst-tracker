@@ -166,7 +166,7 @@ def known_drug(references: ReferenceData, name: str, company_id: UUID | None) ->
 
     A code name that belongs to another company is ambiguous for review, never this company's drug.
     So is a generic or brand name whose one drug another company develops (CP4 review, O1; ADR
-    0035): a partner's or a competitor's drug named in a release must not become the company's
+    0037): a partner's or a competitor's drug named in a release must not become the company's
     catalyst without a person. A drug with no known company still matches.
     """
     drug = references.resolve_drug(name, company_id)
