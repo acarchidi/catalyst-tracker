@@ -4,10 +4,12 @@ Plain code around the agent: it reads stored copies, calls the agent, and stores
 catalysts; only the publish gate will write those). Safe to re-run: a document that already
 has claims from this prompt version is skipped, and a claim is stored once (ADR 0013).
 
-A read that finds nothing is kept as a reading, so a re-run skips it too until the prompt version
+A read that makes no claim is kept as a reading, so a re-run skips it too until the prompt version
 changes. Three kinds of copy never reach the model, each kept as a reading with its reason: one
-that is not a web page or plain text (a PDF copy), one with under `MIN_WORDS` readable words, and
-one over the extractor's input limit (ADR 0038).
+that is not a web page or plain text (a PDF copy, done for good), and one with under `MIN_WORDS`
+readable words or over the extractor's input limit. Those two are checked again each run, without
+a model call and after the new documents, so a fixed text reader or a higher limit reads them; each
+is counted only when first found (ADR 0038).
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
@@ -47,6 +49,8 @@ PRESS_RELEASE_TYPES = ("8-K EX-99.1",)
 TEXT_TYPES = frozenset({"text/html", "text/plain"})
 # Fewer readable words than any real release: the shortest that ever gave a catalyst had about 1,200.
 MIN_WORDS = 50
+# Skips that a later reader or limit can undo, so the document is checked again each run.
+RECHECKED = (ReadingSkip.NO_READABLE_TEXT, ReadingSkip.TOO_LARGE)
 
 _log = logging.getLogger(__name__)
 
@@ -63,6 +67,7 @@ class DocumentResult:
     claims_stored: int = 0
     error: str | None = None
     skipped: ReadingSkip | None = None  # why no model read it, if none did
+    skipped_before: bool = False  # a re-check that found the same skip as an earlier run
 
 
 @dataclass
@@ -76,7 +81,7 @@ class ExtractionReport:
     def summary(self) -> dict[str, Any]:
         """Return the counts the owner reads in the job summary."""
         catalysts = [c for d in self.documents for c in d.catalysts]
-        skips = [d.skipped for d in self.documents]
+        skips = [d.skipped for d in self.documents if not d.skipped_before]
         return {
             "documents_read": sum(d.error is None and d.skipped is None for d in self.documents),
             "documents_failed": sum(d.error is not None for d in self.documents),
@@ -84,6 +89,7 @@ class ExtractionReport:
             "documents_skipped_not_text": skips.count(ReadingSkip.NOT_TEXT),
             "documents_skipped_no_readable_text": skips.count(ReadingSkip.NO_READABLE_TEXT),
             "documents_skipped_too_large": skips.count(ReadingSkip.TOO_LARGE),
+            "documents_rechecked_still_skipped": sum(d.skipped_before for d in self.documents),
             "catalysts_proposed": len(catalysts),
             "catalysts_passing_every_check": sum(not c["problems"] for c in catalysts),
             "claims_stored": sum(d.claims_stored for d in self.documents),
@@ -98,7 +104,12 @@ def _utc_now() -> datetime:
 def _candidates(
     session: Session, document_types: Sequence[str], since: date | None, limit: int
 ) -> tuple[list[Any], int]:
-    """Return the newest matching documents not yet extracted with this prompt, and how many were done."""
+    """Return the documents to work on, and how many are done.
+
+    First the newest documents not yet extracted with this prompt and never skipped, up to `limit`;
+    then, up to `limit` more, the newest whose skip a fixed reader or a higher limit may undo, so
+    those re-checks never take the place of a new document.
+    """
     documents, claims, readings = TABLES[SourceDocument], TABLES[Claim], TABLES[DocumentReading]
     links, companies = TABLES[CompanyDocument], TABLES[Company]
     claimed = exists().where(
@@ -107,13 +118,19 @@ def _candidates(
         claims.c.prompt_id == EXTRACTOR_PROMPT[0],
         claims.c.prompt_version == EXTRACTOR_PROMPT[1],
     )
-    read = exists().where(
-        readings.c.source_document_id == documents.c.id,
-        readings.c.agent == ROLE,
-        readings.c.prompt_id == EXTRACTOR_PROMPT[0],
-        readings.c.prompt_version == EXTRACTOR_PROMPT[1],
-    )
-    done = or_(claimed, read)
+
+    def reading(*where: ColumnElement[bool]) -> ColumnElement[bool]:
+        return exists().where(
+            readings.c.source_document_id == documents.c.id,
+            readings.c.agent == ROLE,
+            readings.c.prompt_id == EXTRACTOR_PROMPT[0],
+            readings.c.prompt_version == EXTRACTOR_PROMPT[1],
+            *where,
+        )
+
+    undoable = [skip.value for skip in RECHECKED]
+    recheck = reading(readings.c.skipped.in_(undoable))
+    done = or_(claimed, reading(readings.c.skipped.is_(None) | readings.c.skipped.not_in(undoable)))
     company = (
         select(companies.c.name)
         .join(links, links.c.company_id == companies.c.id)
@@ -128,8 +145,10 @@ def _candidates(
     query = select(documents, company.label("company")).where(*chosen)
     finished = select(func.count()).select_from(documents).where(*chosen, done)
     skipped = session.execute(finished).scalar_one()
-    rows = session.execute(query.where(~done).order_by(documents.c.published_at.desc()).limit(limit)).all()
-    return list(rows), skipped
+    newest = documents.c.published_at.desc()
+    fresh = session.execute(query.where(~done, ~recheck).order_by(newest).limit(limit)).all()
+    again = session.execute(query.where(and_(~done, recheck)).order_by(newest).limit(limit)).all()
+    return [*fresh, *again], skipped
 
 
 def _shown(catalyst: ExtractedCatalyst) -> dict[str, Any]:
@@ -143,12 +162,16 @@ def _shown(catalyst: ExtractedCatalyst) -> dict[str, Any]:
 def _store(
     session_factory: sessionmaker[Session], claims: list[Claim], reading: DocumentReading | None = None
 ) -> int:
-    """Store the claims, or the reading of a document that gave none, in one transaction."""
+    """Store the claims, or the model's reading of a document that gave none, in one transaction.
+
+    The model's reading replaces an earlier skip of the same document, so it counts as done.
+    """
     table = TABLES[Claim]
     with session_factory.begin() as session:
         if reading is not None:
             row = insert(TABLES[DocumentReading]).values(**reading.model_dump())
-            session.execute(row.on_conflict_do_nothing())
+            replaced = {"skipped": None, "catalysts": row.excluded.catalysts, "read_at": row.excluded.read_at}
+            session.execute(row.on_conflict_do_update(index_elements=_READING_KEY, set_=replaced))
         if not claims:
             return 0
         result = session.execute(
@@ -160,15 +183,26 @@ def _store(
         return len(result.all())
 
 
-def _reading(document_id: Any, model: str, at: datetime) -> DocumentReading:
-    """Return the extractor's reading of a document that gave no catalysts."""
+_READING_KEY = list(DocumentReading.__unique__[0])
+
+
+def _keep_skip(session_factory: sessionmaker[Session], reading: DocumentReading) -> bool:
+    """Store a skip; return whether it is new, so a re-check is counted and alerted only once."""
+    table = TABLES[DocumentReading]
+    with session_factory.begin() as session:
+        row = insert(table).values(**reading.model_dump()).on_conflict_do_nothing().returning(table.c.id)
+        return session.execute(row).first() is not None
+
+
+def _reading(document_id: Any, model: str, at: datetime, catalysts: int = 0) -> DocumentReading:
+    """Return the extractor's reading of a document that made no claim."""
     return DocumentReading(
         source_document_id=UUID(str(document_id)),
         agent=ROLE,
         prompt_id=EXTRACTOR_PROMPT[0],
         prompt_version=EXTRACTOR_PROMPT[1],
         model=model,
-        catalysts=0,
+        catalysts=catalysts,
         read_at=at,
     )
 
@@ -185,10 +219,13 @@ class _Skip:
     result: DocumentResult
     reading: DocumentReading
 
-    def __call__(self, reason: ReadingSkip) -> None:
+    def __call__(self, reason: ReadingSkip) -> bool:
+        """Record the skip; return whether this run found it first."""
         self.result.skipped = reason
-        _store(self.session_factory, [], self.reading.model_copy(update={"skipped": reason}))
-        log_event(_log, "document_skipped", source_key=self.result.source_key, reason=reason.value)
+        new = _keep_skip(self.session_factory, self.reading.model_copy(update={"skipped": reason}))
+        self.result.skipped_before = not new
+        log_event(_log, "document_skipped", source_key=self.result.source_key, reason=reason.value, new=new)
+        return new
 
 
 def extract_documents(
@@ -222,14 +259,14 @@ def extract_documents(
                 continue
             extraction = extract_catalysts(client, text, published, visible=visible)
         except InputTooLargeError as error:
-            log_alert(
-                _log,
-                "document_too_large",
-                source_key=row.source_key,
-                estimated_tokens=error.estimated_tokens,
-                limit=error.limit,
-            )
-            skip(ReadingSkip.TOO_LARGE)
+            if skip(ReadingSkip.TOO_LARGE):  # an alert only the first time; re-checks just log the skip
+                log_alert(
+                    _log,
+                    "document_too_large",
+                    source_key=row.source_key,
+                    estimated_tokens=error.estimated_tokens,
+                    limit=error.limit,
+                )
             continue
         except SpendCapReachedError as error:
             report.documents.pop()
@@ -244,9 +281,11 @@ def extract_documents(
                 _log, "source_instructs_models", source_key=row.source_key, found=extraction.instructions[0]
             )
         result.catalysts = [_shown(c) for c in extraction.catalysts]
-        # A read that found nothing is kept, so the next run does not pay to read it again.
-        found_none = None if extraction.catalysts else _reading(row.id, extraction.model, now())
         claims = catalyst_claims(extraction, UUID(str(row.id)), now())
-        result.claims_stored = _store(session_factory, claims, found_none)
+        # A read that makes no claim (nothing found, or every quote lost) is kept, so the next run
+        # does not pay to read it again (Opus review of PR #79, O1).
+        found = len(extraction.catalysts)
+        no_claim = None if claims else _reading(row.id, extraction.model, now(), catalysts=found)
+        result.claims_stored = _store(session_factory, claims, no_claim)
         log_event(_log, "document_extracted", source_key=row.source_key, catalysts=len(result.catalysts))
     return report

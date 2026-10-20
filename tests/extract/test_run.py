@@ -114,6 +114,7 @@ def test_press_releases_become_checked_claims_once(
         "documents_skipped_not_text": 0,
         "documents_skipped_no_readable_text": 0,
         "documents_skipped_too_large": 0,
+        "documents_rechecked_still_skipped": 0,
         "catalysts_proposed": 1,
         "catalysts_passing_every_check": 1,
         "claims_stored": 1,
@@ -195,9 +196,15 @@ def _readings(factory: sessionmaker[Session]) -> list[tuple[str, str | None, int
         return [(r.prompt_version, r.skipped, r.catalysts) for r in session.execute(query)]
 
 
-def _run(factory: sessionmaker[Session], store: LocalSnapshotStore, fake: _Fake) -> dict[str, object]:
-    client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
-    return extract_documents(factory, store, client, limit=10, now=lambda: NOW).summary()
+def _run(
+    factory: sessionmaker[Session],
+    store: LocalSnapshotStore,
+    fake: _Fake,
+    config: ModelConfig | None = None,
+    limit: int = 10,
+) -> dict[str, object]:
+    client = ModelClient(config or _config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
+    return extract_documents(factory, store, client, limit=limit, now=lambda: NOW).summary()
 
 
 def test_a_release_with_no_catalysts_is_read_once_per_prompt_version(
@@ -275,7 +282,45 @@ def test_a_copy_with_no_readable_text_is_recorded_without_a_model_call(
     assert fake.calls == []
     assert (summary["documents_read"], summary["documents_skipped_no_readable_text"]) == (0, 1)
     assert _readings(session_factory) == [("1.0.0", "no_readable_text", 0)]
-    assert _run(session_factory, store, fake)["documents_skipped_already_done"] == 1
+    # Not done: each run checks the copy again for free, and counts it once (Opus review of PR #79, B1).
+    again = _run(session_factory, store, fake)
+    assert fake.calls == []
+    assert (again["documents_skipped_already_done"], again["documents_skipped_no_readable_text"]) == (0, 0)
+    assert again["documents_rechecked_still_skipped"] == 1
+    assert _readings(session_factory) == [("1.0.0", "no_readable_text", 0)]
+
+
+def test_a_copy_with_no_readable_text_is_read_once_the_reader_finds_its_words(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`visible_text` blanked four real releases on 2026-10-19; once it is fixed they must be read."""
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1")
+
+    def blank(_content: bytes, _type: str) -> str:
+        return ""
+
+    monkeypatch.setattr("catalyst.extract.run.visible_text", blank)
+    fake = _Fake()
+    assert _run(session_factory, store, fake)["documents_skipped_no_readable_text"] == 1
+    monkeypatch.undo()  # the reader is fixed
+    summary = _run(session_factory, store, fake)
+    assert (summary["documents_read"], summary["claims_stored"]) == (1, 1)
+    assert len(fake.calls) == 1
+
+
+def test_re_checks_never_crowd_out_new_releases(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1", b"<p>no words here</p>")
+    _document(store, session_factory, "b", "8-K EX-99.1", b"<p>nor here</p>")
+    fake = _Fake()
+    _run(session_factory, store, fake)
+    _document(store, session_factory, "c", "8-K EX-99.1")
+    summary = _run(session_factory, store, fake, limit=1)
+    assert (summary["documents_read"], summary["claims_stored"]) == (1, 1)  # the new release, first
+    assert summary["documents_rechecked_still_skipped"] == 1  # re-checks have their own limit
 
 
 def test_fewer_than_fifty_readable_words_is_no_readable_text(
@@ -309,4 +354,32 @@ def test_a_copy_over_the_input_limit_is_skipped_logged_and_counted(
     assert (fields["source_key"], fields["limit"]) == ("sec:a", 40_000)
     assert fields["estimated_tokens"] > 40_000
     assert _readings(session_factory) == [("1.0.0", "too_large", 0)]
+    # Checked again each run without a model call, but counted (and so alerted) only once.
+    again = _run(session_factory, store, fake)
+    assert fake.calls == []
+    assert (again["documents_skipped_too_large"], again["documents_rechecked_still_skipped"]) == (0, 1)
+    # A higher limit lets it through.
+    role = _config().roles["extractor"].model_copy(update={"max_input_tokens": 50_000})
+    bigger = _config().model_copy(update={"roles": {"extractor": role}})
+    fake.answer = {"catalysts": []}
+    assert _run(session_factory, store, fake, config=bigger)["documents_read"] == 1
+    assert len(fake.calls) == 1
+    # The model's reading replaces the skip, so it is done now and never paid for again.
+    assert _readings(session_factory) == [("1.0.0", None, 0)]
+    assert _run(session_factory, store, fake, config=bigger)["documents_skipped_already_done"] == 1
+    assert len(fake.calls) == 1
+
+
+def test_a_release_whose_proposals_all_lose_their_quotes_is_not_paid_for_again(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """Optional finding O1 of the Opus review of PR #79: it makes no claim, so it needs a reading."""
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1")
+    lost = ANSWER["catalysts"][0] | {"quote": "Words the release never says."}
+    fake = _Fake(answer={"catalysts": [lost]})
+    summary = _run(session_factory, store, fake)
+    assert (summary["catalysts_proposed"], summary["claims_stored"]) == (1, 0)
+    assert _readings(session_factory) == [("1.0.0", None, 1)]
     assert _run(session_factory, store, fake)["documents_skipped_already_done"] == 1
+    assert len(fake.calls) == 1

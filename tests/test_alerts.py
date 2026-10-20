@@ -96,6 +96,7 @@ def test_documents_skipped_without_a_model_call_are_counted_in_plain_words() -> 
         "documents_skipped_not_text": 1,
         "documents_skipped_no_readable_text": 36,
         "documents_skipped_too_large": 1,
+        "documents_rechecked_still_skipped": 4,
     }
     plan = build_alerts(
         [JobRun("extract-catalysts", "success", CLEAN_EXTRACT | skips)], None, LIMITS, RUN_URL
@@ -104,8 +105,9 @@ def test_documents_skipped_without_a_model_call_are_counted_in_plain_words() -> 
     assert (
         "Skipped without a model call: 116 documents already read, 1 document that is not a web page "
         "or plain text (such as a PDF copy), 36 documents with no readable text, "
-        "1 document over the size limit." in body
+        "1 document over the size limit, 4 documents checked again and still not sent." in body
     )
+    assert "later runs check them again for free" in body
 
 
 def test_skipped_documents_alone_are_not_an_alert() -> None:

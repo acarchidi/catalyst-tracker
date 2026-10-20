@@ -129,7 +129,8 @@ def _extract_problems(summary: dict[str, Any]) -> list[str]:
         verb = "was" if large == 1 else "were"
         problems.append(
             f"{_plural(large, 'document')} {verb} too large to send to the model (over the size limit), "
-            "so no model read them. Each is counted once; the next run skips them."
+            "so no model read them. Each is counted once; later runs check them again for free, "
+            "and read them if a higher limit lets them fit."
         )
     return problems
 
@@ -140,6 +141,7 @@ _SKIPS = (
     ("documents_skipped_not_text", "that {is} not a web page or plain text (such as a PDF copy)"),
     ("documents_skipped_no_readable_text", "with no readable text"),
     ("documents_skipped_too_large", "over the size limit"),
+    ("documents_rechecked_still_skipped", "checked again and still not sent"),
 )
 
 
