@@ -4,7 +4,7 @@
 - **Date:** 2026-10-19
 - **Roadmap item:** Phase 1, "Drug reference list" (owner request, 2026-10-19)
 - **Amends:** ADR 0015, part 3 (registry intervention lists are not imported as drugs)
-- **Needs:** ADR 0037 (another company's drug waits for review; PR #77), which merges first
+- **Needs:** ADR 0037 (another company's drug waits for review; PR #77, merged)
 
 ## Context
 
@@ -82,7 +82,7 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
    - Registry names need Drugs@FDA (for the comparator rule), so `ctgov` alone is refused.
    - A run of both sources replaces the withheld names. A run of `openfda` alone keeps the withheld names it did not read again and adds its own.
    - Re-running adds nothing. Only companies already collected get drugs.
-8. **Another company's drug waits for review** (CP4 review, O1). This rule is ADR 0037, in its own pull request (#77), which merges first; this list needs it.
+8. **Another company's drug waits for review** (CP4 review, O1). This rule is ADR 0037, from its own pull request (#77, merged first); this list needs it.
    - In the matching job (`known_drug`), a generic or brand name whose one drug another company develops is ambiguous, with that drug as the candidate, so `names_matched` holds the claim.
    - A drug with no known company still matches. A name of two drugs, one of them the company's own, stays ambiguous, as before.
    - So a co-owned or licensed drug matches only when its name is not shared and belongs to the claim's company.
