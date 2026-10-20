@@ -9,8 +9,9 @@ name: Extract catalysts (live)
 #   scores go to the job summary for the coding session to commit.
 # - export: writes every published catalyst, and the claims the publish gate held with their
 #   reasons, to one JSON file for the owner's private prototype page (owner request
-#   2026-10-18). No model call. The file goes to the run log only while the repository is
-#   private.
+#   2026-10-18). No model call. The repository is public (2026-10-20), so the file goes to the
+#   run log only sealed to the one-off public key given as the public_key input; the private
+#   half stays with the coding session (ADR 0034, decision 9). Without a key, export stops.
 # Extract and export first bring the live database up to date, so the checks' tables exist.
 # Started by hand from the Actions tab or by the coding session; costs a few cents per
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
@@ -35,6 +36,11 @@ on:
         type: choice
         options: [extract_catalysts, verify_catalysts]
         default: extract_catalysts
+      public_key:
+        description: "export (required) or extract (optional): the one-line public key from `catalyst seal-keygen`; files are printed only sealed to it"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -81,7 +87,7 @@ jobs:
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
           LIMIT: ${{ inputs.limit }}
-          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
           set +e
           uv run catalyst extract-catalysts --limit "$LIMIT" --snapshot-store supabase \
@@ -89,12 +95,12 @@ jobs:
           status=$?
           { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/summary.json"; echo '```'; } \
             | tee -a "$GITHUB_STEP_SUMMARY"
-          # The full results (unchecked proposals with their quotes) go to the run log only while
-          # the repository is private: a public log would publish them (AGENTS.md).
-          if [ "$REPOSITORY_PRIVATE" = "true" ]; then
-            echo "::group::Full results (JSON)"
-            cat "$RUNNER_TEMP/catalysts.json" 2>/dev/null
-            echo  # the JSON has no final newline; without this, the marker below joins its last line
+          # The full results (unchecked proposals with their quotes) never go to the public log
+          # in plain text (AGENTS.md); with a key, they go there sealed (ADR 0034, decision 9).
+          if [ -n "$PUBLIC_KEY" ] && [ -f "$RUNNER_TEMP/catalysts.json" ]; then
+            echo "::group::Full results (sealed)"
+            uv run catalyst seal --to "$PUBLIC_KEY" --in "$RUNNER_TEMP/catalysts.json" \
+              || echo "The full results were not printed: the public key was refused."
             echo "::endgroup::"
           fi
           exit "$status"
@@ -106,19 +112,25 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
-          REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+          # The held claims' paragraphs come from the stored copies (ADR 0034, decision 10).
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
-          set -o pipefail
-          uv run catalyst export-catalysts --out "$RUNNER_TEMP/export.json" --include-held \
-            | tee -a "$GITHUB_STEP_SUMMARY"
-          # Held claims are unchecked: the file goes to the run log only while the repository is
-          # private, never to a public log (AGENTS.md).
-          if [ "$REPOSITORY_PRIVATE" = "true" ]; then
-            echo "::group::Export (JSON)"
-            cat "$RUNNER_TEMP/export.json"
-            echo
-            echo "::endgroup::"
+          set -euo pipefail
+          # Held claims are unchecked and the log is public: the file leaves this job only sealed.
+          if [ -z "$PUBLIC_KEY" ]; then
+            echo "No public key was given, so nothing was exported. Ask the coding session for one (catalyst seal-keygen)." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
           fi
+          uv run catalyst export-catalysts --out "$RUNNER_TEMP/export.json" --include-held \
+            --snapshot-store supabase | tee -a "$GITHUB_STEP_SUMMARY"
+          # Seal first, print after: a refused key prints nothing of the file.
+          uv run catalyst seal --to "$PUBLIC_KEY" --in "$RUNNER_TEMP/export.json" > "$RUNNER_TEMP/export.sealed"
+          echo "::group::Export (sealed)"
+          cat "$RUNNER_TEMP/export.sealed"
+          echo "::endgroup::"
 
       # Free: no model call. Runs even when the extraction failed, so the failure is reported.
       - name: Build alerts from this run
