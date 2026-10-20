@@ -21,9 +21,12 @@ dropped when:
 - it is a target, antibody class, isotope, or the like written as a code ("CTLA-4", "IgG1", "64Cu"),
   or, as an other name, it is a code not shaped like a drug code;
 - another intervention of the same trial lists it too, or records with different main names do;
+- it is another drug's main name and the two are not joined (`_join_aliases`);
+- as an other name or in brackets, it has no digit, no ® or ™, and no record gives it as a main name;
 - Drugs@FDA lists it for another sponsor, as it does for every approved comparator. When that is
-  the intervention's main name, or one of its names is another sponsor's brand, the whole
-  intervention is that sponsor's drug, and none of its names are recorded.
+  the intervention's main name, or one of its names is another sponsor's brand, or one of its
+  codes is another large sponsor's (`PARTNER_PREFIXES`), the whole intervention is that sponsor's
+  drug, and none of its names are recorded.
 
 Any name that two owners' records give, after these rules, is recorded for no one and kept for
 review as shared: a generic or brand name matches across companies, so it would link one
@@ -36,7 +39,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, cast
 from uuid import UUID
 
@@ -45,7 +48,9 @@ from catalyst.drug_list_words import (
     DESCRIPTION_WORDS,
     FORM_WORDS,
     METALS,
+    NON_DRUG_WORDS,
     ORDINARY_WORDS,
+    PARTNER_PREFIXES,
     SALT_WORDS,
     STAND_IN_WORDS,
     TRIAL_WORDS,
@@ -106,10 +111,10 @@ _TARGETS = (
     "ctla|pi3k|kras|nras|braf|egfr|fgfr|tigit|lag|tim|trop|b7|cldn|dll|tl1a|stat|btk|jak|mek|erk|akt|"
     "mtor|parp|cdk|vegfr?|ret|alk|ros|axl|flt|pdgfr|ig[gmae]|lpa|ilt|apoc|pcsk|angptl|tnf|tcr|aav|"
     "gprc|5-?ht|gaba|nmda|ampa|mglur|hla|fxia?|hbv|hiv|hcv|rsv|cmv|ebv|hpv|h[1-9]n|bcma|gd|sstr|fap|"
-    "mage|wt|glp|gip|gcgr|tlr|ido|cxcr|ccr|cd|il|her|pd|nk|car"
+    "mage|wt|glp|gip|gcgr|tlr|ido|cxcr|ccr|cd|il|her|pd|nk|car|fgf|muc|ox|gpr|hsd17b"
 )
 _TARGET = re.compile(
-    rf"^(?:anti[\s{_DASH}]?)?(?:{_TARGETS})[\s{_DASH}./]?(?:\d{{0,2}}[A-Za-z]{{0,2}}|[A-Za-z]\d{{1,2}}[A-Za-z]?)"
+    rf"^(?:anti[\s{_DASH}]?|a)?(?:{_TARGETS})[\s{_DASH}./]?(?:\d{{0,2}}[A-Za-z]{{0,2}}|[A-Za-z]\d{{1,2}}[A-Za-z]?)"
     rf"(?:x[A-Za-z]{{2,4}}\d{{0,2}})?(?:\s?[A-Za-z]{{1,2}})?$",
     re.IGNORECASE,
 )
@@ -119,8 +124,12 @@ _ELEMENTS = "Lu|Ga|Cu|Zr|In|Y|I|F|Tc|Ac|Pb|Ra|Th|Sm|Sr|C|N|O|Bi|At|Re|Ho|Tb|Er"
 _NOT_A_DRUG_CODE = re.compile(
     rf"^\d{{1,3}}m?(?:{_ELEMENTS})$|^(?:{_ELEMENTS})[{_DASH}]?\d{{1,3}}m?$|^U[{_DASH}]?\d{{2,3}}$|\d\.\d|"
     rf"[A-Za-z]\.\d|^(?:PS|Tween)[\s{_DASH}]?(?:20|80)$|^QS[\s{_DASH}]?21$|^AS0\d[A-Z]?$|^MF[\s{_DASH}]?59$|"
-    rf"^PEG[\s{_DASH}]?\d+$|^[A-Z]\d{{2,4}}[A-Z]$"  # the last: a mutation, "G12C", "V600E", "T790M"
+    rf"^PEG[\s{_DASH}]?\d+$|^[A-Z]\d{{2,4}}[A-Z]$|"  # a mutation, "G12C", "V600E", "T790M"
+    # Third review of PR #73: "AC-225" (actinium), "non-PS80", and protocol numbers ("MK-3475-001").
+    rf"^AC[{_DASH}]?\d{{1,3}}$|^(?i:non)[\s{_DASH}]|^[A-Z]{{2,5}}[{_DASH}]?\d{{3,7}}[{_DASH}]\d{{3}}$"
 )
+# A large sponsor's code prefix, as `PARTNER_PREFIXES` lists them: "RO7187797", "MK-8962".
+_PARTNER_CODE = re.compile(rf"^(?P<prefix>[A-Z]{{2,4}})[\s{_DASH}]?(?P<number>\d{{3,9}})")
 _CODE_PREFIX = re.compile(r"^[A-Z]{2,6}$")  # the letters of a code written apart from its number
 # A bracket set off by a space holds a second name ("Selinexor (KPT-330)"); one inside a word is
 # part of the name ("AKCEA-APO(a)-LRx").
@@ -137,6 +146,7 @@ class ListedName:
     name: str
     kind: DrugNameKind
     main: bool = True  # False for a registry intervention's other names, never the name shown
+    marked: bool = False  # the registry marks it ® or ™
 
 
 @dataclass(frozen=True)
@@ -278,19 +288,19 @@ def _registry_part(text: str, trademark: bool, *, main: bool = True) -> ListedNa
         return None
     # Ordinary words count as whole words between spaces, so "AKCEA-APO(a)-LRx" keeps its "a".
     if (
-        set(words) & (DESCRIPTION_WORDS | TRIAL_WORDS)
+        set(words) & (DESCRIPTION_WORDS | TRIAL_WORDS | NON_DRUG_WORDS)
         or {w.casefold() for w in name.split()} & ORDINARY_WORDS
     ):
         return None
     if set(words) <= SALT_WORDS | METALS:
         return None  # "fumarate" or "sodium" alone names no drug
     if any(ch.isdigit() for ch in name):
-        return ListedName(name, DrugNameKind.CODE, main) if _code_name(name, main=main) else None
+        return ListedName(name, DrugNameKind.CODE, main, trademark) if _code_name(name, main=main) else None
     if sum(ch.isalpha() for ch in name) < _SHORTEST_GENERIC:
         return None
     # Generic names are written in small letters in the registry; a name in capitals is a brand ("ELEVIDYS").
     brand = trademark or name.isupper()
-    return ListedName(name, DrugNameKind.BRAND if brand else DrugNameKind.INN, main)
+    return ListedName(name, DrugNameKind.BRAND if brand else DrugNameKind.INN, main, trademark)
 
 
 def _joins_drugs(text: str) -> bool:
@@ -558,11 +568,14 @@ def _owned_names(
 ) -> tuple[dict[str, set[Owner]], list[tuple[SourceRecord, UUID, list[ListedName]]]]:
     """Drop registry comparators; return every owner of each name, and the covered companies' names."""
     fda_owners, brand_owners = _fda_owners(kept), _fda_owners(kept, brands=True)
+    partners = _partners_drugs(kept)
     owners: defaultdict[str, set[Owner]] = defaultdict(set)
     listed: list[tuple[SourceRecord, UUID, list[ListedName]]] = []
     for record, owner in kept:
         names = list(record.names)
-        if record.source is DrugNameSource.CTGOV and _another_s_drug(record, owner, fda_owners, brand_owners):
+        if record.source is DrugNameSource.CTGOV and (
+            _another_s_drug(record, owner, fda_owners, brand_owners) or id(record) in partners
+        ):
             plan.comparators += len(names)
             plan.foreign_records += 1
             continue
@@ -576,6 +589,57 @@ def _owned_names(
     return owners, listed
 
 
+def _vouched(records: list[SourceRecord]) -> list[SourceRecord]:
+    """Drop a registry other name without a digit that nothing vouches for (third review of PR #73).
+
+    "cemiplimab (maintenance)", "LX9211 (blinded)", "Anti-LAG 3": such a name counts only when
+    the registry marks it ® or ™, or a record (Drugs@FDA's, or an intervention's) gives it as a
+    main name. Codes have their own rules (`_code_name`).
+    """
+    mains = {name_key(n.name) for record in records for n in record.names if n.main}
+
+    def vouched(name: ListedName) -> bool:
+        return (
+            name.main or name.marked or any(ch.isdigit() for ch in name.name) or name_key(name.name) in mains
+        )
+
+    return [
+        replace(record, names=tuple(filter(vouched, record.names)))
+        if record.source is DrugNameSource.CTGOV
+        else record
+        for record in records
+    ]
+
+
+def _partner_s_code(record: SourceRecord) -> bool:
+    """Say whether a registry intervention gives a code of a large sponsor other than the trial's.
+
+    Regeneron's NCT05137054 gives Roche's cevostamab as "RO7187797": a partner's drug, unapproved,
+    so Drugs@FDA cannot show it is another's (third review of PR #73). A two-letter prefix needs
+    four digits or more ("GS-5423", not GenSight's "GS010").
+    """
+    sponsor = record.sponsor.casefold()
+    for name in record.names:
+        shape = _PARTNER_CODE.match(name.name) if name.kind is DrugNameKind.CODE else None
+        if shape is None or (len(shape.group("prefix")) == 2 and len(shape.group("number")) < 4):
+            continue
+        words = PARTNER_PREFIXES.get(shape.group("prefix"))
+        if words and not any(word in sponsor for word in words):
+            return True
+    return False
+
+
+def _partners_drugs(kept: list[tuple[SourceRecord, Owner]]) -> set[int]:
+    """Return the registry interventions (by `id`) that are a partner's drug, by a partner's code.
+
+    Unless the owner's other records give the same main name without such a code: Insmed's
+    brensocatib, licensed from AstraZeneca, keeps its code AZD7986 from Insmed's own trials.
+    """
+    flagged = {id(r) for r, _ in kept if r.source is DrugNameSource.CTGOV and _partner_s_code(r)}
+    own = {(owner, name_key(r.names[0].name)) for r, owner in kept if r.names and id(r) not in flagged}
+    return {id(r) for r, owner in kept if id(r) in flagged and (owner, name_key(r.names[0].name)) not in own}
+
+
 def plan_drugs(
     records: Iterable[SourceRecord], sponsor_of: Mapping[DrugNameSource, Mapping[str, UUID]]
 ) -> DrugPlan:
@@ -586,7 +650,7 @@ def plan_drugs(
     """
     plan = DrugPlan()
     kept: list[tuple[SourceRecord, Owner]] = []
-    for record in records:
+    for record in _vouched(list(records)):
         plan.records += 1
         if (owner := _owner(record, sponsor_of)) is None:
             plan.unlinked_records += 1
@@ -627,7 +691,8 @@ def _without_bridges(
     list "BCMAxCD3". Such a name says what the drugs share, not which drug it is. Main names are
     first joined only by the records that give them together (an FDA product's brand and generic
     name). An other name that is itself another record's main name ("INS1007" under brensocatib,
-    and a trial of "INS1007") still joins the two, if only one main name lists it.
+    and a trial of "INS1007") still joins the two, if only one main name lists it and
+    `_join_aliases` allows it; when it does not, the other name is dropped (third review).
     """
     mains = _Groups()
     main_keys: set[str] = set()
@@ -635,14 +700,47 @@ def _without_bridges(
         keys = [name_key(n.name) for n in names if n.main]
         main_keys.update(keys)
         mains.join(keys)
-    # An other name that is another record's main name, listed under one main name only, is an alias.
-    for key, roots in _listing(entries, mains).items():
-        if key in main_keys and len(roots) == 1:
-            mains.join([key, next(iter(roots))])
-    bridges = {key for key, roots in _listing(entries, mains).items() if len(roots) > 1}
+    _join_aliases(entries, mains, main_keys)
+    listing = _listing(entries, mains)
+    bridges = {key for key, roots in listing.items() if len(roots) > 1}
+    # An other name that is another drug's main name, and was not joined to this one, names that drug.
+    bridges |= {key for key, roots in listing.items() if key in main_keys and roots != {mains.find(key)}}
     plan.bridges += len(bridges)
     kept = [(r, [n for n in ns if n.main or name_key(n.name) not in bridges]) for r, ns in entries]
     return [(r, ns) for r, ns in kept if ns]
+
+
+def _main_root(names: list[ListedName], mains: _Groups) -> str | None:
+    key = next((name_key(n.name) for n in names if n.main), None)
+    return None if key is None else mains.find(key)
+
+
+def _join_aliases(
+    entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups, main_keys: set[str]
+) -> None:
+    """Join an other name that is another record's main name, listed under one main name only.
+
+    Never when one record's other names are the main names of two or more drugs: NCT02172911's
+    INO-3112 lists its parts VGX-3100 and INO-9012. Never when both drugs have codes and none is
+    the same: "panHer" is BMS-599626, and BMS-690514 trials list "panHER" (third review of PR #73).
+    """
+    codes: defaultdict[str, set[str]] = defaultdict(set)
+    spread: set[str] = set()
+    for _, names in entries:
+        own = _main_root(names, mains)
+        if own is None:
+            continue
+        codes[own] |= {name_key(n.name) for n in names if n.kind is DrugNameKind.CODE}
+        others = {name_key(n.name) for n in names if not n.main}
+        if len({mains.find(k) for k in others & main_keys} - {own}) > 1:
+            spread |= others
+    for key, roots in _listing(entries, mains).items():
+        if key not in main_keys or len(roots) != 1 or key in spread:
+            continue
+        alias, listed = mains.find(key), mains.find(next(iter(roots)))
+        if alias != listed and (not codes[alias] or not codes[listed] or codes[alias] & codes[listed]):
+            mains.join([alias, listed])
+            codes[alias] |= codes[listed]
 
 
 def _listing(entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups) -> dict[str, set[str]]:

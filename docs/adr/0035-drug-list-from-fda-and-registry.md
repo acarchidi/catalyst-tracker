@@ -26,7 +26,7 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
   - A name two companies' records give is withheld for review, not linked (rule 4).
   - A target, isotope, or trial written like a code is not a code (rule 3).
   - A generic or brand name whose drug another company develops makes a claim wait for review instead of linking it (ADR 0037).
-  - Offline, the list matches 156 held claims and none wrongly (Measurement).
+  - Offline, the list matches 145 held claims and none wrongly (Measurement).
 - **What stays from ADR 0015:** matching is exact, in plain code, with no model. Code names count only for their own company. Ambiguous and unknown names go to review.
 
 ## Decision
@@ -58,11 +58,17 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
      - it holds an ordinary word as a whole word ("in", "of", "if", "until", "as", "brand", "name", "commercial", "concentration", "administration"), or it is only salt or metal words ("fumarate");
      - it names a trial ("KEYNOTE-D79", "CheckMate-067");
      - it is a short form: no digit and fewer than five letters ("ETH", "ATEV");
-     - it is a code that is not a drug: fewer than four letters and digits ("14C"); a disease, congress, or year prefix (as in ADR 0015, part 4); a target, receptor, antibody class, or virus ("CTLA-4", "PI3K", "IgG1", "B7-H4", "LPA1", "ILT4", "5-HT3 RA", "CD19", "IL-17A", "HER2", "HPV16", "BCMAxCD3"); an isotope ("131I", "64Cu", "Lu-177"); an insulin strength ("U100"); a variant ("B.1.1.7"); a mutation ("G12C", "V600E"); an excipient or adjuvant ("PS80", "QS-21", "AS01B", "MF59");
+     - it is a code that is not a drug: fewer than four letters and digits ("14C"); a disease, congress, or year prefix (as in ADR 0015, part 4); a target, receptor, antibody class, or virus ("CTLA-4", "PI3K", "IgG1", "B7-H4", "LPA1", "ILT4", "5-HT3 RA", "CD19", "IL-17A", "HER2", "HPV16", "BCMAxCD3"); an isotope ("131I", "64Cu", "Lu-177", "AC-225"); an insulin strength ("U100"); a variant ("B.1.1.7"); a mutation ("G12C", "V600E"); an excipient or adjuvant ("PS80", "QS-21", "AS01B", "MF59", "non-PS80"); a gene or target of the third review ("FGF21", "MUC16", "MUC16xCD3", "OX40", "aOX40", "GPR75", "HSD17B13"); a protocol number ("MK-3475-001");
      - as an other name, it is a code not shaped like a drug code. The shape is allowed, not denied: a letter prefix (up to six characters, with one dash-joined part allowed: "Cu-AKY", "GR-MD"), then two to seven digits (four or more after a one-letter prefix: "R115777", not "U100" or "C225"), then up to two short parts ("ENTR-601-45"). "REGN5458", "GS-5423", "SCH 58235", and "X4P-001" pass;
-     - **Drugs@FDA lists it, or any run of four or more letters of its words, for another sponsor.** Every approved comparator or partner is in Drugs@FDA, so azithromycin (Pfizer's ZITHROMAX), venetoclax, and "Dexamethasone Ophthalmic" never become a trial sponsor's drug;
+     - **Drugs@FDA lists it, or any run of four or more letters of its words, for another sponsor.** Every approved comparator is in Drugs@FDA, so azithromycin (Pfizer's ZITHROMAX), venetoclax, and "Dexamethasone Ophthalmic" never become a trial sponsor's drug. A partner's drug that is not yet approved is not in Drugs@FDA; the next rule catches those that carry a large sponsor's code;
+     - **it gives a code of a large sponsor other than the trial's** (third review): Regeneron's NCT05137054 gives Roche's cevostamab as "RO7187797", and SpringWorks's nirogacestat as "PF-03084014". The whole intervention gives nothing. The prefixes and the sponsor names that may use them are in `PARTNER_PREFIXES` (RO and RG for Roche, MK for Merck and Organon, BMS, GS, PF, AZD and MEDI, LY, JNJ, and others); a two-letter prefix needs four digits or more, so GenSight's "GS010" is not Gilead's. The exception is a licensed-in drug that the sponsor's own trials name without such a code: Insmed's brensocatib keeps AZD7986. A partner's unapproved drug without such a code (a small partner's) can still be filed under the trial's sponsor; a claim of the partner that names it then waits for review (rule 8);
      - another intervention of the same trial also lists it (NCT07683000 lists teropavimab's code GS-5423 under "Lenacapavir Tablet" too);
-     - **records of the company with different main names list it** (second review, B1'): Aktis's two imaging agents both list "[64Cu]", and Regeneron's linvoseltamab and vonsetamig both list "BCMAxCD3". Such a name says what the drugs share, not which drug it is. An other name that is itself another record's main name ("INS1007" under brensocatib, and a trial of "INS1007") still joins the two, when only one main name lists it.
+     - **records of the company with different main names list it** (second review, B1'): Aktis's two imaging agents both list "[64Cu]", and Regeneron's linvoseltamab and vonsetamig both list "BCMAxCD3". Such a name says what the drugs share, not which drug it is;
+     - **it is another drug's main name, and the two are not joined** (third review). An other name that is another record's main name joins the two only when one main name lists it ("INS1007" under brensocatib, and a trial of "INS1007"), and never when:
+       - one record's other names are the main names of two or more drugs: NCT02172911's "INO-3112" lists its parts VGX-3100 and INO-9012, which stay three drugs;
+       - both drugs have codes and none of them is the same: "panHer" is BMS-599626, and BMS-690514 trials list "panHER", so BMS-599626 and BMS-690514 stay two drugs;
+     - **as an other name, or in brackets, it has no digit and nothing vouches for it** (third review): such a name counts only when the registry marks it ® or ™, or Drugs@FDA or another record gives it as a main name. So "maintenance" (cemiplimab), "blinded" (LX9211), "Anti-LAG" (relatlimab), "Activator Ligand", "Primary", and "Lambda" go, and "EPKINLY™" and "Libtayo" stay. Some real names go too ("cema-cel", "seralutinib" as other names of a code), which is the safe direction;
+     - it is a target, pathway, or class written without digits, or a class or habit word ("TIGIT", "STING", "siRNA", "GalNAc", "Factor IX", "prostacyclin", "Direct oral anticoagulant", "Regular TCA use", "Thyroid hormone"), or the misspelled comparator "acetominophen", which Drugs@FDA cannot catch (third review);
    - Dose and form words at the ends go ("Brensocatib 25 mg"), but a bare number after a code's letters stays ("SCH 58235", "BMN 333"). A name with a digit is a code name, which matches only its own company's claims (ADR 0015). Any other name is a generic name, or a brand when the registry marks it ® or ™ or writes it in capitals ("ELEVIDYS").
 4. **Ambiguity.**
    - After these rules, a name that two owners' records give is recorded for neither. Owners are covered companies, and also any FDA sponsor we do not cover. Such a name is stored in `withheld_drug_name`, with its companies and records, for review. Examples: cemdisiran (Alnylam's and Regeneron's trials), danicamtiv (Bristol Myers Squibb and Kardigan), bevacizumab (several sponsors).
@@ -75,7 +81,7 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
    - A planned drug joins the company's one drug on file that shares a name, such as a code-name drug the matching job created. When it shares names with two or more of the company's drugs, it waits for a person.
    - **The name shown** (`preferred_name`, which the read API and titles show) is Drugs@FDA's first, its generic name (in small letters) before its brand. Else it is a registry main name, a generic name before a brand or a code, and among those the one most records give as their main name, so one trial's spelling ("Iza-bren") does not win by the alphabet. It is never a registry other name. When a drug on file gains an FDA generic name, that name is shown from then on, as the spec asks ("generic name if any").
    - A metal salt keeps its whole generic name ("FERRIC CITRATE", "POTASSIUM CHLORIDE"), as a fumarate ester does: the metal alone names no drug.
-6. **Provenance.** `drug_name` gains `source` (`claim`, `openfda`, or `ctgov`: where the name was first found) and `source_refs` (every FDA application or registry number that gives it). The reversible migration marks the names already stored as `claim`; its downgrade is tested. After a downgrade and a new upgrade, every name then on file, loaded ones too, is marked `claim` with no records, until the next drug-list run fills in its records again. Nothing is deleted when a source stops listing a name.
+6. **Provenance.** `drug_name` gains `source` (`claim`, `openfda`, or `ctgov`: where the name was first found) and `source_refs` (every FDA application or registry number that gives it). The reversible migration marks the names already stored as `claim`; its downgrade is tested. A downgrade keeps the drug list's names in `drug_name` but drops their `source` and `source_refs` columns, so nothing then records where they came from; it also drops `withheld_drug_name`. After a new upgrade, every name then on file, loaded ones too, is marked `claim` with no records, until the next drug-list run fills in its records again. Nothing is deleted when a source stops listing a name.
 7. **One run, all or nothing.**
    - `catalyst load-drugs [--companies config/coverage_companies.toml] [--sources openfda,ctgov]` and the `drugs` source of `catalyst collect` both load the list. The `drugs` source runs only when named, so `Collect (live)` with sources `drugs` loads the list with no workflow change.
    - They fetch everything first, then write in one transaction. A failed request stores nothing, because a list built from part of the records could hand a shared name to one company.
@@ -90,15 +96,16 @@ The CP4 review (finding O1) also noted that a generic or brand name matched for 
 
 ## Measurement
 
-This is an offline measurement, not committed. It used recorded copies of Drugs@FDA (2026-10-16 data) and of every covered sponsor's trials (2026-10-19, 524 sponsor names), the resolver's own code, and no model, database, or live data. It ran against the drug names of the 2026-10-18 export, after the second review's fixes.
+This is an offline measurement, not committed. It used recorded copies of Drugs@FDA (2026-10-16 data) and of every covered sponsor's trials (2026-10-19, 524 sponsor names), the resolver's own code, and no model, database, or live data. It ran against the drug names of the 2026-10-18 export, after the third review's fixes.
 
 - Of the 315 held claims whose reasons include `drug unknown`:
-  - 156 now match exactly one drug (97 distinct company and drug pairs);
+  - 145 now match exactly one drug (91 distinct company and drug pairs);
   - 5 are newly held because the drug is another company's: Ionis's eplontersen and bepirovirsen (AstraZeneca's and GSK's), LeonaBio's lasofoxifene (Ligand's), and Summit's sonesitatug vedotin (AstraZeneca's);
-  - 154 stay unknown. These include descriptions such as "CardiAMP Cell Therapy", lists such as "SPY001, SPY002, SPY003", names no source gives such as "miv-cel", and shared names.
-- **Wrong matches: 0, by the matched drug and by the name shown.** Every pair that changed since the first review was checked by hand against the claim's drug, its quote, and the name shown. That is 9 pairs: 8 newly matched (cema-cel, BMN 333, rese-cel, seralutinib, Symvess, rinvatercept, ATR 1072, azer-cel) and 1 shown differently (aglatimagene besadenovec is now shown as "AdV-tk", its main name in more of Candel's trials). The other 89 pairs were checked before.
-  - Some shown names are codes or descriptions rather than generic names: rese-cel as "CABA-201", seralutinib as "GB002", Symvess as "Acellular Tissue Engineered Vessel". Each is the company's own main name for the drug.
-  - One is imprecise: ARIKAYCE is shown as "amikacin", Drugs@FDA's generic name for its one ingredient.
+  - 165 stay unknown. These include descriptions such as "CardiAMP Cell Therapy", lists such as "SPY001, SPY002, SPY003", names no source gives such as "miv-cel", and shared names.
+- **Wrong matches: 0, by the matched drug and by the name shown.** Every pair that changed was checked by hand against the claim's drug, its quote, and the name shown.
+  - Since the second review, 6 pairs changed, all from matched to unknown, because the name they matched was an unmarked other name the third review's rule now drops: cema-cel (Allogene), rese-cel (Cabaletta), seralutinib (Gossamer), Symvess (Humacyte), rinvatercept (Keros), and azer-cel (TG Therapeutics). Each was a correct match, so this is a loss of correct matches, not a fix of wrong ones. No pair is newly matched or shown differently.
+  - The other 91 pairs were checked in earlier rounds (9 after the first review, the rest before).
+  - One shown name is imprecise: ARIKAYCE is shown as "amikacin", Drugs@FDA's generic name for its one ingredient.
 - The 48 held claims and the 36 published drug links that matched before all still match the same drug. The ownership rule holds none of them.
 - The drug check on the quote alone (`drug_named_near_quote` without the text before the quote, which the export lacks) gives the same outcome for all 363 held claims with a drug.
 - The second review's probes now fail as they must:
@@ -108,10 +115,18 @@ This is an offline measurement, not committed. It used recorded copies of Drugs@
   - Cu-AKY-2519 on a Cu-AKY-1189 sentence;
   - linvoseltamab on a vonsetamig sentence.
 - None of ONO-4538, OSI-774, PLX3397, ASP-2215, GA101, RAD1901, CPT-11, Gazyvaro, or KEYNOTE-D79 is now its trial sponsor's drug.
+- The third review's probes now fail as they must:
+  - a VGX-3100 claim on "Data for INO-5401 with INO-9012…"; INO-9012 resolves to its own drug;
+  - BMS-690514 on a BMS-599626 sentence; "panHer" is BMS-599626's;
+  - cemiplimab on "The maintenance study of fianlimab…";
+  - LX9211 on "A double-blinded study of sotagliflozin…";
+  - relatlimab on "An anti-LAG-3 program…".
+- Of the 47 drugs that join two or more code main names, all but one have a record that gives the codes together. The one is selinexor, joined through its main name ("KPT-330" and "KCP-330" are both its codes). No drug joins three or more code main names.
+- The partner-code rule drops about 260 more interventions than the second review's plan, Regeneron's cevostamab among them. Organon's MK codes, Insmed's brensocatib, and Regeneron's dupilumab stay with their companies.
 - Of the 312 drugs the second review's plan built only from other names (the review counted 246), none is built so now. Every drug has a main name. Five codes are still on file for the same company, each now beside its main name and each the company's own drug: SYR-322 (Takeda's alogliptin), AVE5026 and SSR126517 (Sanofi), CNTO148 (Janssen's golimumab), and MDX-1106-04 (Bristol Myers Squibb).
-- The code shape keeps 2,114 of the 2,506 distinct other-name codes the main-name rule would keep, and drops 392 (16%). Most of those are not drugs ("Cohort1", "FOLFOX 7", "13vPnC", "PSMAxCD28", "Humalog Mix50", "1-7F9"). Some real codes go too, such as Merck's one-letter vaccine codes ("V260", "V441") and "ABBV-8E12". That is the safe direction.
+- At the second review, the code shape kept 2,114 of the 2,506 distinct other-name codes the main-name rule would keep, and drops 392 (16%). Most of those are not drugs ("Cohort1", "FOLFOX 7", "13vPnC", "PSMAxCD28", "Humalog Mix50", "1-7F9"). Some real codes go too, such as Merck's one-letter vaccine codes ("V260", "V441") and "ABBV-8E12". That is the safe direction.
 - Every one of the 361 drugs with an FDA generic name is shown by that name. Lenacapavir and teropavimab are two drugs, and so are ZETIA (ezetimibe) and VYTORIN. BRILINTA is shown as ticagrelor. No drug is shown by a registry other name.
-- The list holds about 6,980 drugs and 9,090 names: 5,620 registry code names, 2,290 registry generic or brand names (460 of them other names), 820 FDA brands, and 360 FDA generic names. 600 names are withheld as shared.
+- The list holds about 6,970 drugs and 8,620 names: 5,570 registry code names, 1,870 registry generic or brand names (53 of them other names, each marked or vouched for), 820 FDA brands, and 360 FDA generic names. 547 names are withheld as shared.
 
 ## Alternatives
 
@@ -126,10 +141,10 @@ This is an offline measurement, not committed. It used recorded copies of Drugs@
 
 ## Consequences
 
-- Half of the `drug unknown` holds clear, with no wrong match found. Those claims still face every other check.
+- Nearly half of the `drug unknown` holds (145 of 315) clear, with no wrong match found. Those claims still face every other check.
 - `drug_named_near_quote` (ADR 0018, part 3e) now sees many more of a company's other drugs. That is the safe direction: a correct claim whose quote relies on the text before it can be held if another of the company's drugs is named in between. The check also reads every name of the claim's own drug, other names included, so a junk other name could still make a quote seem to name a drug. The filters above, and the probes in the tests, are what stop that; a junk name that slips through can only help a claim of the drug it is filed under. The planted-error test still runs on its production-like tables (gold code names only).
 - Some registry main names are imperfect labels (a brand written in small letters is stored as a generic name). Both kinds match the same way; only `matched_by` differs.
-- Description-like names can remain among about 2,290 registry generic or brand names of large companies ("Prandial Insulin", "Human Acellular Vessel", "Lambda"). Each matches only as a whole name. Another company's claim that names it waits for review (rule 8).
+- Description-like names can remain among about 1,870 registry generic or brand names of large companies ("Prandial Insulin", "Human Acellular Vessel"). Each matches only as a whole name. Another company's claim that names it waits for review (rule 8).
 - Known gaps:
   - FDA sponsors named in other forms ("GLAXOSMITHKLINE" for GSK plc, "TAKEDA PHARMS AM") match no company, so their products belong to no one here. That is safe, because the comparator rule still keeps them from others. Hand-checked FDA names in `config/coverage_overrides.toml` would fix it.
   - CBER products (cell and gene therapies, vaccines) are not in Drugs@FDA; they come from the registry only.

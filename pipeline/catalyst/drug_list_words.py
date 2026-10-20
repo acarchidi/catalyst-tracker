@@ -458,3 +458,53 @@ TRIAL_WORDS = frozenset(
         "tropion",
     ]
 )
+
+# Targets, pathways, and drug classes written without digits, and words of a class or a habit,
+# not a drug (third review of PR #73): "TIGIT", "STING agonist", "siRNA", "GalNAc", "Factor IX",
+# "Direct oral anticoagulant", "Regular TCA use", "Thyroid hormone". "acetominophen" is a
+# misspelling, so the approved-drug lookup cannot catch the comparator.
+NON_DRUG_WORDS = frozenset(
+    [
+        "acetominophen",
+        "anticoagulant",
+        "factor",
+        "galnac",
+        "hormone",
+        "menin",
+        "prostacyclin",
+        "sirna",
+        "sting",
+        "tigit",
+        "use",
+    ]
+)
+
+# Code prefixes of large sponsors, with the words of the lead-sponsor names that may use them.
+# A trial of another sponsor that gives such a code ("Cevostamab | RO7187797" in a Regeneron
+# trial) gives a partner's drug, not its own (third review of PR #73). Organon came out of Merck
+# and keeps its MK codes; Loxo Oncology is Lilly's; MedImmune is AstraZeneca's.
+PARTNER_PREFIXES: dict[str, tuple[str, ...]] = {
+    "ABBV": ("abbvie",),
+    "AMG": ("amgen",),
+    "ASP": ("astellas",),
+    "AZD": ("astrazeneca", "medimmune"),
+    "BAY": ("bayer",),
+    "BI": ("boehringer",),
+    "BIIB": ("biogen",),
+    "BMS": ("bristol",),
+    "DS": ("daiichi",),
+    "GS": ("gilead",),
+    "GSK": ("glaxosmithkline", "gsk"),
+    "INCB": ("incyte",),
+    "JNJ": ("janssen", "johnson"),
+    "LY": ("lilly", "loxo"),
+    "MEDI": ("astrazeneca", "medimmune"),
+    "MK": ("merck", "msd", "organon"),
+    "PF": ("pfizer",),
+    "REGN": ("regeneron",),
+    "RG": ("roche", "genentech", "chugai"),
+    "RO": ("roche", "genentech", "chugai"),
+    "SAR": ("sanofi", "genzyme"),
+    "TAK": ("takeda", "millennium"),
+    "VX": ("vertex",),
+}
