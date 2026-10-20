@@ -177,7 +177,7 @@ _LINK_LIST_LIMIT = 20  # dead links named in one alert; the run log lists every 
 
 
 def _link_problems(summary: dict[str, Any]) -> list[str]:
-    """Name the published links that no longer lead to their document (ADR 0042).
+    """Name the published links that no longer lead to their document (ADR 0043).
 
     Only web addresses and the verdicts code chose are named. A refusal or a site error is not
     a dead link, so on its own it is never the owner's problem.

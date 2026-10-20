@@ -1,4 +1,4 @@
-"""The weekly link check reads only the links published records cite (spec: Provenance, item 6; ADR 0042).
+"""The weekly link check reads only the links published records cite (spec: Provenance, item 6; ADR 0043).
 
 A link the read API would never show is not a published link, so it is not checked or counted.
 Missing and moved links are dead; a refusal or a site error is counted but is not a dead link,

@@ -366,7 +366,7 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         if args.summary is not None:
             args.summary.write_text(json.dumps(link_summary(report), indent=2) + "\n", encoding="utf-8")
         print(links_markdown(report), end="")
-        if args.published:  # a site error or a refusal says nothing about the document (ADR 0042)
+        if args.published:  # a site error or a refusal says nothing about the document (ADR 0043)
             return 1 if any(r.status in DEAD for r in report.results) else 0
         return 0 if report.ok else 1
     finally:

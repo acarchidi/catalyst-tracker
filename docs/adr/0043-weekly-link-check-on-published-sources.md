@@ -1,4 +1,4 @@
-# 0042 — The weekly link check reads only published sources; only a missing or moved link is dead
+# 0043 — The weekly link check reads only published sources; only a missing or moved link is dead
 
 - **Status:** accepted
 - **Date:** 2026-10-20

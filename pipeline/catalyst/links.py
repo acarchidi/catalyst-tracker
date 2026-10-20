@@ -163,7 +163,7 @@ class LinkReport:
 
 
 def published_urls(session_factory: sessionmaker[Session]) -> list[str]:
-    """Return every link a published record cites, as the read API shows them (ADR 0042)."""
+    """Return every link a published record cites, as the read API shows them (ADR 0043)."""
     with read_session(session_factory) as session:
         details = published(session)
     cited = {source.url for detail in details for source in detail.sources}
@@ -190,7 +190,7 @@ def check_links(
 
 
 # A dead link no longer leads to its document. A refusal or a site error says nothing about the
-# document, so it is counted apart and never makes a link dead (ADR 0042).
+# document, so it is counted apart and never makes a link dead (ADR 0043).
 DEAD = (LinkStatus.BROKEN, LinkStatus.MOVED)
 
 
