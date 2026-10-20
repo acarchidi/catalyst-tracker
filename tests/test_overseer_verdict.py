@@ -448,6 +448,34 @@ def test_the_current_run_skipped_runs_and_dependabot_runs_do_not_count() -> None
     assert ov.runs_used(today, current_run_id=50) == 1
 
 
+def test_runs_on_a_forks_pull_request_do_not_count() -> None:
+    # The repository is public (2026-10-20). A fork's run gets no key, so it never reaches the
+    # model; counting it would let anyone use up the day's limit by opening pull requests.
+    today = [
+        {"id": 1, "conclusion": "failure", "actor": "stranger", "head_repo": "stranger/catalyst-tracker"},
+        {"id": 2, "conclusion": "success", "actor": "acarchidi", "head_repo": REPO},
+    ]
+    assert ov.runs_used(today, current_run_id=99, repo=REPO) == 1
+
+
+@pytest.mark.parametrize("head_repo", [None, "", 7])
+def test_a_run_whose_origin_is_unknown_still_counts(head_repo: object) -> None:
+    today = [{"id": 1, "conclusion": "failure", "actor": "stranger", "head_repo": head_repo}]
+    assert ov.runs_used(today, current_run_id=99, repo=REPO) == 1
+
+
+def test_without_the_repository_every_run_counts() -> None:
+    today = [{"id": 1, "conclusion": "failure", "actor": "stranger", "head_repo": "stranger/x"}]
+    assert ov.runs_used(today, current_run_id=99) == 1
+
+
+def test_the_budget_leaves_out_forks_when_given_the_repository() -> None:
+    today = [{"id": i, "conclusion": "failure", "actor": "s", "head_repo": "s/x"} for i in range(1, 9)]
+    allowed, message = ov.budget("daily_run_limit = 8\n", today, current_run_id=99, repo=REPO)
+    assert allowed
+    assert "0 of 8" in message
+
+
 def test_every_attempt_of_another_run_counts() -> None:
     today = [
         {"id": 1, "run_attempt": 3, "conclusion": "success", "actor": "acarchidi"},
@@ -936,6 +964,13 @@ def test_the_budget_command_prints_step_outputs(tmp_path: Path) -> None:
     assert any(line.startswith("skip=The daily limit of 1") for line in done.stdout.splitlines())
     done = run_cli("budget", "--config", str(tmp_path / "absent.toml"), *common)
     assert "allowed=true" in done.stdout.splitlines()
+    # A fork's run does not use up the limit when the repository is given.
+    fork = [{"id": 1, "conclusion": "failure", "actor": "s", "head_repo": "s/x"}]
+    listing.write_text(json.dumps(fork), encoding="utf-8")
+    done = run_cli("budget", "--config", str(config), *common, "--repo", REPO)
+    assert "allowed=true" in done.stdout.splitlines()
+    done = run_cli("budget", "--config", str(config), *common)
+    assert "allowed=false" in done.stdout.splitlines()
     # This run's own earlier attempts count.
     listing.write_text("[]", encoding="utf-8")
     done = run_cli(
