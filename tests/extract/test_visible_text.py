@@ -303,3 +303,85 @@ def test_one_reading_gives_the_text_the_cloak_and_what_hides() -> None:
     assert read_page(cloaked, "text/html") == PageReading("Seen.", True, None)
     two = _page("<p>Seen.</p><p style='opacity:0'>Hidden words.</p>")
     assert read_page(two, "text/html") == PageReading("Seen.", False, '<p style="opacity:0">')
+
+
+# Third Opus review of PR #91. Each keeps INJECT hidden in a browser.
+ROUND_THREE_LEAKS = {
+    # B1. Tags inside SVG and MathML carry a namespace, and must be judged by their own name.
+    "svg style": "<svg><style>INJECT</style></svg>",
+    "svg script": "<svg><script>INJECT</script></svg>",
+    "svg title": "<svg><title>INJECT</title></svg>",
+    "math noscript": "<math><noscript>INJECT</noscript></math>",
+    "svg template": "<svg><template>INJECT</template></svg>",
+    # B2. With scripts on, a browser reads noscript as plain text that is never shown.
+    "head noscript text": "<noscript>INJECT</noscript>",
+    "head noscript stylesheet": (
+        "<noscript><p></p><style>.s{visibility:visible}</style></noscript>"
+        + _hidden("<p class='s'>INJECT</p>")
+    ),
+    # B3. content-visibility:hidden is not visibility:hidden, and no child undoes it.
+    "content-visibility": (
+        "<div style='content-visibility:hidden'><span style='visibility:visible'>INJECT</span></div>"
+    ),
+    # B5. An unread stylesheet hide may beat an inline show too.
+    "attribute rule beats inline show": (
+        "<style>[data-x]{visibility:hidden !important}</style>"
+        + _hidden("<span data-x style='visibility:visible'>INJECT</span>")
+    ),
+    "not() rule beats inline show": (
+        "<style>span:not(.z){visibility:hidden !important}</style>"
+        + _hidden("<span style='visibility:visible'>INJECT</span>")
+    ),
+    # Optional: a sheet from elsewhere could hide again, so nothing shows.
+    "outside stylesheet": "<link rel='stylesheet' href='a.css'>"
+    + _hidden("<p style='visibility:visible'>INJECT</p>"),
+    "imported stylesheet": "<style>@import url(a.css);</style>"
+    + _hidden("<p style='visibility:visible'>INJECT</p>"),
+}
+
+
+@pytest.mark.parametrize("html", ROUND_THREE_LEAKS.values(), ids=ROUND_THREE_LEAKS.keys())
+def test_text_the_third_review_found_shown_stays_hidden(html: str) -> None:
+    content = _page(html + "<p>Seen.</p>")
+    visible = visible_text(content, "text/html")
+    assert "INJECT" not in visible
+    assert visible.endswith("Seen.")
+
+
+def test_head_noscript_text_stays_out_of_the_body() -> None:
+    content = b"<html><head><noscript>INJECT</noscript></head><body><p>Seen.</p></body></html>"
+    assert visible_text(content, "text/html") == "Seen."
+    sheet = (
+        b"<html><head><noscript><p></p><style>.s{visibility:visible}</style></noscript></head><body>"
+        b"<div style='visibility:hidden'><p class='s'>INJECT</p></div><p>Seen.</p></body></html>"
+    )
+    assert visible_text(sheet, "text/html") == "Seen."
+
+
+ESCAPED = (
+    b"<p>V</p><div style='visibility:hidden'>\x1b$B<span/style='visibility:visible;'>\x1b(BINJECT</div>"
+    b"<p>Seen.</p>"
+)
+ENCODINGS = {
+    # B4. A page a browser may decode other than as UTF-8 shows nothing that a parent hid.
+    "iso-2022-jp declared": b"<meta charset='iso-2022-jp'>" + ESCAPED,
+    "escape byte, no charset": ESCAPED,
+    "shift_jis in content-type": (
+        b"<meta http-equiv='Content-Type' content='text/html; charset=shift_jis'>"
+        b"<div style='visibility:hidden'><p style='visibility:visible'>INJECT</p></div><p>Seen.</p>"
+    ),
+    "utf-16 mark": b"\xff\xfe"
+    + b"<div style='visibility:hidden'><p style='visibility:visible'>INJECT</p></div><p>Seen.</p>",
+}
+
+
+@pytest.mark.parametrize("content", ENCODINGS.values(), ids=ENCODINGS.keys())
+def test_a_page_in_another_encoding_shows_nothing_a_parent_hid(content: bytes) -> None:
+    assert "INJECT" not in visible_text(content, "text/html")
+
+
+def test_a_frame_or_text_box_is_never_a_cloak() -> None:
+    """A browser never shows these, so one holding every word is not lifted."""
+    for tag in ("iframe", "noembed", "canvas", "textarea"):
+        assert visible_text(_page(f"<{tag}>Hidden words.</{tag}>"), "text/html") == "", tag
+    assert visible_text(_page("<dialog><p>Hidden words.</p></dialog>"), "text/html") == ""

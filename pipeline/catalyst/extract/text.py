@@ -46,8 +46,10 @@ _CLASS_SPACES = re.compile("[ \t\n\f\r]+")
 # translation of 1,000px or more, or of 100% or 100vw or more), a scale of 0, a clip to nothing, or
 # a box 1px or smaller that clips what overflows it. A colour alone does not hide: white text on a
 # dark background is ordinary. Filings use small negative offsets (-18pt indents).
-_NO_DISPLAY = re.compile(r"display\s*:\s*none|visibility\s*:\s*collapse", re.IGNORECASE)
-_INVISIBLE = re.compile(r"visibility\s*:\s*hidden", re.IGNORECASE)
+_NO_DISPLAY = re.compile(
+    r"display\s*:\s*none|visibility\s*:\s*collapse|content-visibility\s*:\s*hidden", re.IGNORECASE
+)
+_INVISIBLE = re.compile(r"(?<![\w-])visibility\s*:\s*hidden", re.IGNORECASE)
 _OPACITY = re.compile(r"(?<![\w-])opacity\s*:\s*(?P<value>[\d.]+)", re.IGNORECASE)
 _FONT_SIZE = re.compile(r"font-size\s*:\s*(?P<value>[\d.]+)\s*(?P<unit>px|pt|em|rem|%)?", re.IGNORECASE)
 _TINY = {"px": 1.0, "pt": 1.0, "em": 0.1, "rem": 0.1, "%": 10.0, "": 0.0}
@@ -121,6 +123,11 @@ _CSS_COMMENT = re.compile(r"/\*.*?\*/|<!--|-->", re.DOTALL)
 _RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _ONE_LINE_AT = re.compile(r"@[\w-]+[^{};]*;")  # @import, @charset, @layer a;
 _OFF_SCREEN_QUERY = re.compile(r"^(?:only\s+)?(?:print|speech)\b", re.IGNORECASE)
+# A page a browser may decode other than as UTF-8 or a Latin alphabet: there, markup can swallow
+# other markup (ISO-2022-JP escapes), so nothing on such a page may show what a parent hid.
+_CHARSET = re.compile(rb"<meta\b[^>]*?charset\s*=\s*[\"']?\s*(?P<name>[\w.:-]+)", re.IGNORECASE)
+_PLAIN_CHARSETS = frozenset({b"utf-8", b"us-ascii", b"iso-8859-1", b"windows-1252"})
+_IMPORT = re.compile(r"@import\b", re.IGNORECASE)
 # A page hides all of itself (a cloak) at most this deep: the html element, the body, and a wrapper.
 _MAX_CLOAKS = 3
 _COMPOUND = re.compile(r"^(?P<tag>[a-z][\w-]*|\*)?(?P<rest>(?:[.#][\w-]+)*)$", re.IGNORECASE)
@@ -459,12 +466,25 @@ def _sheet_rules(css: str, *, shows: bool) -> tuple[list[tuple[_Selector, _Look]
     return [(exact, look) for exact, look in found if look != _PLAIN], unread
 
 
+def _local(tag: str) -> str:
+    """Return a tag's own name: html5lib names SVG and MathML tags with their namespace, as "{ns}style"."""
+    return tag.rpartition("}")[2]
+
+
+def _other_encoding(content: bytes) -> bool:
+    """Say whether a browser may read the copy in an encoding other than UTF-8 or a Latin alphabet."""
+    if b"\x1b" in content or content.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return True
+    return any(found.group("name").lower() not in _PLAIN_CHARSETS for found in _CHARSET.finditer(content))
+
+
 def _survey(root: Element) -> tuple[list[str], bool]:
-    """Return the stylesheets a browser applies on every screen, and whether any inline style is unread.
+    """Return the stylesheets a browser applies on every screen, and whether any style may be unread.
 
     A stylesheet is a `<style>` element whose parents are only html, head, and body, with no media
     attribute and a type of CSS (compared exactly, ignoring case only). `<style>` text in a comment,
-    a script, an attribute, or any other element's text is not an element of the tree.
+    a script, an attribute, or any other element's text is not an element of the tree. A style may
+    be unread when an inline style does not read cleanly or a `<link rel=stylesheet>` brings one in.
     """
     sheets: list[str] = []
     unread_inline = False
@@ -473,40 +493,61 @@ def _survey(root: Element) -> tuple[list[str], bool]:
         element, plain_parents = todo.pop()
         if callable(element.tag):  # a comment
             continue
-        style = element.get("style")
+        tag, style = _local(element.tag), element.get("style")
         unread_inline = unread_inline or (style is not None and _declarations(style) is None)
-        if element.tag == "style":
+        links = tag == "link" and "stylesheet" in _CLASS_SPACES.split(element.get("rel", "").lower())
+        unread_inline = unread_inline or links
+        if tag == "style":
             kind = element.get("type")
             if plain_parents and element.get("media") is None and (kind or "").lower() in ("", "text/css"):
                 sheets.append(element.text or "")
-        todo.extend((child, plain_parents and element.tag in _ROOTS) for child in element)
+        todo.extend((child, plain_parents and tag in _ROOTS) for child in element)
     return sheets, unread_inline
 
 
-def _style_rules(raw: str, root: Element) -> tuple[tuple[_Selector, _Look], ...]:
-    """Return the rules that change how text shows.
+@dataclass(frozen=True)
+class _Styles:
+    """The page's stylesheet rules, and whether anything on the page may show what a parent hid."""
 
-    Hides come from any `<style>` text in the copy, read loosely. Shows come only from the tree's
-    stylesheets, and only while no stylesheet and no inline style on the page holds a hide, or a
-    style, that code cannot read: such a rule could beat any show.
+    rules: tuple[tuple[_Selector, _Look], ...]
+    shows: bool
+
+
+def _style_rules(raw: str, root: Element, *, shows: bool) -> _Styles:
+    """Return the rules that change how text shows, and whether any show (inline or by rule) counts.
+
+    Hides come from any `<style>` text in the copy, read loosely. Shows count only while `shows`
+    (the encoding is plain) and while no stylesheet and no inline style on the page holds a hide, or
+    a style, that code cannot read, and no sheet comes from elsewhere (`@import`, a stylesheet link):
+    such a rule could beat any show, inline or not. Stylesheet shows come only from the tree.
     """
-    hides = [_sheet_rules(css, shows=False) for css in _STYLE_BLOCK.findall(raw)]
+    styles = _STYLE_BLOCK.findall(raw)
+    hides = [_sheet_rules(css, shows=False) for css in styles]
     sheets, unread_inline = _survey(root)
-    shows = [_sheet_rules(css, shows=True) for css in sheets]
-    allowed = not unread_inline and not any(unread for _, unread in (*hides, *shows))
+    shown = [_sheet_rules(css, shows=True) for css in sheets]
+    shows = shows and not unread_inline and not any(unread for _, unread in (*hides, *shown))
+    shows = shows and not any(_IMPORT.search(css) for css in styles)
     found = [rule for rules, _ in hides for rule in rules]
-    found += [(exact, look if allowed else look.hiding_only()) for rules, _ in shows for exact, look in rules]
-    return tuple(found)
+    found += [(exact, look if shows else look.hiding_only()) for rules, _ in shown for exact, look in rules]
+    return _Styles(tuple(found), shows)
 
 
-def _element_look(tag: str, attrs: Mapping[str, str], rules: tuple[tuple[_Selector, _Look], ...]) -> _Look:
+def _never_shown(tag: str, attrs: Mapping[str, str]) -> bool:
+    """Say whether a browser never shows the element's text: a frame, media, a text box, a closed dialog."""
+    return tag in _FALLBACK or (tag == "dialog" and "open" not in attrs)
+
+
+def _element_look(tag: str, attrs: Mapping[str, str], styles: _Styles) -> _Look:
     """Return how an element's tag, its attributes, and the stylesheet rules that fit it show its text.
 
     A rule that fits only when case is ignored (as in a page without a doctype) may hide, never show.
+    When the page may not show (`styles.shows`), the inline style may hide, never show.
     """
-    if tag in _FALLBACK or (tag == "dialog" and "open" not in attrs) or "hidden" in attrs:
+    if _never_shown(tag, attrs) or "hidden" in attrs:
         return _Look(gone=True)
     look = _style_look(attrs.get("style", ""))
+    look = look if styles.shows else look.hiding_only()
+    rules = styles.rules
     classes = frozenset(name for name in _CLASS_SPACES.split(attrs.get("class", "")) if name)
     ids = frozenset({attrs["id"]} if "id" in attrs else ())
     for selector, rule in rules:
@@ -534,12 +575,13 @@ class _Walk:
     parts: list[str] = field(default_factory=list[str])
     hidden_letters: Counter[int] = field(default_factory=Counter[int])
     hiders: dict[int, str] = field(default_factory=dict[int, str])
+    never_shown: set[int] = field(default_factory=set[int])  # hiders a browser never shows: never a cloak
 
 
 _Todo = list[tuple["Element | str | None", _Look, "int | None"]]
 
 
-def _walk(root: Element, rules: tuple[tuple[_Selector, _Look], ...], lifted: frozenset[int]) -> _Walk:
+def _walk(root: Element, styles: _Styles, lifted: frozenset[int]) -> _Walk:
     """Walk the tree in reading order and keep the text a reader sees.
 
     Hidden letters are counted against the outermost element whose own look hides them, so a page
@@ -558,8 +600,8 @@ def _walk(root: Element, rules: tuple[tuple[_Selector, _Look], ...], lifted: fro
                 walk.parts.append(item)
             elif hider is not None:
                 walk.hidden_letters[hider] += sum(ch.isalpha() for ch in item)
-        elif not callable(item.tag) and item.tag not in _HIDDEN:  # comments have a function as tag
-            _enter(walk, todo, item, around, hider, rules, lifted)
+        elif not callable(item.tag) and _local(item.tag) not in _HIDDEN:  # a comment's tag is a function
+            _enter(walk, todo, item, around, hider, styles, lifted)
     return walk
 
 
@@ -569,15 +611,17 @@ def _enter(
     element: Element,
     around: _Look,
     hider: int | None,
-    rules: tuple[tuple[_Selector, _Look], ...],
+    styles: _Styles,
     lifted: frozenset[int],
 ) -> None:
     """Start an element: note what it hides, mark a new line or cell, and queue what it holds."""
-    tag, attrs = element.tag, element.attrib
-    look = _PLAIN if id(element) in lifted else _element_look(tag, attrs, rules)
+    tag, attrs = _local(element.tag), element.attrib
+    look = _PLAIN if id(element) in lifted else _element_look(tag, attrs, styles)
     if hider is None and look.hides():
         hider = id(element)
         walk.hiders[hider] = _describe(tag, attrs)
+        if _never_shown(tag, attrs):
+            walk.never_shown.add(hider)
     inside = look.within(around)
     if tag in _BLOCKS:
         walk.parts.append("\n")
@@ -661,15 +705,17 @@ def read_page(content: bytes, content_type: str) -> PageReading:
     raw, section = _section(content)
     if "html" not in content_type.lower():
         return PageReading(_tidy(raw), False, None)
-    root = html5lib.parse(section, treebuilder="etree", namespaceHTMLElements=False)  # pyright: ignore[reportUnknownMemberType]
-    rules = _style_rules(raw, root)
+    # With scripts on, as a reader's browser has them: noscript is then text that is never shown.
+    root = html5lib.parse(section, treebuilder="etree", namespaceHTMLElements=False, scripting=True)  # pyright: ignore[reportUnknownMemberType]
+    styles = _style_rules(raw, root, shows=not _other_encoding(content))
     lifted: frozenset[int] = frozenset()
     while True:
-        walk = _walk(root, rules, lifted)
+        walk = _walk(root, styles, lifted)
         text = _tidy("".join(walk.parts))
         hiders = [number for number, letters in walk.hidden_letters.items() if letters]
         # A page cloak: one element hides every letter on the page. Lift it and read again.
-        if any(ch.isalpha() for ch in text) or len(hiders) != 1 or len(lifted) >= _MAX_CLOAKS:
+        liftable = len(hiders) == 1 and hiders[0] not in walk.never_shown and len(lifted) < _MAX_CLOAKS
+        if any(ch.isalpha() for ch in text) or not liftable:
             top = walk.hidden_letters.most_common(1)
             hidden = walk.hiders[top[0][0]] if top and top[0][1] else None
             return PageReading(text, bool(lifted), hidden)

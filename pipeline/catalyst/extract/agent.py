@@ -177,9 +177,13 @@ def extract_catalysts(
     result = client.run(role, prompt, model_input(shown, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
     catalysts = tuple(check_proposal(item, text, published, visible) for item in items)
+    # Both texts are scanned: what the reader saw could differ from the stored text (ADR 0044).
     instructions = instruction_markers(text)
+    if visible is not None:
+        instructions = tuple(dict.fromkeys((*instructions, *instruction_markers(visible))))
     flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
-    if cloaked or (visible is not None and hidden_letters(text, visible)):
+    # The page hides words; or the reader saw letters the stored text lacks, which no honest page does.
+    if cloaked or (visible is not None and (hidden_letters(text, visible) or hidden_letters(visible, text))):
         flags.append(Problem.SOURCE_HIDES_TEXT)
     if flags:
         catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)
