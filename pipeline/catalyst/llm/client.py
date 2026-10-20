@@ -26,6 +26,9 @@ from catalyst.logs import log_alert, log_event
 from catalyst.schemas import ModelCall, ModelCallStatus
 
 CHARS_PER_TOKEN_ESTIMATE = 3  # deliberately low, so the worst-case estimate is high
+# For a role's input limit: an ordinary estimate for English text, so the limit means what it says.
+# The cap check above stays on its own, more cautious estimate (ADR 0038).
+CHARS_PER_INPUT_TOKEN = 4
 
 _log = logging.getLogger(__name__)
 
@@ -57,6 +60,16 @@ class ModelOutputInvalidError(ModelError):
 
 class ModelSwitchedError(ModelError):
     """The provider answered with a different model than the one configured."""
+
+
+class InputTooLargeError(ModelError):
+    """The document is over the role's input limit, so it was never sent and nothing was billed."""
+
+    def __init__(self, role: str, estimated_tokens: int, limit: int) -> None:
+        """Keep the estimate and the limit, for the job's log."""
+        super().__init__(f"{role}: the document is about {estimated_tokens} tokens; the limit is {limit}")
+        self.estimated_tokens = estimated_tokens
+        self.limit = limit
 
 
 class SpendCapReachedError(Exception):
@@ -125,6 +138,10 @@ class ModelClient:
     def run(self, role: str, prompt: Prompt, document: str) -> ModelResult:
         """Run `prompt` on `document` as `role` and return the validated answer."""
         settings = self._config.roles[role]
+        limit = self._config.max_input_tokens(role)
+        estimated = math.ceil(len(document) / CHARS_PER_INPUT_TOKEN)
+        if limit is not None and estimated > limit:
+            raise InputTooLargeError(role, estimated, limit)
         started_at = self._now()
         worst_case = self._check_cap(role, prompt, document, started_at)
         adapter = self._adapters[settings.provider]
@@ -174,6 +191,10 @@ class ModelClient:
             request_id=completion.request_id,
             call_id=call.id,
         )
+
+    def model_for(self, role: str) -> str:
+        """Return the model `role` is configured to call."""
+        return self._config.roles[role].model
 
     def _check_cap(self, role: str, prompt: Prompt, document: str, at: datetime) -> Decimal:
         """Stop if the next call could take the role past its cap; return that call's worst-case cost."""

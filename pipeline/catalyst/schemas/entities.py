@@ -30,6 +30,7 @@ from catalyst.schemas.enums import (
     Modality,
     ModelCallStatus,
     OutcomeResult,
+    ReadingSkip,
     TrialPhase,
 )
 from catalyst.schemas.identifiers import (
@@ -465,7 +466,8 @@ class ClaimDecision(Entity):
 class DocumentReading(Entity):
     """One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2).
 
-    A re-run skips a document this reader has already read with the same prompt and model.
+    A re-run skips a document this reader has already read with the same prompt and model. The
+    extractor also keeps a row for a document it found nothing in, or never sent (ADR 0038).
     """
 
     __tablename__ = "document_reading"
@@ -478,9 +480,14 @@ class DocumentReading(Entity):
     agent: ShortText = Field(description="Which reader, for example 'verifier'.")
     prompt_id: ShortText = Field(description="Prompt used.")
     prompt_version: ShortText = Field(description="Version of that prompt.")
-    model: ShortText = Field(description="Model that answered.")
+    model: ShortText = Field(
+        description="Model that answered, or for a skipped document the one it was meant for."
+    )
     catalysts: Annotated[int, Field(ge=0)] = Field(description="How many catalysts the reader proposed.")
     read_at: AwareDatetime = Field(description="When the document was read.")
+    skipped: ReadingSkip | None = Field(
+        default=None, description="Why no model read the document; empty when a model read it."
+    )
 
 
 class CatalystChange(Entity):

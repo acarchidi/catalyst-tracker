@@ -175,6 +175,14 @@ class ModelCallStatus(StrEnum):
     ERROR = "error"
 
 
+class ReadingSkip(StrEnum):
+    """Why a reader made no model call for a document (ADR 0038)."""
+
+    NOT_TEXT = "not_text"  # not a web page or plain text, such as a PDF copy
+    NO_READABLE_TEXT = "no_readable_text"  # fewer readable words than any real release has
+    TOO_LARGE = "too_large"  # over the role's input limit
+
+
 class MatchStatus(StrEnum):
     """Whether a name found exactly one record (ADR 0015)."""
 

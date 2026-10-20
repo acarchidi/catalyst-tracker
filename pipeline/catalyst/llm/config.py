@@ -15,6 +15,10 @@ from catalyst.llm.pricing import Price
 
 DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[3] / "config" / "models.toml"
 PROVIDERS = frozenset({"anthropic", "fake"})
+# The largest document each role may send, in estimated tokens, when config/models.toml sets no
+# `max_input_tokens` for it (ADR 0038). Kept here so the limit needs no change to the owner's file;
+# a value in the file wins. The largest release that ever gave a catalyst was 19,089 tokens.
+DEFAULT_MAX_INPUT_TOKENS: dict[str, int] = {"extractor": 40_000}
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
@@ -29,6 +33,9 @@ class RoleConfig(BaseModel):
     max_tokens: int = Field(gt=0)
     effort: Effort | None = None
     daily_cap_usd: Decimal = Field(gt=0, description="Spend limit per New York calendar day.")
+    max_input_tokens: int | None = Field(
+        default=None, gt=0, description="Largest document to send, in estimated tokens; None for the default."
+    )
 
 
 class ModelConfig(BaseModel):
@@ -48,6 +55,10 @@ class ModelConfig(BaseModel):
             if role.model not in self.pricing:
                 raise ValueError(f"role {name}: model {role.model!r} has no price in [pricing]")
         return self
+
+    def max_input_tokens(self, role: str) -> int | None:
+        """Return the largest document `role` may send, in estimated tokens, or None for no limit."""
+        return self.roles[role].max_input_tokens or DEFAULT_MAX_INPUT_TOKENS.get(role)
 
 
 def load_config(path: Path = DEFAULT_CONFIG_PATH) -> ModelConfig:
