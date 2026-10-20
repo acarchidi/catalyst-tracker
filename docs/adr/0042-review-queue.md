@@ -1,4 +1,4 @@
-# 0042 — The review queue: GitHub pages for the owner, approvals through the publish gate
+# 0042 — The review queue: a private page for the owner, approvals through the publish gate
 
 - **Status:** accepted
 - **Date:** 2026-10-20
@@ -16,23 +16,29 @@ The spec leaves open:
 Facts that matter:
 - The owner is the only reviewer and does not program.
 - The live database is reachable only from GitHub Actions (ADR 0011). The owner has no local copy of the code or the database.
-- The repository is private. The web app (`web/`) starts in Phase 2.
+- The repository is public (owner, 2026-10-20). Anyone can read its job logs, job summaries, uploaded files, issues, and the inputs of a hand-started job. Held claims are unverified, so their quotes, reasons, and proposed values must never appear in any of those (AGENTS.md: no unverified data made public).
+- Only people with write access can start a job by hand, and GitHub records who started it.
+- The web app (`web/`) starts in Phase 2.
 - `.github/workflows/` is an owner path (ADR 0036).
 - The gate stores each held claim's reasons in plain words (`claim_decision`).
 
 ## Decision
 
-1. **Form factor: GitHub, no server.**
-   - The queue is a page in a hand-started GitHub Actions job's summary. GitHub shows that page only to people with access to this private repository.
-   - For each held claim the page shows:
+1. **Form factor: a private page, decisions by identifier only.**
+   - **Where the held claims travel.** A live job reads the held claims and writes them only into the encrypted export, which is designed separately. What the job prints, in its log or summary, is counts only. No held claim's text ever goes into a log, summary, uploaded file in plain text, or issue.
+   - **Where the owner sees them.** The coding session decrypts that export and builds the queue page as the owner's private Claude page (an artifact, private unless the owner shares it). For each held claim the page shows:
      - the quote, highlighted in its paragraph of the stored copy;
      - the link to the source;
      - the gate's reasons, in plain words;
      - the proposed values;
-     - a short code for those reasons.
-   - The owner records a decision by starting a second job by hand, with three inputs: the claim, the action, and that code.
-   - The job records the GitHub account that started it as the reviewer. It refuses any account but the repository owner's.
-   - This needs no new account or key, and makes nothing public.
+     - the claim's identifier and a short code for its reasons.
+   - **How a decision is recorded.** The owner starts the "Review decision" job by hand with three inputs: the claim's identifier, approve or reject, and the reasons code. The page gives all three ready to copy. These inputs are public, so they carry only identifiers:
+     - the claim's identifier is a random UUID;
+     - the code is the first 8 hexadecimal characters of a SHA-256 hash of the reasons list. It shows that the reasons have not changed since the page was made, and says nothing readable about them.
+
+     Someone who guesses a claim's exact reasons could check the guess against the code. That would tell them only why an unpublished claim is held, never its quote or values.
+   - The job records the GitHub account that started it as the reviewer, and refuses any account but the repository owner's. Its log and summary say only the claim's identifier, the action, and whether it was recorded or refused, with a refusal reason that quotes no claim text.
+   - This needs no new account. Reading the encrypted export needs the key that its own design names.
    - Keyboard shortcuts wait for the Phase 2 web app.
 2. **The record (`review_decision`).**
    - One row per decision: the claim, approve or reject, who, when, and the gate's reasons the person saw, word for word.
@@ -58,13 +64,14 @@ Facts that matter:
 4. **A rejection never publishes.** The gate excuses nothing for a rejected claim. It stays held with its reasons, and the queue page leaves it out. Nothing is deleted.
 5. **Built in parts:**
    - **Part 1 (this):** the record and the approval path, tested first.
-   - **Part 2:** the queue page and the decision command (`catalyst review-queue`, `catalyst review-decide`), plus corrections. A correction stores the person's values as a new claim by the reviewer, on the same verbatim quote in the same stored copy, so every published value still has a claim and a quote. Part 2 widens the gate's rule on which claims may publish for that, under its own review.
-   - **Part 3:** the two GitHub Actions jobs. This is an owner-path pull request of its own (ADR 0036).
+   - **Part 2:** the queue page, built from the decrypted export with no database access, and the decision command (`catalyst review-decide`), plus corrections. The export's held items gain what the page needs: the quote's paragraph and the claim's latest review decision, so rejected claims leave the page. A correction stores the person's values as a new claim by the reviewer, on the same verbatim quote in the same stored copy, so every published value still has a claim and a quote. Part 2 widens the gate's rule on which claims may publish for that, under its own review.
+   - **Part 3:** the "Review decision" GitHub Actions job. This is an owner-path pull request of its own (ADR 0036). The held claims reach the page through the encrypted export's own job, so no second job is needed.
 6. **The gold set.** Recorded decisions are kept so that the "Gold set of 200 verified catalysts" item can add them. This item does not change the gold set.
 
 ## Alternatives
 
 - **A local web page (FastAPI on 127.0.0.1).** This is closest to "one screen with keyboard shortcuts". But the owner would have to install the code and hold the live database password locally (ADR 0011). That is the setup the owner asked to avoid.
+- **The queue in a job summary.** This was the first choice, while the repository was private. Now that it is public, a summary would publish unverified claims.
 - **A hosted page with a sign-in.** It needs a host, an account, and an authentication design. It would also be the first thing reachable from outside the project. That belongs with the Phase 2 web app.
 - **Decisions by issue comment.** Comment text can come from anyone who can comment, and comments can be edited. A hand-started job records a verified account, and plain code reads its inputs.
 - **Let an approval excuse every hold.** That would publish a quote not found in the stored copy, or make the writer guess a catalyst or a drug role.
@@ -72,7 +79,9 @@ Facts that matter:
 
 ## Consequences
 
-- The owner reviews on GitHub, in the browser, with two clicks per decision and no setup. Until part 3 merges, decisions can only be recorded by code, as the tests do.
+- The owner reviews on a private page and decides on GitHub, with one copy and one job start per decision, and no new account. Until part 3 merges, decisions can only be recorded by code, as the tests do.
+- The page is only as fresh as the latest export. A decision made from an old page is refused, safely, when the claim's reasons have changed since.
+- The page depends on the encrypted export. If that design changes, only part 2's page-building changes; the record and the gate path stay.
 - Each approval waits for the next scheduled decision and writer run before it shows. The writer's report says how many approved claims it wrote.
 - Holds that need a choice wait for corrections in part 2.
 - Revisit when the Phase 2 web app exists: the screen can move there, with keyboard shortcuts, using the same record and the same gate path.
