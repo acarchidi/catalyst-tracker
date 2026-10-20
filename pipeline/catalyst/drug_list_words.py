@@ -516,6 +516,26 @@ PARTNER_PREFIXES: dict[str, tuple[str, ...]] = {
     "VX": ("vertex",),
 }
 
+# Class and ordinary words that end like an INN stem but name no drug ("interleukin" is "-kin",
+# "nucleotide" is "-tide", "transgene" is "-gene", "cancel" is "-cel") (sixth review of PR #73).
+NOT_INN_WORDS = frozenset(
+    [
+        "cancel",
+        "excel",
+        "interleukin",
+        "napkin",
+        "nucleotide",
+        "oligonucleotide",
+        "oncogene",
+        "parcel",
+        "peptide",
+        "polypeptide",
+        "pumpkin",
+        "thermostat",
+        "transgene",
+    ]
+)
+
 # Endings of WHO international nonproprietary names (INN stems), by which a registry main name
 # without a digit looks like a drug's generic name: "navitoclax", "tanruprubart", "inaxaplin",
 # "cemacabtagene ansegedleucel". A class, target, or disease word ("Taxane", "FGF Receptor",

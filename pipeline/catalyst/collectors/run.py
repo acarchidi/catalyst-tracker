@@ -17,6 +17,7 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.collectors import linked_trials
 from catalyst.collectors.documents import CollectionStats, FetchedDocument, store_fetched
 from catalyst.collectors.http import HostPolicy, PoliteHttpClient, shared_limiter
 from catalyst.collectors.ratelimit import Limiter, NoWait
@@ -33,9 +34,11 @@ from catalyst.snapshots import SnapshotStore
 _log = logging.getLogger(__name__)
 # Every source a run collects, by the name that starts its counts: "sec:VRTX", "fedreg", "wire:...".
 SOURCES = ("sec", "ctgov", "openfda", "fedreg", "wire")
-# Run only when named: "drugs" fills the drug list from Drugs@FDA and ClinicalTrials.gov (ADR 0035)
-# for companies already collected, in about 13 minutes of polite requests.
-ON_REQUEST = ("drugs",)
+# Run only when named: "ctgov-linked" refreshes just the trials our claims and catalysts name, by
+# registry number, in minutes instead of the sponsor-wide run's hours (ADR 0040); "drugs" fills
+# the drug list from Drugs@FDA and ClinicalTrials.gov (ADR 0035) for companies already
+# collected, in about 13 minutes of polite requests.
+ON_REQUEST = (linked_trials.SOURCE, "drugs")
 _PER_COMPANY = frozenset({"sec", "ctgov", "openfda"})
 
 
@@ -106,12 +109,17 @@ class Collector:
         source: str,
         documents: Callable[[], Iterable[FetchedDocument]],
         company: tuple[UUID, DocumentMatch] | None = None,
+        company_of: Callable[[FetchedDocument], tuple[UUID, DocumentMatch] | None] | None = None,
     ) -> CollectionStats:
-        """Store every document from `documents`; on a source failure, alert and return what was stored."""
+        """Store every document from `documents`; on a source failure, alert and return what was stored.
+
+        Each document is linked to `company`, or, when given, to the company `company_of` names for it.
+        """
         stats = CollectionStats(source)
         try:
             for fetched in documents():
-                saved, created = store_fetched(fetched, self.store, self.session_factory, company, self.now)
+                link = company_of(fetched) if company_of else company
+                saved, created = store_fetched(fetched, self.store, self.session_factory, link, self.now)
                 stats.add(saved, created)
         except Exception as error:
             stats.error = f"{type(error).__name__}: {error}"
@@ -162,11 +170,13 @@ def collect_all(
     now: Callable[[], datetime] = _utc_now,
     sec_forms: frozenset[str] = DEFAULT_FORMS,
     sources: frozenset[str] = frozenset(SOURCES),
+    linked_batch_size: int = ctgov.BY_ID_BATCH,
 ) -> list[CollectionStats]:
     """Collect every company's SEC filings, trials, and FDA applications, then the source-wide feeds.
 
     Only the collectors named in `sources` run. Any per-company source still reads the company's
-    SEC record, which names the company; with none of them, no company is read at all.
+    SEC record, which names the company; with none of them, no company is read at all. Last, if
+    named, the linked trials (ADR 0040), which read no SEC record.
     """
     if unknown := sources - set(SOURCES) - set(ON_REQUEST):
         raise ValueError(f"unknown sources: {', '.join(sorted(unknown))}")
@@ -216,6 +226,31 @@ def collect_all(
                 )
             )
     results += _feeds(collector, clients.web, since, sources)
+    return results + _on_request(
+        collector, session_factory, clients, companies, now, sources, linked_batch_size
+    )
+
+
+def _on_request(
+    collector: Collector,
+    session_factory: sessionmaker[Session],
+    clients: Clients,
+    companies: list[PilotCompany],
+    now: Callable[[], datetime],
+    sources: frozenset[str],
+    linked_batch_size: int,
+) -> list[CollectionStats]:
+    """Run the sources that run only when named: linked trials (ADR 0040), then the drug list (ADR 0035)."""
+    results: list[CollectionStats] = []
+    if linked_trials.SOURCE in sources:
+        sponsors = {name: pilot.cik for pilot in companies for name in pilot.ctgov_sponsors}
+        results.append(
+            collector.run(
+                linked_trials.SOURCE,
+                partial(linked_trials.linked_documents, session_factory, clients.web, linked_batch_size),
+                company_of=linked_trials.sponsor_links(session_factory, sponsors),
+            )
+        )
     if "drugs" in sources:
         results.append(_drug_list(session_factory, clients.web, companies, now))
     return results

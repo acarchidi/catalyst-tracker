@@ -149,6 +149,17 @@ def test_a_marked_rival_brand_is_dropped_by_the_cber_list() -> None:
         ("Avidin", False),
         ("Yellow Fever", False),
         ("Skin", False),
+        # Sixth review: class and ordinary words that end like a stem, and a stem with too little before it.
+        ("Interleukin", False),
+        ("Transgene", False),
+        ("Nucleotide", False),
+        ("Polypeptide", False),
+        ("Thermostat", False),
+        ("Cancel", False),
+        ("Oligonucleotide therapy", False),
+        ("xglipron", False),
+        ("lasofoxifene", True),
+        ("brelovitug", True),
     ],
 )
 def test_a_plain_word_main_name_must_look_like_a_drug_name(name: str, expected: bool) -> None:

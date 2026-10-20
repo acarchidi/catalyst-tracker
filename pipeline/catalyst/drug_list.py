@@ -53,6 +53,7 @@ from catalyst.drug_list_words import (
     INN_ENDINGS,
     METALS,
     NON_DRUG_WORDS,
+    NOT_INN_WORDS,
     ORDINARY_WORDS,
     PARTNER_PREFIXES,
     SALT_WORDS,
@@ -656,12 +657,22 @@ def _partners_drugs(kept: list[tuple[SourceRecord, Owner]]) -> set[int]:
 
 
 _SHORTEST_STEM_WORD = 6  # letters in a word whose ending counts as an INN stem ("skin" is not "-kin")
+_LETTERS_BEFORE_STEM = 3  # "lasofoxifene", not a stem with one letter before it
 
 
 def _inn_shaped(name: str) -> bool:
-    """Say whether a word of the name ends like a WHO generic name ("navitoclax", "tanruprubart")."""
-    words = re.findall(r"[^\W\d_]+", name)
-    return any(len(w) >= _SHORTEST_STEM_WORD and w.casefold().endswith(INN_ENDINGS) for w in words)
+    """Say whether a word of the name ends like a WHO generic name ("navitoclax", "tanruprubart").
+
+    The word needs three letters or more before the stem, and must not be a class or ordinary word
+    that ends like one ("interleukin", "nucleotide": `NOT_INN_WORDS`) (sixth review of PR #73).
+    """
+    words = [w.casefold() for w in re.findall(r"[^\W\d_]+", name)]
+    return any(
+        len(w) >= _SHORTEST_STEM_WORD
+        and w not in NOT_INN_WORDS
+        and any(w.endswith(stem) and len(w) - len(stem) >= _LETTERS_BEFORE_STEM for stem in INN_ENDINGS)
+        for w in words
+    )
 
 
 def looks_like_a_drug(name: str) -> bool:
