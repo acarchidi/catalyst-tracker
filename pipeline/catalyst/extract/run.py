@@ -37,7 +37,7 @@ from catalyst.extract.agent import (
     extract_catalysts,
     proposal_value,
 )
-from catalyst.extract.text import document_text, visible_text
+from catalyst.extract.text import document_text, hidden_by, visible_text
 from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.logs import log_alert, log_event
 from catalyst.schemas import Claim, Company, CompanyDocument, DocumentReading, ReadingSkip, SourceDocument
@@ -295,6 +295,14 @@ def extract_documents(
             # again each run, so a fixed reader reaches it without anyone editing data (ADR 0038).
             if len(visible.split()) < MIN_WORDS:
                 skip(ReadingSkip.NO_READABLE_TEXT)
+                if len(text.split()) >= MIN_WORDS:  # the words are there, but the page hides them
+                    log_event(
+                        _log,
+                        "document_hides_its_words",
+                        source_key=row.source_key,
+                        words=len(text.split()),
+                        hidden_by=hidden_by(content, row.content_type),
+                    )
                 continue
             extraction = extract_catalysts(client, text, published, visible=visible)
         except InputTooLargeError as error:

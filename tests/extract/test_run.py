@@ -459,3 +459,24 @@ def test_a_skip_is_counted_and_alerted_once_per_document_and_reason_whatever_the
     monkeypatch.setattr("catalyst.extract.run.visible_text", blank)
     other = _run(session_factory, store, fake, config=_other_model())
     assert (other["documents_skipped_no_readable_text"], other["documents_rechecked_still_skipped"]) == (1, 0)
+
+
+def test_a_page_that_hides_its_words_says_what_hides_them(
+    session_factory: sessionmaker[Session], tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    """The 2026-10-20 run could not say why 56 copies read as empty; the log now names the hide."""
+    store = LocalSnapshotStore(tmp_path)
+    words = "word " * MIN_WORDS
+    page = f"<p style='display:none'>{words}</p><p class='x' style='font-size:0'>two words</p>"
+    _document(store, session_factory, "a", "8-K EX-99.1", page.encode())
+    _document(store, session_factory, "b", "8-K EX-99.1", b"<img src='logo.jpg'>")
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        summary = _run(session_factory, store, _Fake())
+    assert summary["documents_skipped_no_readable_text"] == 2
+    (event,) = [r for r in caplog.records if r.getMessage() == "document_hides_its_words"]
+    fields = event.__dict__["catalyst_fields"]
+    assert (fields["source_key"], fields["words"], fields["hidden_by"]) == (
+        "sec:a",
+        MIN_WORDS + 2,
+        '<p style="display:none">',
+    )
