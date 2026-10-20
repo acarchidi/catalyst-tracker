@@ -46,6 +46,7 @@ from catalyst.schemas.enums import (
     Modality,
     ModelCallStatus,
     OutcomeResult,
+    ReadingSkip,
     SourceTier,
     TrialPhase,
 )
@@ -118,6 +119,7 @@ __all__ = [
     "ModelCallStatus",
     "Outcome",
     "OutcomeResult",
+    "ReadingSkip",
     "References",
     "SourceDocument",
     "SourceTier",

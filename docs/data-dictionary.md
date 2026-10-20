@@ -345,7 +345,7 @@ Rules:
 
 ## `document_reading`
 
-One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model.
+One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model. The extractor also keeps a row for a document it found nothing in, or never sent (ADR 0038).
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
@@ -354,9 +354,10 @@ One reader's pass over one source document, kept even when it found nothing (ADR
 | `agent` | text, up to 100 characters | yes | Which reader, for example 'verifier'. |
 | `prompt_id` | text, up to 100 characters | yes | Prompt used. |
 | `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
-| `model` | text, up to 100 characters | yes | Model that answered. |
+| `model` | text, up to 100 characters | yes | Model that answered, or for a skipped document the one it was meant for. |
 | `catalysts` | whole number | yes | How many catalysts the reader proposed. |
 | `read_at` | date and time (with time zone) | yes | When the document was read. |
+| `skipped` | one of: `not_text`, `no_readable_text`, `too_large` | no | Why no model read the document; empty when a model read it. |
 
 Rules:
 
