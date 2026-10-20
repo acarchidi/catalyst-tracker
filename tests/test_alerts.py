@@ -75,6 +75,8 @@ def test_a_second_reading_without_scores_is_never_an_alert() -> None:
         ),
         ({"decisions": {"error": "OperationalError: x"}}, "publish decisions did not finish"),
         ({"published": {"error": "OperationalError: x"}}, "published catalysts did not finish"),
+        ({"documents_skipped_too_large": 1}, "1 document was too large to send to the model"),
+        ({"documents_skipped_too_large": 2}, "2 documents were too large to send to the model"),
     ],
 )
 def test_a_problem_in_the_summary_raises_one_alert_for_the_job(change: dict[str, Any], words: str) -> None:
@@ -86,6 +88,33 @@ def test_a_problem_in_the_summary_raises_one_alert_for_the_job(change: dict[str,
     assert RUN_URL in issue["body"]
     assert issue["escalate_at"] == 2
     assert plan["solved"] == []
+
+
+def test_documents_skipped_without_a_model_call_are_counted_in_plain_words() -> None:
+    skips = {
+        "documents_skipped_already_done": 116,
+        "documents_skipped_not_text": 1,
+        "documents_skipped_no_readable_text": 36,
+        "documents_skipped_too_large": 1,
+    }
+    plan = build_alerts(
+        [JobRun("extract-catalysts", "success", CLEAN_EXTRACT | skips)], None, LIMITS, RUN_URL
+    )
+    body = plan["issues"][0]["body"]
+    assert (
+        "Skipped without a model call: 116 documents already read, 1 document that is not a web page "
+        "or plain text (such as a PDF copy), 36 documents with no readable text, "
+        "1 document over the size limit." in body
+    )
+
+
+def test_skipped_documents_alone_are_not_an_alert() -> None:
+    skips = {"documents_skipped_already_done": 116, "documents_skipped_not_text": 1}
+    skips |= {"documents_skipped_no_readable_text": 36}
+    plan = build_alerts(
+        [JobRun("extract-catalysts", "success", CLEAN_EXTRACT | skips)], None, LIMITS, RUN_URL
+    )
+    assert plan["issues"] == []
 
 
 def test_alert_text_never_copies_error_messages_from_the_run() -> None:

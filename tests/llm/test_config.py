@@ -79,6 +79,17 @@ def test_a_zero_cap_is_refused(tmp_path: Path) -> None:
         load_config(_write(tmp_path, body))
 
 
+def test_the_extractor_has_an_input_limit_by_default_and_the_file_can_change_it(tmp_path: Path) -> None:
+    role = '[roles.extractor]\nprovider = "anthropic"\nmodel = "m1"\nmax_tokens = 100\ndaily_cap_usd = "1"\n'
+    assert load_config(_write(tmp_path, BASE + role)).max_input_tokens("extractor") == 40_000
+    assert load_config(DEFAULT_CONFIG_PATH).max_input_tokens("extractor") == 40_000
+    assert load_config(DEFAULT_CONFIG_PATH).max_input_tokens("verifier") is None
+    changed = load_config(_write(tmp_path, BASE + role + "max_input_tokens = 25000\n"))
+    assert changed.max_input_tokens("extractor") == 25_000
+    with pytest.raises(ValueError, match="max_input_tokens"):
+        load_config(_write(tmp_path, BASE + role + "max_input_tokens = 0\n"))
+
+
 def test_config_has_a_version(tmp_path: Path) -> None:
     config = ModelConfig.model_validate(
         {"version": "v9", "pricing": {}, "roles": {}},

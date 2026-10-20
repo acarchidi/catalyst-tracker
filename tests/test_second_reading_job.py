@@ -40,7 +40,13 @@ from catalyst.snapshots import LocalSnapshotStore
 from catalyst.verify.second_run import run_second_reading
 
 SENTENCE = "Topline data from the Phase 3 RAINIER trial of zentocel are expected in the second half of 2027."
-RELEASE = f"<html><body><p>Acme Bio news</p><p>{SENTENCE}</p></body></html>".encode()
+# A release has more than a headline: the extractor sends no copy with fewer than 50 readable words.
+ABOUT = (
+    "About Acme Bio: Acme Bio is a clinical-stage biotechnology company that develops medicines for "
+    "people with serious liver diseases. Its lead programme is in a Phase 3 trial, and two more "
+    "programmes are in earlier trials. The company is based in Boston, Massachusetts."
+)
+RELEASE = f"<html><body><p>Acme Bio news</p><p>{SENTENCE}</p><p>{ABOUT}</p></body></html>".encode()
 NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 
 

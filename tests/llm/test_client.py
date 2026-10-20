@@ -16,6 +16,7 @@ import pytest
 
 from catalyst.llm.client import (
     Completion,
+    InputTooLargeError,
     ModelClient,
     ModelOutputInvalidError,
     ModelRefusalError,
@@ -219,3 +220,24 @@ def test_an_unknown_role_is_refused() -> None:
     client, _ = _client(FakeAdapter())
     with pytest.raises(KeyError, match="no_such_role"):
         client.run("no_such_role", PROMPT, "doc")
+
+
+def test_a_document_over_the_roles_input_limit_is_never_sent() -> None:
+    # The extractor's limit is 40,000 tokens by default, estimated as characters / 4 (ADR 0038).
+    adapter = FakeAdapter(replies=[_completion()])
+    client, ledger = _client(adapter)
+    with pytest.raises(InputTooLargeError) as raised:
+        client.run("extractor", PROMPT, "x" * 160_004)
+    assert (raised.value.estimated_tokens, raised.value.limit) == (40_001, 40_000)
+    assert adapter.models_requested == []
+    assert ledger.calls == []  # nothing was sent, so nothing was billed
+    client.run("extractor", PROMPT, "x" * 160_000)  # exactly at the limit is sent
+    assert adapter.models_requested == ["claude-sonnet-5-5"]
+
+
+def test_a_role_without_an_input_limit_sends_any_size() -> None:
+    config = CONFIG.model_copy(update={"roles": {"verifier": CONFIG.roles["extractor"]}})
+    adapter = FakeAdapter(replies=[_completion()])
+    client = ModelClient(config, {"fake": adapter}, InMemoryLedger(), now=lambda: NOW)
+    client.run("verifier", PROMPT, "x" * 200_000)
+    assert adapter.models_requested == ["claude-sonnet-5-5"]
