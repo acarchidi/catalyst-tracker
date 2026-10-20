@@ -9,6 +9,7 @@ posts: issues to raise, and alerts a clean run has solved.
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -230,6 +231,14 @@ def _job_alert(run: JobRun, problems: list[str], limits: Thresholds, run_url: st
     }
 
 
+_MARKDOWN = re.compile(r"([\\`*_\[\]<>#|~])")  # what can make a link, an image, a tag, or formatting
+
+
+def _plain(text: str) -> str:
+    """Show text as written in an issue: Markdown marks escaped, and no `@` that could mention anyone."""
+    return _MARKDOWN.sub(r"\\\1", text).replace("@", "&#64;")
+
+
 def _sample_alerts(summary: dict[str, Any]) -> list[dict[str, Any]]:
     """Return one alert per record the sample checker disagrees with; only the owner closes it.
 
@@ -246,7 +255,7 @@ def _sample_alerts(summary: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         points = [SAMPLE_POINTS[p] for p in _sequence(entry.get("points")) if p in SAMPLE_POINTS]
         links = [str(u) for u in _sequence(entry.get("links")) if str(u).startswith("https://")]
-        title = str(entry.get("title", ""))[:300]
+        title = _plain(str(entry.get("title", ""))[:300])
         body = [
             "**The weekly sample checker disagrees with a published record.**",
             "",

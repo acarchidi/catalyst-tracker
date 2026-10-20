@@ -1,18 +1,19 @@
 """The weekly sample checker (spec: Weekly random sample; ADR 0041).
 
 Each week plain code draws 30 published catalysts at random, from those published before the
-week began, with the week's Monday as the seed, so anyone can repeat the draw. A stronger model
-than the readers (the Opus `analyst` role) reads each source with the record's points beside it
-and answers, per point, supported, contradicted, or not stated. It has no tools and writes
+week began, ranked by a hash of the week's Monday and each id, so anyone can repeat the draw.
+A stronger model than the readers (the Opus `analyst` role) reads each source with the record's
+points beside it and answers, per point, supported, contradicted, or not stated. It has no tools and writes
 nothing. Plain code then decides: a point agrees only when the answer is "supported" and its
-quote is really in the source. A record agrees only when every point agrees; anything else is a
-disagreement for the owner to settle.
+quote is a sentence really in the source; for the date, the drugs, and the trials the quote must
+also name the record's own value. A record agrees only when every point agrees; anything else
+is a disagreement for the owner to settle.
 """
 
 from __future__ import annotations
 
+import hashlib
 import logging
-import random
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -34,12 +35,19 @@ from catalyst.extract.text import find_quote, visible_text
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import log_event
-from catalyst.schemas import Claim, SampleCheck, SampleVerdict, SourceDocument
+from catalyst.schemas import Claim, DatePrecision, DrugName, SampleCheck, SampleVerdict, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
+from catalyst.verify.second import name_key
 
 ROLE = "analyst"  # the Opus role, stronger than the Sonnet readers it checks
 PROMPT = ("check_sample", "1.0.0")
 SAMPLE_SIZE = 30
+MIN_QUOTE_WORDS = 5  # a sentence, not a word that happens to be in the source
+
+# What a quote must name for a point: each requirement is met when any one of its alternatives
+# is, and an alternative when every one of its parts is in the quote (case, spaces, and
+# punctuation aside, as `name_key` compares drug names).
+Evidence = list[tuple[tuple[str, ...], ...]]
 _log = logging.getLogger(__name__)
 
 # Which point each published field belongs to. The title is composed in code from checked fields,
@@ -67,15 +75,19 @@ def week_of(moment: datetime) -> date:
     return day - timedelta(days=day.weekday())
 
 
+def _rank(week: date, catalyst: UUID) -> str:
+    return hashlib.sha256(f"sample:{week.isoformat()}:{catalyst}".encode()).hexdigest()
+
+
 def draw(details: Sequence[CatalystDetail], week: date, size: int = SAMPLE_SIZE) -> list[CatalystDetail]:
-    """Return the week's repeatable random draw from the records published before the week began."""
+    """Return the week's repeatable random draw from the records published before the week began.
+
+    Each record's place is the hash of the week's Monday and its id, so anyone can repeat the
+    draw, and a record that leaves during the week does not change which others are drawn.
+    """
     start = new_york_midnight(week)
-    population = sorted(
-        (d for d in details if d.history and min(c.learned_at for c in d.history) < start),
-        key=lambda d: str(d.id),
-    )
-    chooser = random.Random(f"sample:{week.isoformat()}")  # noqa: S311 - a repeatable draw, not security
-    return chooser.sample(population, min(size, len(population)))
+    population = [d for d in details if d.history and min(c.learned_at for c in d.history) < start]
+    return sorted(population, key=lambda d: _rank(week, d.id))[:size]
 
 
 def points_for(detail: CatalystDetail, source: SourceView) -> dict[str, str]:
@@ -96,6 +108,32 @@ def points_for(detail: CatalystDetail, source: SourceView) -> dict[str, str]:
     return {point: stated[point] for point in points}
 
 
+def evidence_for(detail: CatalystDetail, names: Mapping[UUID, Sequence[str]]) -> dict[str, Evidence]:
+    """Return what a quote must name for the date, each drug (by any of its names), and each trial.
+
+    Type, company, and disease have no rule here: their words vary too much, so they rest on
+    the checker's answer and a real sentence from the source (ADR 0041).
+    """
+    window = detail.window
+    date_ways: list[tuple[str, ...]] = [(window.raw_text,)]
+    if window.precision in (DatePrecision.DAY, DatePrecision.MONTH):
+        date_ways.append((window.start.strftime("%B"), str(window.start.year)))
+    return {
+        "date": [tuple(date_ways)],
+        "drugs": [
+            tuple((name,) for name in dict.fromkeys([d.name, *names.get(d.id, ())])) for d in detail.drugs
+        ],
+        "trials": [tuple((name,) for name in (t.nct_id, t.study_name) if name) for t in detail.trials],
+    }
+
+
+def _names(quote: str, evidence: Evidence) -> bool:
+    key = name_key(quote)
+    return all(
+        any(all(name_key(part) in key for part in way) for way in requirement) for requirement in evidence
+    )
+
+
 def checker_input(points: Mapping[str, str], published_on: date, text: str) -> str:
     """Return what the checker reads: the date, the numbered points, then the document."""
     numbered = "\n".join(f"{n}. {point}: {value}" for n, (point, value) in enumerate(points.items(), 1))
@@ -104,8 +142,19 @@ def checker_input(points: Mapping[str, str], published_on: date, text: str) -> s
     )
 
 
+def _quote_problem(quote: str, text: str, evidence: Evidence) -> str | None:
+    """Say why a "supported" answer's quote cannot show its point, or None when it can."""
+    if not quote.strip() or find_quote(text, quote) is None:
+        return "the checker's quote is not in the source"
+    if len(quote.split()) < MIN_QUOTE_WORDS:
+        return "the checker's quote is too short to show the point"
+    if not _names(quote, evidence):
+        return "the checker's quote does not name the record's value"
+    return None
+
+
 def _point_verdict(
-    point: str, stated: str, answers: list[Mapping[str, Any]], text: str
+    point: str, stated: str, answers: list[Mapping[str, Any]], text: str, evidence: Evidence
 ) -> dict[str, JsonValue]:
     verdict: dict[str, JsonValue] = {"point": point, "stated": stated, "agrees": False}
     if not answers:
@@ -118,17 +167,22 @@ def _point_verdict(
     }
     if worst["answer"] != "supported":
         return verdict | {"reason": _REASONS[str(worst["answer"])]}
-    if any(not str(a["quote"]).strip() or find_quote(text, str(a["quote"])) is None for a in answers):
-        return verdict | {"reason": "the checker's quote is not in the source"}
+    for problem in (_quote_problem(str(a["quote"]), text, evidence) for a in answers):
+        if problem is not None:
+            return verdict | {"reason": problem}
     return verdict | {"agrees": True, "reason": None}
 
 
 def judge(
-    points: Mapping[str, str], answers: Sequence[Mapping[str, Any]], text: str
+    points: Mapping[str, str],
+    answers: Sequence[Mapping[str, Any]],
+    text: str,
+    evidence: Mapping[str, Evidence] | None = None,
 ) -> list[dict[str, JsonValue]]:
     """Decide each asked point from the checker's answers, in the order asked; other answers are ignored."""
+    rules = evidence or {}
     return [
-        _point_verdict(point, stated, [a for a in answers if a["point"] == point], text)
+        _point_verdict(point, stated, [a for a in answers if a["point"] == point], text, rules.get(point, []))
         for point, stated in points.items()
     ]
 
@@ -187,10 +241,24 @@ def _documents(session: Session, claims: list[UUID]) -> dict[UUID, Any]:
     return {row.id: row for row in session.execute(query)}
 
 
+def _drug_names(session: Session, drugs: list[UUID]) -> dict[UUID, list[str]]:
+    """Return every name the reference tables give each drug, so a quote may use any of them."""
+    table = TABLES[DrugName]
+    names: dict[UUID, list[str]] = {}
+    for row in session.execute(select(table.c.drug_id, table.c.name).where(table.c.drug_id.in_(drugs))):
+        names.setdefault(row.drug_id, []).append(row.name)
+    return names
+
+
 def _check_record(
-    detail: CatalystDetail, documents: Mapping[UUID, Any], store: SnapshotStore, client: ModelClient
+    detail: CatalystDetail,
+    documents: Mapping[UUID, Any],
+    names: Mapping[UUID, Sequence[str]],
+    store: SnapshotStore,
+    client: ModelClient,
 ) -> list[dict[str, JsonValue]]:
     prompt = load_prompt(*PROMPT)
+    evidence = evidence_for(detail, names)
     verdicts: list[dict[str, JsonValue]] = []
     for source in detail.sources:
         points = points_for(detail, source)
@@ -204,7 +272,7 @@ def _check_record(
         except (ModelError, SnapshotStoreError, httpx.HTTPError) as error:
             log_event(_log, "sample_check_failed", catalyst_id=str(detail.id), error=type(error).__name__)
             raise _Failed from error
-        found = judge(points, answer.data["points"], text)
+        found = judge(points, answer.data["points"], text, evidence)
         verdicts += [v | {"claim_id": str(source.claim_id), "url": source.url} for v in found]
     return verdicts
 
@@ -242,10 +310,11 @@ def run_sample_check(
         sample = draw(published(session), week, size)
         done = _done(session, week, model)
         documents = _documents(session, [s.claim_id for d in sample for s in d.sources])
+        names = _drug_names(session, [drug.id for d in sample for drug in d.drugs])
     report = SampleReport(week, drawn=len(sample), already_checked=sum(d.id in done for d in sample))
     for detail in [d for d in sample if d.id not in done][:limit]:
         try:
-            points = _check_record(detail, documents, store, client)
+            points = _check_record(detail, documents, names, store, client)
         except SpendCapReachedError as error:
             report.stopped = str(error)
             break

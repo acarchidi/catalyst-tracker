@@ -340,6 +340,19 @@ def test_a_sample_record_with_unexpected_contents_is_left_out_of_the_alert_text(
     assert "javascript" not in body
 
 
+def test_a_record_title_cannot_mention_people_or_add_links_in_the_issue() -> None:
+    title = "exampumab @owner [click](https://example.com) *now*"
+    record = {"catalyst_id": SAMPLE_ID, "title": title, "points": ["date"], "links": []}
+    summary = CLEAN_SAMPLE | {"disagreements": [record]}
+    body = build_alerts([JobRun("sample-check", "success", summary)], None, LIMITS, RUN_URL)["issues"][0][
+        "body"
+    ]
+    assert "@owner" not in body
+    assert "[click](" not in body
+    assert "*now*" not in body
+    assert "exampumab &#64;owner \\[click\\](https://example.com) \\*now\\*" in body
+
+
 def test_a_sample_check_that_stops_or_cannot_read_a_source_alerts() -> None:
     summary = CLEAN_SAMPLE | {"documents_failed": 2, "stopped_early": "analyst has spent"}
     plan = build_alerts([JobRun("sample-check", "failure", summary)], None, LIMITS, RUN_URL)
