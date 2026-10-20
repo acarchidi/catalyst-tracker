@@ -1,4 +1,4 @@
-"""Trial sizes from the registry (ADR 0038; owner request 2026-10-20).
+"""Trial sizes from the registry (ADR 0039; owner request 2026-10-20).
 
 Adds `trial.enrollment` and `trial.enrollment_type`, both empty until the next ClinicalTrials.gov
 run fills them. The downgrade drops them: they are a copy of registry values, kept like the
@@ -31,7 +31,7 @@ def upgrade() -> None:
             "enrollment",
             sa.BigInteger(),
             nullable=True,
-            comment="Number of participants as the registry reports it (trial size).",
+            comment="Number of participants as the registry reports it (trial size); registry data, private export only (ADR 0039).",
         ),
     )
     op.add_column(

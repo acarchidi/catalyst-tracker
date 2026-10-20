@@ -273,7 +273,7 @@ def test_a_publishable_claim_becomes_a_catalyst_the_read_api_shows_with_every_so
         "date_confidence",
         "status",
         "drugs",
-        "trials",  # the sentence names RAINIER, now shown on the catalyst (ADR 0038)
+        "trials",  # the sentence names RAINIER, now shown on the catalyst (ADR 0039)
     }
     assert [(t.id, t.nct_id, t.study_name) for t in shown.trials] == [(world.trial, "NCT04929483", "RAINIER")]
     assert {change.claim_id for change in world.rows(CatalystChange)} == {claim}

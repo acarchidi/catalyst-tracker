@@ -1,25 +1,34 @@
-"""Trials on each catalyst, with their registry size, in the read API and the export (ADR 0038).
+"""Trials on each catalyst in the read API and export; registry phase and size in the export only.
+
+ADR 0039.
 
 A trial is shown only through a trial link whose claim this catalyst's change rows cite, so the
-quote that names the trial is one of the catalyst's sources. Phase and size are registry values:
-each trial points to the stored registry record they come from. A held claim lists only the
-trials its names resolved to exactly; nothing is guessed.
+quote that names the trial is one of the catalyst's sources. Phase and size have no claim or
+quote, so the read API and MCP tools never return them (spec: Provenance, rules 4 and 8). The
+private export adds them, labelled as registry data, with the registry record they come from. A
+held claim lists only the trials its names resolved to exactly; nothing is guessed.
 """
 
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
+import anyio
 import pytest
+from fastapi.testclient import TestClient
+from mcp.types import CallToolResult
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from api.conftest import FIRST, UNPUBLISHED_QUOTE, Seed
+from api.conftest import FIRST, TODAY, UNPUBLISHED_QUOTE, Seed
 from catalyst.api.access import Access
+from catalyst.api.http import create_app
+from catalyst.api.mcp_server import build_server
 from catalyst.api.read import catalyst, read_session
 from catalyst.db.tables import TABLES
-from catalyst.export import build_export
+from catalyst.export import REGISTRY_NOTE, build_export
 from catalyst.schemas import (
     CatalystTrial,
     Claim,
@@ -91,25 +100,33 @@ def trials(session_factory: sessionmaker[Session], seed: Seed) -> dict[str, UUID
     return {"rainier": rainier.id, "small": small.id, "hidden": hidden.id}
 
 
-RAINIER = {
-    "nct_id": "NCT04929483",
-    "study_name": "RAINIER",
-    "phase": "phase_3",
-    "enrollment": 1000,
-    "enrollment_type": "estimated",
-    "registry_record": {
-        "url": "https://clinicaltrials.gov/study/NCT04929483",
-        "published_at": NEWER.isoformat().replace("+00:00", "Z"),
-        "retrieved_at": NEWER.isoformat().replace("+00:00", "Z"),
+RAINIER = {"nct_id": "NCT04929483", "study_name": "RAINIER"}
+SMALL = {"nct_id": "NCT01111111", "study_name": None}
+REGISTRY_VALUES = ("phase", "enrollment", "enrollment_type")
+# In the export, each trial adds its registry values, labelled as such, beside the quoted link.
+RAINIER_EXPORTED = {
+    **RAINIER,
+    "registry": {
+        "note": REGISTRY_NOTE,
+        "phase": "phase_3",
+        "enrollment": 1000,
+        "enrollment_type": "estimated",
+        "record": {
+            "url": "https://clinicaltrials.gov/study/NCT04929483",
+            "published_at": NEWER.isoformat(),
+            "retrieved_at": NEWER.isoformat(),
+        },
     },
 }
-SMALL = {
-    "nct_id": "NCT01111111",
-    "study_name": None,
-    "phase": "phase_2",
-    "enrollment": None,
-    "enrollment_type": None,
-    "registry_record": None,
+SMALL_EXPORTED = {
+    **SMALL,
+    "registry": {
+        "note": REGISTRY_NOTE,
+        "phase": "phase_2",
+        "enrollment": None,
+        "enrollment_type": None,
+        "record": None,
+    },
 }
 
 
@@ -117,7 +134,7 @@ def _without_ids(trials: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{k: v for k, v in trial.items() if k != "id"} for trial in trials]
 
 
-def test_each_catalyst_lists_its_linked_trials_with_phase_and_size(
+def test_each_catalyst_lists_its_linked_trials_by_registry_number(
     session_factory: sessionmaker[Session], seed: Seed, trials: dict[str, UUID]
 ) -> None:
     with read_session(session_factory) as session:
@@ -185,7 +202,7 @@ def test_the_export_lists_each_published_catalysts_trials(
     del trials
     export = _export(session_factory)
     by_id = {UUID(item["id"]): item for item in export["catalysts"]}
-    assert _without_ids(by_id[seed.slipped]["trials"]) == [SMALL, RAINIER]
+    assert _without_ids(by_id[seed.slipped]["trials"]) == [SMALL_EXPORTED, RAINIER_EXPORTED]
     assert all(by_id[other]["trials"] == [] for other in (seed.pdufa, seed.adcom, seed.resolved))
 
 
@@ -226,7 +243,7 @@ def test_a_held_claim_lists_only_the_trials_its_names_resolved_to(
         )
         _match(session, seed.unpublished_claim, "the extension study", MatchStatus.UNKNOWN)
     [held] = _export(session_factory)["held"]
-    assert _without_ids(held["trials"]) == [RAINIER]
+    assert _without_ids(held["trials"]) == [RAINIER_EXPORTED]
 
 
 def test_a_held_claim_with_no_resolved_trial_lists_none(
@@ -242,3 +259,58 @@ def test_a_held_claim_with_no_resolved_trial_lists_none(
         )
     [held] = _export(session_factory)["held"]
     assert held["trials"] == []
+
+
+def _keys(node: Any) -> set[str]:
+    """Every key in a JSON document, including the property names of a JSON schema."""
+    if isinstance(node, dict):
+        pairs: dict[str, Any] = node  # type: ignore[assignment]
+        return set(pairs) | {k for value in pairs.values() for k in _keys(value)}
+    if isinstance(node, list):
+        items: list[Any] = node  # type: ignore[assignment]
+        return {k for item in items for k in _keys(item)}
+    return set()
+
+
+def _registry_named(keys: set[str]) -> set[str]:
+    return {k for k in keys if k in REGISTRY_VALUES or k.startswith("enrollment") or k == "registry"}
+
+
+def test_the_api_and_mcp_never_return_registry_phase_or_size(
+    session_factory: sessionmaker[Session], seed: Seed, trials: dict[str, UUID]
+) -> None:
+    del trials
+    app = create_app(session_factory, today=lambda: TODAY)
+    assert _registry_named(_keys(app.openapi()["components"])) == set()
+    paths = ["/v1/catalysts", f"/v1/catalysts/{seed.slipped}", "/v1/companies/EXB/catalysts"]
+    with TestClient(app) as client:
+        bodies = [client.get(path).json() for path in paths]
+    assert "RAINIER" in json.dumps(bodies[1])  # the trial itself is shown
+    for body in bodies:
+        assert _registry_named(_keys(body)) == set()
+    server = build_server(session_factory, today=lambda: TODAY)
+    for tool in anyio.run(server.list_tools):
+        assert _registry_named(_keys(tool.output_schema)) == set()
+    result = anyio.run(server.call_tool, "get_catalyst", {"catalyst_id": str(seed.slipped)})
+    assert isinstance(result, CallToolResult)
+    assert "RAINIER" in json.dumps(result.structured_content)
+    assert _registry_named(_keys(result.structured_content)) == set()
+
+
+def test_the_export_labels_registry_values_as_not_quoted(
+    session_factory: sessionmaker[Session], seed: Seed, trials: dict[str, UUID]
+) -> None:
+    del trials
+    [slipped] = [c for c in _export(session_factory)["catalysts"] if UUID(c["id"]) == seed.slipped]
+    for trial in slipped["trials"]:
+        assert trial["registry"]["note"] == REGISTRY_NOTE
+        assert "not a quoted claim" in REGISTRY_NOTE
+    # The rest of each catalyst is exactly what the read API shows.
+    with read_session(session_factory) as session:
+        shown = catalyst(session, seed.slipped, Access.PAID)
+    assert shown is not None
+    api = shown.catalyst.model_dump(mode="json")
+    assert {k: v for k, v in slipped.items() if k != "trials"} == {
+        k: v for k, v in api.items() if k != "trials"
+    }
+    assert [{k: v for k, v in t.items() if k != "registry"} for t in slipped["trials"]] == api["trials"]

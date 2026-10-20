@@ -210,7 +210,12 @@ class Trial(Entity):
     )
     phase: TrialPhase | None = Field(default=None, description="Trial phase as the registry reports it.")
     enrollment: int | None = Field(
-        default=None, ge=0, description="Number of participants as the registry reports it (trial size)."
+        default=None,
+        ge=0,
+        description=(
+            "Number of participants as the registry reports it (trial size); "
+            "registry data, private export only (ADR 0039)."
+        ),
     )
     enrollment_type: EnrollmentType | None = Field(
         default=None, description="Whether the size is the final count (actual) or the plan (estimated)."

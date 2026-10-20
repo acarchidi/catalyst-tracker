@@ -4,7 +4,7 @@ Only the publish gate writes `catalyst` and its links, so those tables hold noth
 review queue (ADR 0003). Claims are read only through `catalyst_change` rows. A catalyst is shown
 only when every value, its drug links included, matches its field's latest change, and each drug
 link cites the claim of one of the catalyst's `drugs` changes. A trial is shown only when its link
-cites a claim one of the catalyst's changes cites (ADR 0038). Review and check tables are never read.
+cites a claim one of the catalyst's changes cites (ADR 0039). Review and check tables are never read.
 """
 
 import base64
@@ -32,7 +32,6 @@ from catalyst.api.views import (
     CompanyView,
     DrugView,
     IndicationView,
-    RegistryRecordView,
     SourceView,
     TrialView,
     WindowView,
@@ -54,7 +53,6 @@ from catalyst.schemas import (
     DrugName,
     Indication,
     SourceDocument,
-    SourceTier,
     Trial,
 )
 
@@ -75,7 +73,7 @@ _TRIAL = TABLES[Trial]
 OPEN_STATUSES = (CatalystStatus.UPCOMING, CatalystStatus.SLIPPED)
 BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.DRUGS)
 DRUGS = CatalystField.DRUGS.value
-TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0038)
+TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0039)
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
 _BATCH = 1000  # catalysts per `published` read
@@ -439,39 +437,11 @@ def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
 
 
 def trial_views(session: Session, ids: list[UUID]) -> dict[UUID, TrialView]:
-    """Return each trial with its registry phase and size and the stored record they come from, by id.
-
-    The record is the newest stored registry version of the trial: the one each registry run
-    last read the phase and size from (ADR 0038).
-    """
-    rows = session.execute(select(_TRIAL).where(_TRIAL.c.id.in_(ids))).all()
-    nct_ids = [row.nct_id for row in rows]
-    records: dict[str, RegistryRecordView] = {}
-    statement = (
-        select(_DOC.c.source_key, _DOC.c.url, _DOC.c.published_at, _DOC.c.retrieved_at)
-        .where(
-            _DOC.c.source_tier == SourceTier.REGISTRY,
-            _DOC.c.source_key.startswith("ctgov:"),
-            func.split_part(_DOC.c.source_key, ":", 2).in_(nct_ids),
-        )
-        .order_by(_DOC.c.published_at, _DOC.c.retrieved_at, _DOC.c.id)
+    """Return each trial's registry number and study name, by id; registry values stay out (ADR 0039)."""
+    rows = session.execute(
+        select(_TRIAL.c.id, _TRIAL.c.nct_id, _TRIAL.c.study_name).where(_TRIAL.c.id.in_(ids))
     )
-    for doc in session.execute(statement):  # oldest first, so the newest version wins
-        records[doc.source_key.split(":")[1]] = RegistryRecordView(
-            url=doc.url, published_at=doc.published_at, retrieved_at=doc.retrieved_at
-        )
-    return {
-        row.id: TrialView(
-            id=row.id,
-            nct_id=row.nct_id,
-            study_name=row.study_name,
-            phase=row.phase,
-            enrollment=row.enrollment,
-            enrollment_type=row.enrollment_type,
-            registry_record=records.get(row.nct_id),
-        )
-        for row in rows
-    }
+    return {row.id: TrialView(id=row.id, nct_id=row.nct_id, study_name=row.study_name) for row in rows}
 
 
 def _indications(session: Session, ids: list[UUID]) -> dict[UUID, IndicationView]:

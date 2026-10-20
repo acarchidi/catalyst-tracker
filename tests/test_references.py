@@ -19,6 +19,7 @@ from sqlalchemy import Engine, func, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.collectors.documents import CollectionStats, FetchedDocument
 from catalyst.collectors.run import Collector, PilotCompany, build_clients, collect_all
 from catalyst.collectors.sources import ctgov
 from catalyst.db.repository import link_company_document, save_source_document, upsert_company
@@ -46,7 +47,7 @@ from catalyst.schemas import (
     Trial,
     TrialPhase,
 )
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import LocalSnapshotStore, Snapshot, SnapshotStore, SnapshotStoreError
 from conftest import FIXTURES, RecordedServer
 
 TODAY = date(2026, 10, 17)
@@ -406,15 +407,84 @@ def test_a_failure_recording_names_alerts_and_the_run_goes_on(
 
 
 def test_one_bad_registry_record_is_skipped_and_the_rest_are_recorded(
-    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     caplog.set_level(logging.INFO)
     good, bad = _studies()[0], _studies()[1]
     bad["protocolSection"]["identificationModule"]["acronym"] = "X" * 301
     documents = [ctgov.to_document(bad), ctgov.to_document(good)]
-    passed = list(recording_trials(session_factory, lambda: documents))
-    assert len(passed) == 2
+    collector = Collector(LocalSnapshotStore(tmp_path), session_factory, lambda: TODAY_TIME)
+    stats = collector.run("ctgov:INSM", partial(recording_trials, session_factory, lambda: documents))
+    assert stats.created == 2  # both records are still stored
     assert [t["nct_id"] for t in _rows(session_factory, Trial)] == [
         good["protocolSection"]["identificationModule"]["nctId"]
     ]
     assert any(r.getMessage() == "reference_skipped" for r in caplog.records)
+
+
+class _FailingStore:
+    """A snapshot store that cannot store anything, as when storage is down."""
+
+    def put(self, content: bytes) -> Snapshot:
+        raise SnapshotStoreError("storage unavailable")
+
+    def get(self, key: str) -> bytes:
+        raise SnapshotStoreError("storage unavailable")
+
+
+def _version(count: int, kind: str, updated: str) -> FetchedDocument:
+    """ARISE's registry record, as a version posted on `updated` with this size."""
+    study = _studies()[0]
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": count, "type": kind}
+    status = study["protocolSection"]["statusModule"]
+    status["lastUpdateSubmitDate"] = updated
+    status["lastUpdatePostDateStruct"]["date"] = updated
+    return ctgov.to_document(study)
+
+
+def _collect(
+    session_factory: sessionmaker[Session], store: SnapshotStore, documents: list[FetchedDocument]
+) -> CollectionStats:
+    collector = Collector(store, session_factory, lambda: TODAY_TIME)
+    return collector.run("ctgov:INSM", partial(recording_trials, session_factory, lambda: documents))
+
+
+def test_a_trial_changes_only_once_its_registry_record_is_stored(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """The values shown never come from a newer record than the stored one they point to (ADR 0039)."""
+    _collect(session_factory, LocalSnapshotStore(tmp_path), [_version(120, "ESTIMATED", "2026-03-02")])
+    failed = _collect(session_factory, _FailingStore(), [_version(99, "ACTUAL", "2026-09-14")])
+    assert failed.error is not None
+    rows = _rows(session_factory, Trial)
+    assert [(t["enrollment"], t["enrollment_type"]) for t in rows] == [(120, "estimated")]
+    keys = [d["source_key"] for d in _rows(session_factory, SourceDocument)]
+    assert keys == ["ctgov:NCT04677543:2026-03-02"]
+    _collect(session_factory, LocalSnapshotStore(tmp_path), [_version(99, "ACTUAL", "2026-09-14")])
+    assert [(t["enrollment"], t["enrollment_type"]) for t in _rows(session_factory, Trial)] == [
+        (99, "actual")
+    ]
+
+
+def test_a_new_trial_whose_record_cannot_be_stored_is_not_recorded(
+    session_factory: sessionmaker[Session],
+) -> None:
+    _collect(session_factory, _FailingStore(), [_version(99, "ACTUAL", "2026-09-14")])
+    assert _rows(session_factory, Trial) == []
+
+
+def test_a_registry_change_to_phase_or_size_is_logged(
+    session_factory: sessionmaker[Session], tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    store = LocalSnapshotStore(tmp_path)
+    _collect(session_factory, store, [_version(120, "ESTIMATED", "2026-03-02")])
+    _collect(session_factory, store, [_version(120, "ESTIMATED", "2026-03-02")])  # unchanged: nothing logged
+    assert not [r for r in caplog.records if r.getMessage() == "trial_registry_changed"]
+    _collect(session_factory, store, [_version(99, "ACTUAL", "2026-09-14")])
+    [changed] = [r for r in caplog.records if r.getMessage() == "trial_registry_changed"]
+    fields: dict[str, Any] = changed.__dict__["catalyst_fields"]
+    assert fields == {
+        "nct_id": "NCT04677543",
+        "changed": {"enrollment": [120, 99], "enrollment_type": ["estimated", "actual"]},
+    }

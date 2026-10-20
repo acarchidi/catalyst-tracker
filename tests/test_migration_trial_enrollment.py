@@ -1,4 +1,4 @@
-"""The trial-size migration adds two empty columns and reverses cleanly (ADR 0038)."""
+"""The trial-size migration adds two empty columns and reverses cleanly (ADR 0039)."""
 
 from collections.abc import Iterator
 
