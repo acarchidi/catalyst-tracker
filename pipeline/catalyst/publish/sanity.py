@@ -59,7 +59,7 @@ PASSED = "the new window has already passed"
 TOO_FAR = "the date would move more than 6 months"
 TIED = "a source of the same rank gives other dates for this event"
 # Holds a person's approval may lift: each asks only yes or no about the claim's own dates
-# (ADR 0040). The others need a choice the writer would otherwise guess (which catalyst, which
+# (ADR 0042). The others need a choice the writer would otherwise guess (which catalyst, which
 # drug role, which of two tied sources), so an approval leaves them held.
 PERSON_MAY_APPROVE: frozenset[str] = frozenset({NOT_OVERLAPPING, TOO_FAR})
 

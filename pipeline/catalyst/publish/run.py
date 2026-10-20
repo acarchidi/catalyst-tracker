@@ -8,7 +8,7 @@ decision here is not yet final.
 `window_not_past` does not apply to a claim about a catalyst that is already published: its date
 passing is for the outcome tracker, not a review item.
 
-A person's approval from the review queue excuses the holds they saw (`gate.approve`; ADR 0040).
+A person's approval from the review queue excuses the holds they saw (`gate.approve`; ADR 0042).
 """
 
 from __future__ import annotations

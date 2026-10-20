@@ -207,7 +207,7 @@ class GateDecision(StrEnum):
 
 
 class ReviewAction(StrEnum):
-    """What a person decided about a held claim in the review queue (ADR 0040)."""
+    """What a person decided about a held claim in the review queue (ADR 0042)."""
 
     APPROVE = "approve"
     REJECT = "reject"

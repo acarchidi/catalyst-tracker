@@ -1,4 +1,4 @@
-"""A person's decisions on held claims, and how an approval reaches live data (ADR 0040, part 1).
+"""A person's decisions on held claims, and how an approval reaches live data (ADR 0042, part 1).
 
 Spec, Agent architecture: the review queue's approvals go through the publish gate, and only
 the plain-code writer writes live data. So recording a decision writes no catalyst; an approval

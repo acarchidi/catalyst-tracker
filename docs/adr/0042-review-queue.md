@@ -1,4 +1,4 @@
-# 0040 — The review queue: GitHub pages for the owner, approvals through the publish gate
+# 0042 — The review queue: GitHub pages for the owner, approvals through the publish gate
 
 - **Status:** accepted
 - **Date:** 2026-10-20

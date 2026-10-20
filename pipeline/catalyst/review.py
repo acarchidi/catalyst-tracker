@@ -1,4 +1,4 @@
-"""A person's decisions on the claims the publish gate holds (spec: Human review; ADR 0040, part 1).
+"""A person's decisions on the claims the publish gate holds (spec: Human review; ADR 0042, part 1).
 
 Recording a decision writes only a `review_decision` row, never live data. An approval reaches
 live data the one way any claim does (spec: Agent architecture): the decision job applies it

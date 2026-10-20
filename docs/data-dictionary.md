@@ -348,7 +348,7 @@ Rules:
 
 ## `review_decision`
 
-A person's decision on one claim the publish gate holds (spec: Human review; ADR 0040). Append-only: a later decision is a new row, and the claim's latest row counts. An approval lets the gate excuse only the reasons it lists; the plain-code writer still writes the catalyst. Only the review command writes this table.
+A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042). Append-only: a later decision is a new row, and the claim's latest row counts. An approval lets the gate excuse only the reasons it lists; the plain-code writer still writes the catalyst. Only the review command writes this table.
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |

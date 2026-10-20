@@ -1,4 +1,4 @@
-"""The review-decision migration adds a closed table and never drops a person's decisions (ADR 0040)."""
+"""The review-decision migration adds a closed table and never drops a person's decisions (ADR 0042)."""
 
 from collections.abc import Iterator
 

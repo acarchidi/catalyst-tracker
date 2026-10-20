@@ -28,7 +28,7 @@ review queue see what the writer saw, including every reason it held a claim.
 The title it writes is composed in code from checked fields (`catalyst.publish.title`), never the
 extractor's own words; its change row cites the claim whose checked fields it names (part 5d).
 
-A claim a person approved in the review queue (ADR 0040) is checked again like any other; the
+A claim a person approved in the review queue (ADR 0042) is checked again like any other; the
 approval excuses only the holds the person saw (`gate.approve`), never the quote match, and of
 the writer's own holds only a date move or a window that does not overlap (`PERSON_MAY_APPROVE`).
 

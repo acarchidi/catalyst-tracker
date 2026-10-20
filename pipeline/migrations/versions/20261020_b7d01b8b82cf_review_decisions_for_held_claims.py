@@ -1,4 +1,4 @@
-"""Review decisions: a person's approval or rejection of a held claim (ADR 0040, part 1).
+"""Review decisions: a person's approval or rejection of a held claim (ADR 0042, part 1).
 
 Adds `review_decision`, append-only, with row-level security on (ADR 0011). Unlike the gate's
 own rows, these are a person's decisions and cannot be rebuilt, so the downgrade refuses to run
@@ -60,7 +60,7 @@ def upgrade() -> None:
             ["claim_id"], ["claim.id"], name=op.f("fk_review_decision_claim_id_claim"), ondelete="RESTRICT"
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_review_decision")),
-        comment="A person's decision on one claim the publish gate holds (spec: Human review; ADR 0040).",
+        comment="A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042).",
     )
     # ### end Alembic commands ###
     op.execute('ALTER TABLE "review_decision" ENABLE ROW LEVEL SECURITY')

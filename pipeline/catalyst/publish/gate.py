@@ -214,7 +214,7 @@ def decide(claim: Claim, checks: Iterable[ClaimCheck], quote_ok: CheckResult) ->
     return Decision(GateDecision.REVIEW, tuple(holds)) if holds else Decision(GateDecision.PUBLISH)
 
 
-# Holds no person's approval excuses (ADR 0040): no value publishes without its verbatim quote
+# Holds no person's approval excuses (ADR 0042): no value publishes without its verbatim quote
 # in the stored copy (spec: Provenance), only the extractor's catalyst claims become catalysts,
 # and a new catalyst needs a window that has not passed.
 PERSON_MAY_NOT_EXCUSE: frozenset[str] = frozenset(

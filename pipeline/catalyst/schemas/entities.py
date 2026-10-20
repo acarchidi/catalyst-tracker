@@ -465,7 +465,7 @@ class ClaimDecision(Entity):
 
 
 class ReviewDecision(Entity):
-    """A person's decision on one claim the publish gate holds (spec: Human review; ADR 0040).
+    """A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042).
 
     Append-only: a later decision is a new row, and the claim's latest row counts. An approval
     lets the gate excuse only the reasons it lists; the plain-code writer still writes the
