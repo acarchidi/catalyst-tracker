@@ -30,7 +30,8 @@ extractor's own words; its change row cites the claim whose checked fields it na
 
 A claim a person approved in the review queue (ADR 0042) is checked again like any other; the
 approval excuses only the holds the person saw (`gate.approve`), never the quote match, and of
-the writer's own holds only a date move or a window that does not overlap (`PERSON_MAY_APPROVE`).
+the writer's own holds only a date move or a window that does not overlap, and only when no
+other date reason fails with it (`person_may_approve`).
 
 Safe to re-run: a claim a change row already cites is done, and the job holds a database lock
 while it runs, so two runs never both create one catalyst. Everything is written in one
@@ -73,12 +74,12 @@ from catalyst.publish.live import (
 )
 from catalyst.publish.sanity import (
     PASSED,
-    PERSON_MAY_APPROVE,
     Candidate,
     drug_names,
     drug_role,
     load_ties,
     others,
+    person_may_approve,
     safe_to_write,
     same_dates,
 )
@@ -283,7 +284,7 @@ def _recheck(
                 checks = excuse_passed_window(claim.id, checks, at)
             decision = gate.decide(claim, checks, gate.match_quote(claim, copy))
             if claim.id in run.approved:
-                decision = gate.approve(decision, run.approved[claim.id], PERSON_MAY_APPROVE)
+                decision = gate.approve(decision, run.approved[claim.id], person_may_approve)
             if decision.decision is not GateDecision.PUBLISH:
                 report.held_on_recheck += 1
                 report.reasons.update(hold.label for hold in decision.holds)
@@ -484,10 +485,14 @@ def _written(report: PublishReport) -> int:
 
 
 def _approved(run: _Run, item: _Ready, result: CheckResult) -> bool:
-    """Say whether a person approved this writer hold: one that needs only a yes, word for word."""
+    """Say whether a person approved this writer hold word for word, and every part needs only a yes.
+
+    The reason lists every failing date check and both windows, so an approval of an older text,
+    or of one reason among others, lifts nothing (Opus review of PR #84, B1 and B2).
+    """
     seen = run.approved.get(item.claim.id, frozenset())
     reason = result.reason or ""
-    return reason in PERSON_MAY_APPROVE and f"{gate.WRITER_CHECK}: {reason}" in seen
+    return person_may_approve(reason) and f"{gate.WRITER_CHECK}: {reason}" in seen
 
 
 def _ended(item: _Ready, today: date) -> bool:

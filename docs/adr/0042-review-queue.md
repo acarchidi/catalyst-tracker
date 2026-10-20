@@ -47,25 +47,32 @@ Facts that matter:
      - the claim is not held;
      - the reasons the person saw are not the claim's stored reasons now (the claim was decided again since the page was made);
      - it does not say who made it.
+   - The claim's stored decision is locked while the decision is checked and recorded, so the decision job cannot change the reasons in between.
    - Row-level security is on, with no policy (ADR 0011).
    - The gate's own rows can be rebuilt, but a person's decisions cannot. So the migration's downgrade refuses to run while the table holds any row.
 3. **An approval goes through the gate.**
    - Recording it writes no live data.
    - The decision job (`catalyst decide-claims`) and the writer (`catalyst publish-claims`) both apply it with `gate.approve`. That excuses only holds whose reasons the person saw, word for word. A new reason since then still holds the claim.
    - The writer then checks the claim again and writes it as it writes any claim. Every change row cites the claim, and so its stored source and verbatim quote. The writer's run report counts these claims as `published_by_approval`.
-   - No approval excuses:
+   - No approval excuses (`PERSON_MAY_NOT_EXCUSE`):
      - the quote match against the stored copy (spec: Provenance);
-     - a claim that is not the extractor's catalyst claim;
+     - a claim that is not the extractor's catalyst claim, or comes from an older extractor prompt;
      - a missing window;
-     - a passed window on a new catalyst (`PERSON_MAY_NOT_EXCUSE`).
-   - Of the writer's own holds, an approval lifts only two (`PERSON_MAY_APPROVE`): a date move of more than 6 months, and a window that does not overlap the published one. Each needs only a yes or no about the claim's own dates.
+     - a passed window on a new catalyst;
+     - a check that has not run, since nobody can vouch for it.
+   - Of the writer's own holds, an approval lifts only two (`PERSON_MAY_APPROVE`): a date move of more than 6 months, and a window that does not overlap the published one. Each needs only a yes or no about the claim's own dates. Two safeguards come from the Opus review of PR #84:
+     - **Every date reason is listed.** Against a published catalyst, the writer's check gives every reason that fails, in order, joined by "; ". So lifting one never skips another. An approval lifts the hold only when every part can be approved (`person_may_approve`). A passed window never can. Example: a slip from "first half of 2027" to "fourth quarter of 2026" is approved, but the writer runs on 2027-01-05. The reason now also says the new window has passed, so the claim stays held and comes back to the queue.
+     - **Date reasons name both windows**, as in "(from 2027-01-01..2027-06-30 to 2026-10-01..2026-12-31)". If the published window changes after the approval, the text no longer matches what the person saw, and the approval lifts nothing.
    - The writer's other holds need a choice: which of several catalysts, whether the drug is tested alone or in combination, or which of two equal sources. An approval leaves them held, because the writer must never guess. Corrections (decision 5) will handle them.
    - An approval does not override the source ranking (spec: "Which claim wins"). An approved claim that a better source outranks writes nothing.
 4. **A rejection never publishes.** The gate excuses nothing for a rejected claim. It stays held with its reasons, and the queue page leaves it out. Nothing is deleted.
 5. **Built in parts:**
    - **Part 1 (this):** the record and the approval path, tested first.
    - **Part 2:** the queue page, built from the decrypted export with no database access, and the decision command (`catalyst review-decide`), plus corrections. The export's held items gain what the page needs: the quote's paragraph and the claim's latest review decision, so rejected claims leave the page. A correction stores the person's values as a new claim by the reviewer, on the same verbatim quote in the same stored copy, so every published value still has a claim and a quote. Part 2 widens the gate's rule on which claims may publish for that, under its own review.
-   - **Part 3:** the "Review decision" GitHub Actions job. This is an owner-path pull request of its own (ADR 0036). The held claims reach the page through the encrypted export's own job, so no second job is needed.
+   - **Part 3:** the "Review decision" GitHub Actions job. This is an owner-path pull request of its own (ADR 0036). The held claims reach the page through the encrypted export's own job, so no second job is needed. The job:
+     - takes the reviewer from GitHub's record of who started the run (`github.actor`), never from a job input;
+     - refuses anyone but `acarchidi`, both in the job's settings and in the code it runs;
+     - works out the reasons the person saw from the short code: the code must match the claim's stored reasons now, and those reasons are what is recorded.
 6. **The gold set.** Recorded decisions are kept so that the "Gold set of 200 verified catalysts" item can add them. This item does not change the gold set.
 
 ## Alternatives

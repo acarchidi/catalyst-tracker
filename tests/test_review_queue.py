@@ -6,7 +6,7 @@ excuses only the reasons the person saw, never the quote match; a rejection neve
 Each test stores real-shaped rows with the writer tests' `World` and runs the real jobs.
 """
 
-from datetime import datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,10 +18,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.db.tables import TABLES
 from catalyst.publish import gate
 from catalyst.publish.run import decide_claims
-from catalyst.publish.sanity import ROLE_UNCLEAR, check_safe_to_write
+from catalyst.publish.sanity import PASSED, ROLE_UNCLEAR, TIED, check_safe_to_write, person_may_approve
 from catalyst.publish.write import publish_claims
 from catalyst.review import ReviewError, record_decision
 from catalyst.schemas import (
+    Catalyst,
     CatalystChange,
     CheckOutcome,
     ClaimCheck,
@@ -44,6 +45,11 @@ def world(session_factory: sessionmaker[Session], tmp_path: Path) -> World:
 
 def _publish(world: World, at: datetime = NOW) -> dict[str, Any]:
     return publish_claims(world.factory, world.store, lambda: at, verifier_model=VERIFIER_MODEL).summary()
+
+
+def _check(world: World, claim: UUID, name: str) -> tuple[str, str | None]:
+    (row,) = [r for r in world.rows(ClaimCheck) if r.claim_id == claim and r.check_name == name]
+    return row.outcome, row.reason
 
 
 def _decide(world: World) -> dict[UUID, tuple[str, list[str]]]:
@@ -145,7 +151,7 @@ def test_the_gate_never_lets_a_person_excuse_the_quote_or_a_passed_window() -> N
     )
     seen = frozenset(hold.reason for hold in (*holds, seen_hold))
     decision = gate.Decision(GateDecision.REVIEW, (*holds, seen_hold, unseen_hold))
-    approved = gate.approve(decision, seen, frozenset())
+    approved = gate.approve(decision, seen, _no_writer_hold)
     assert approved.decision is GateDecision.REVIEW
     assert approved.holds == (*holds, unseen_hold)  # only the seen, excusable hold is lifted
     assert {
@@ -153,14 +159,27 @@ def test_the_gate_never_lets_a_person_excuse_the_quote_or_a_passed_window() -> N
         "window_not_past",
         "has_window",
         "extractor_claim",
+        "extractor_prompt",
     } <= gate.PERSON_MAY_NOT_EXCUSE
-    assert gate.approve(gate.Decision(GateDecision.PUBLISH), frozenset(), frozenset()).decision is (
+    assert gate.approve(gate.Decision(GateDecision.PUBLISH), frozenset(), _no_writer_hold).decision is (
         GateDecision.PUBLISH
     )
     writer = gate.Hold(gate.WRITER_CHECK, f"{gate.WRITER_CHECK}: a guess")
     only_writer = gate.Decision(GateDecision.REVIEW, (writer,))
-    assert gate.approve(only_writer, frozenset({writer.reason}), frozenset()).holds == (writer,)
-    assert gate.approve(only_writer, frozenset({writer.reason}), frozenset({"a guess"})).holds == ()
+    assert gate.approve(only_writer, frozenset({writer.reason}), _no_writer_hold).holds == (writer,)
+    lifted = gate.approve(only_writer, frozenset({writer.reason}), lambda reason: reason == "a guess")
+    assert lifted.holds == ()
+
+
+def test_a_check_that_has_not_run_is_never_lifted_even_when_seen() -> None:
+    """Opus review of PR #84: a person cannot vouch for a check nobody ran."""
+    missing = gate.Hold("second_reading_agrees", "check second_reading_agrees has not run", missing=True)
+    decision = gate.Decision(GateDecision.REVIEW, (missing,))
+    assert gate.approve(decision, frozenset({missing.reason}), _no_writer_hold).holds == (missing,)
+
+
+def _no_writer_hold(_reason: str) -> bool:
+    return False
 
 
 def test_an_approval_excuses_a_date_move_the_writer_holds_for_a_person(world: World) -> None:
@@ -170,7 +189,11 @@ def test_an_approval_excuses_a_date_move_the_writer_holds_for_a_person(world: Wo
     moved = world.claim("late 2027 or early 2028", published=OCT_16)
     assert _publish(world)["held_by_writer"] == 1
     decision, reasons = _decide(world)[moved]
-    assert (decision, reasons) == ("review", ["safe_to_write: the date would move more than 6 months"])
+    moved_reason = (
+        "safe_to_write: the date would move more than 6 months "
+        "(from 2027-10-01..2027-10-31 to 2027-07-01..2028-06-30)"
+    )
+    assert (decision, reasons) == ("review", [moved_reason])
     _record(world, moved, ReviewAction.APPROVE, reasons)
     _decide(world)
     summary = _publish(world)
@@ -178,6 +201,71 @@ def test_an_approval_excuses_a_date_move_the_writer_holds_for_a_person(world: Wo
     moves = [c for c in world.rows(CatalystChange) if c.old_value is not None]
     assert moves
     assert {c.claim_id for c in moves} == {moved}
+
+
+def test_b1_an_approved_slip_whose_window_has_since_passed_is_never_written(world: World) -> None:
+    """Opus review of PR #84, B1: lifting "does not overlap" must not skip the passed-window check."""
+    world.claim("first half of 2027")
+    _publish(world)
+    slip = world.claim("fourth quarter of 2026", published=OCT_16, decision=GateDecision.REVIEW)
+    check_safe_to_write(world.factory, lambda: NOW)
+    _, reasons = _decide(world)[slip]
+    assert reasons == [
+        "safe_to_write: the window does not overlap the published one "
+        "(from 2027-01-01..2027-06-30 to 2026-10-01..2026-12-31)"
+    ]
+    _record(world, slip, ReviewAction.APPROVE, reasons)
+    later = datetime(2027, 1, 5, 17, tzinfo=UTC)
+    decide_claims(world.factory, world.store, lambda: later)
+    summary = _publish(world, later)
+    assert (summary["catalysts_updated"], summary["published_by_approval"]) == (0, 0)
+    (row,) = world.rows(Catalyst)
+    assert (row.window_start.isoformat(), row.window_end.isoformat()) == ("2027-01-01", "2027-06-30")
+    stored = (
+        "the window does not overlap the published one; the new window has already passed "
+        "(from 2027-01-01..2027-06-30 to 2026-10-01..2026-12-31)"
+    )
+    assert _check(world, slip, "safe_to_write") == ("fail", stored)
+    decide_claims(world.factory, world.store, lambda: later)
+    (decision,) = [d for d in world.rows(ClaimDecision) if d.claim_id == slip]
+    assert (decision.decision, decision.reasons) == (
+        "review",
+        [f"safe_to_write: {stored}"],
+    )  # back in the queue
+
+
+def test_b1_every_failing_date_reason_is_listed_and_all_must_be_approvable() -> None:
+    assert person_may_approve("the window does not overlap the published one (from a to b)")
+    assert person_may_approve(
+        "the window does not overlap the published one; the date would move more than 6 months (from a to b)"
+    )
+    assert not person_may_approve(f"the window does not overlap the published one; {PASSED} (from a to b)")
+    assert not person_may_approve(f"{PASSED} (from a to b)")
+    assert not person_may_approve(TIED)
+    assert not person_may_approve(ROLE_UNCLEAR)
+
+
+def test_b2_an_approval_does_not_lift_a_move_from_a_published_window_that_changed_since(world: World) -> None:
+    """Opus review of PR #84, B2: the reason names both windows, so a new published window voids it."""
+    first = world.claim("October 2027")
+    _publish(world)
+    moved = world.claim("late 2027 or early 2028", published=OCT_16)
+    _publish(world)
+    _, reasons = _decide(world)[moved]
+    _record(world, moved, ReviewAction.APPROVE, reasons)
+    catalyst = TABLES[Catalyst]
+    with world.factory.begin() as session:  # the published window changes before the writer runs
+        session.execute(
+            update(catalyst).values(window_start=date(2027, 11, 1), window_end=date(2027, 11, 30))
+        )
+    _decide(world)
+    summary = _publish(world)
+    assert (summary["catalysts_updated"], summary["published_by_approval"]) == (0, 0)
+    assert _check(world, moved, "safe_to_write") == (
+        "fail",
+        "the date would move more than 6 months (from 2027-11-01..2027-11-30 to 2027-07-01..2028-06-30)",
+    )
+    assert {c.claim_id for c in world.rows(CatalystChange)} == {first}
 
 
 def test_an_approval_does_not_let_the_writer_guess_a_drug_role(world: World) -> None:

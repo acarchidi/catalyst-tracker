@@ -31,7 +31,7 @@ from catalyst.extract.agent import ROLE
 from catalyst.logs import log_event
 from catalyst.publish.gate import UnreadableCopy, approve, decide, match_quote, read_copy
 from catalyst.publish.live import claim_key, excuse_passed_window, load_live
-from catalyst.publish.sanity import PERSON_MAY_APPROVE
+from catalyst.publish.sanity import person_may_approve
 from catalyst.review import approvals
 from catalyst.schemas import Claim, ClaimCheck, ClaimDecision, GateDecision, SourceDocument
 from catalyst.snapshots import SnapshotStore
@@ -104,7 +104,7 @@ def decide_claims(
                 stored_checks = excuse_passed_window(claim.id, stored_checks, at)
             decision = decide(claim, stored_checks, match_quote(claim, copy))
             if claim.id in approved:
-                decision = approve(decision, approved[claim.id], PERSON_MAY_APPROVE)
+                decision = approve(decision, approved[claim.id], person_may_approve)
             report.claims += 1
             if decision.decision is GateDecision.PUBLISH:
                 report.to_publish += 1

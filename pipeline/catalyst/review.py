@@ -45,8 +45,11 @@ def record_decision(
         raise ReviewError("a decision must say who made it")
     decision = TABLES[ClaimDecision]
     with session_factory.begin() as session:
+        # Locked, so the decision job cannot change the reasons between this check and the insert.
         stored = session.execute(
-            select(decision.c.decision, decision.c.reasons).where(decision.c.claim_id == claim_id)
+            select(decision.c.decision, decision.c.reasons)
+            .where(decision.c.claim_id == claim_id)
+            .with_for_update()
         ).one_or_none()
         if stored is None or stored.decision != GateDecision.REVIEW:
             raise ReviewError(f"claim {claim_id} is not waiting for review")
