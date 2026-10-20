@@ -56,6 +56,7 @@ def _detail() -> CatalystDetail:
         company=CompanyView(id=uuid4(), name="Example Bio", cik=1, ticker="EXB"),
         indication=None,
         drugs=[],
+        trials=[],
         window=WindowView(
             start=date(2026, 10, 1), end=date(2026, 12, 31), precision=DatePrecision.QUARTER, raw_text="4Q26"
         ),

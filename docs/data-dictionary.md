@@ -182,10 +182,13 @@ A clinical trial, identified by its ClinicalTrials.gov number.
 | `eu_ct_number` | text, up to 17 characters | no | EU trial number (CTIS or EudraCT). |
 | `study_name` | text, up to 300 characters | no | The company's name for the study, for example RAINIER. |
 | `phase` | one of: `early_phase_1`, `phase_1`, `phase_1_2`, `phase_2`, `phase_2_3`, `phase_3`, `phase_4`, `not_applicable` | no | Trial phase as the registry reports it. |
+| `enrollment` | whole number | no | Number of participants as the registry reports it (trial size); registry data, private export only (ADR 0039). |
+| `enrollment_type` | one of: `actual`, `estimated` | no | Whether the size is the final count (actual) or the plan (estimated). |
 
 Rules:
 
 - Unique: `nct_id`
+- Database check `enrollment_not_negative`: `enrollment >= 0`
 
 ## `catalyst`
 

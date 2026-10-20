@@ -11,12 +11,15 @@ from datetime import UTC, date, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, insert, select
+from pydantic import ValidationError
+from sqlalchemy import Engine, func, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.collectors.documents import CollectionStats, FetchedDocument
 from catalyst.collectors.run import Collector, PilotCompany, build_clients, collect_all
 from catalyst.collectors.sources import ctgov
 from catalyst.db.repository import link_company_document, save_source_document, upsert_company
@@ -38,12 +41,13 @@ from catalyst.schemas import (
     Drug,
     DrugName,
     DrugNameKind,
+    EnrollmentType,
     SourceDocument,
     SourceTier,
     Trial,
     TrialPhase,
 )
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import LocalSnapshotStore, Snapshot, SnapshotStore, SnapshotStoreError
 from conftest import FIXTURES, RecordedServer
 
 TODAY = date(2026, 10, 17)
@@ -172,6 +176,43 @@ def test_registry_phases_map_to_ours_or_to_nothing(phases: list[str], expected: 
     assert trial_from_study(study).phase is expected
 
 
+def test_a_registry_record_gives_the_trial_size_and_whether_it_is_final() -> None:
+    trials = {t.nct_id: t for t in map(trial_from_study, _studies())}
+    arise = trials["NCT04677543"]
+    assert (arise.enrollment, arise.enrollment_type) == (99, EnrollmentType.ACTUAL)
+    # On the second page, the registry gives NCT00351221's count without saying actual or estimated.
+    page = json.loads((FIXTURES / "ctgov-insmed" / "01_clinicaltrials.gov_api_v2_studies").read_text())
+    untyped = {t.nct_id: t for t in map(trial_from_study, page["studies"])}["NCT00351221"]
+    assert (untyped.enrollment, untyped.enrollment_type) == (24, None)
+
+
+@pytest.mark.parametrize(
+    ("enrollment_info", "expected"),
+    [
+        ({"count": 300, "type": "ESTIMATED"}, (300, EnrollmentType.ESTIMATED)),
+        ({"count": 0, "type": "ACTUAL"}, (0, EnrollmentType.ACTUAL)),
+        ({"type": "ESTIMATED"}, (None, None)),  # no count: nothing to say how sure it is about
+        (None, (None, None)),
+        ({"count": 12, "type": "SOMETHING_NEW"}, (12, None)),
+    ],
+)
+def test_registry_trial_sizes_map_to_ours_or_to_nothing(
+    enrollment_info: dict[str, Any] | None, expected: tuple[int | None, EnrollmentType | None]
+) -> None:
+    study = _studies()[0]
+    design = study["protocolSection"]["designModule"]
+    design.pop("enrollmentInfo")
+    if enrollment_info is not None:
+        design["enrollmentInfo"] = enrollment_info
+    trial = trial_from_study(study)
+    assert (trial.enrollment, trial.enrollment_type) == expected
+
+
+def test_a_negative_trial_size_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        Trial(nct_id="NCT04677543", enrollment=-1)
+
+
 def test_a_trial_is_stored_once_and_follows_registry_updates(session_factory: sessionmaker[Session]) -> None:
     study = _studies()[0]
     with session_factory.begin() as session:
@@ -182,6 +223,30 @@ def test_a_trial_is_stored_once_and_follows_registry_updates(session_factory: se
     assert [(t["nct_id"], t["study_name"]) for t in _rows(session_factory, Trial)] == [
         ("NCT04677543", "ARISE-2")
     ]
+
+
+def test_a_changed_trial_size_replaces_the_old_one_without_a_second_row(
+    session_factory: sessionmaker[Session],
+) -> None:
+    study = _studies()[0]
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": 120, "type": "ESTIMATED"}
+    with session_factory.begin() as session:
+        record_trial(session, trial_from_study(study))
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": 99, "type": "ACTUAL"}
+    for _ in range(2):  # re-collecting the same record changes nothing
+        with session_factory.begin() as session:
+            record_trial(session, trial_from_study(study))
+    assert [(t["nct_id"], t["enrollment"], t["enrollment_type"]) for t in _rows(session_factory, Trial)] == [
+        ("NCT04677543", 99, "actual")
+    ]
+
+
+def test_the_database_refuses_a_negative_trial_size(engine: Engine) -> None:
+    with (
+        pytest.raises(IntegrityError, match="ck_trial_enrollment_not_negative"),
+        engine.begin() as connection,
+    ):
+        connection.execute(insert(TABLES[Trial]).values(id=uuid4(), nct_id="NCT04677543", enrollment=-1))
 
 
 def test_trials_are_recorded_as_registry_records_are_collected(
@@ -199,6 +264,9 @@ def test_trials_are_recorded_as_registry_records_are_collected(
     )
     with session_factory() as session:
         assert session.execute(select(func.count()).select_from(TABLES[Trial])).scalar_one() == 9
+        sizes = select(TABLES[Trial].c.enrollment, TABLES[Trial].c.enrollment_type)
+        encore = sizes.where(TABLES[Trial].c.nct_id == "NCT04677569")
+        assert session.execute(encore).one() == (425, "actual")
         references = load_reference_data(session)
     arise = references.resolve_trial("ARISE", company_id=insmed)
     assert arise.status is Status.RESOLVED
@@ -339,15 +407,84 @@ def test_a_failure_recording_names_alerts_and_the_run_goes_on(
 
 
 def test_one_bad_registry_record_is_skipped_and_the_rest_are_recorded(
-    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture
+    session_factory: sessionmaker[Session], caplog: pytest.LogCaptureFixture, tmp_path: Path
 ) -> None:
     caplog.set_level(logging.INFO)
     good, bad = _studies()[0], _studies()[1]
     bad["protocolSection"]["identificationModule"]["acronym"] = "X" * 301
     documents = [ctgov.to_document(bad), ctgov.to_document(good)]
-    passed = list(recording_trials(session_factory, lambda: documents))
-    assert len(passed) == 2
+    collector = Collector(LocalSnapshotStore(tmp_path), session_factory, lambda: TODAY_TIME)
+    stats = collector.run("ctgov:INSM", partial(recording_trials, session_factory, lambda: documents))
+    assert stats.created == 2  # both records are still stored
     assert [t["nct_id"] for t in _rows(session_factory, Trial)] == [
         good["protocolSection"]["identificationModule"]["nctId"]
     ]
     assert any(r.getMessage() == "reference_skipped" for r in caplog.records)
+
+
+class _FailingStore:
+    """A snapshot store that cannot store anything, as when storage is down."""
+
+    def put(self, content: bytes) -> Snapshot:
+        raise SnapshotStoreError("storage unavailable")
+
+    def get(self, key: str) -> bytes:
+        raise SnapshotStoreError("storage unavailable")
+
+
+def _version(count: int, kind: str, updated: str) -> FetchedDocument:
+    """ARISE's registry record, as a version posted on `updated` with this size."""
+    study = _studies()[0]
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": count, "type": kind}
+    status = study["protocolSection"]["statusModule"]
+    status["lastUpdateSubmitDate"] = updated
+    status["lastUpdatePostDateStruct"]["date"] = updated
+    return ctgov.to_document(study)
+
+
+def _collect(
+    session_factory: sessionmaker[Session], store: SnapshotStore, documents: list[FetchedDocument]
+) -> CollectionStats:
+    collector = Collector(store, session_factory, lambda: TODAY_TIME)
+    return collector.run("ctgov:INSM", partial(recording_trials, session_factory, lambda: documents))
+
+
+def test_a_trial_changes_only_once_its_registry_record_is_stored(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """The values shown never come from a newer record than the stored one they point to (ADR 0039)."""
+    _collect(session_factory, LocalSnapshotStore(tmp_path), [_version(120, "ESTIMATED", "2026-03-02")])
+    failed = _collect(session_factory, _FailingStore(), [_version(99, "ACTUAL", "2026-09-14")])
+    assert failed.error is not None
+    rows = _rows(session_factory, Trial)
+    assert [(t["enrollment"], t["enrollment_type"]) for t in rows] == [(120, "estimated")]
+    keys = [d["source_key"] for d in _rows(session_factory, SourceDocument)]
+    assert keys == ["ctgov:NCT04677543:2026-03-02"]
+    _collect(session_factory, LocalSnapshotStore(tmp_path), [_version(99, "ACTUAL", "2026-09-14")])
+    assert [(t["enrollment"], t["enrollment_type"]) for t in _rows(session_factory, Trial)] == [
+        (99, "actual")
+    ]
+
+
+def test_a_new_trial_whose_record_cannot_be_stored_is_not_recorded(
+    session_factory: sessionmaker[Session],
+) -> None:
+    _collect(session_factory, _FailingStore(), [_version(99, "ACTUAL", "2026-09-14")])
+    assert _rows(session_factory, Trial) == []
+
+
+def test_a_registry_change_to_phase_or_size_is_logged(
+    session_factory: sessionmaker[Session], tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.INFO)
+    store = LocalSnapshotStore(tmp_path)
+    _collect(session_factory, store, [_version(120, "ESTIMATED", "2026-03-02")])
+    _collect(session_factory, store, [_version(120, "ESTIMATED", "2026-03-02")])  # unchanged: nothing logged
+    assert not [r for r in caplog.records if r.getMessage() == "trial_registry_changed"]
+    _collect(session_factory, store, [_version(99, "ACTUAL", "2026-09-14")])
+    [changed] = [r for r in caplog.records if r.getMessage() == "trial_registry_changed"]
+    fields: dict[str, Any] = changed.__dict__["catalyst_fields"]
+    assert fields == {
+        "nct_id": "NCT04677543",
+        "changed": {"enrollment": [120, 99], "enrollment_type": ["estimated", "actual"]},
+    }

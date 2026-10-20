@@ -22,6 +22,7 @@ from catalyst.schemas.enums import (
     DocumentMatch,
     DrugNameKind,
     DrugRole,
+    EnrollmentType,
     GateDecision,
     LineOfTherapy,
     MatchedEntity,
@@ -201,6 +202,7 @@ class Trial(Entity):
 
     __tablename__ = "trial"
     __unique__ = (("nct_id",),)
+    __checks__: ClassVar[dict[str, str]] = {"enrollment_not_negative": "enrollment >= 0"}
 
     nct_id: NctId = Field(description="ClinicalTrials.gov identifier, for example NCT04567890.")
     eu_ct_number: EuCtNumber | None = Field(default=None, description="EU trial number (CTIS or EudraCT).")
@@ -208,6 +210,17 @@ class Trial(Entity):
         default=None, description="The company's name for the study, for example RAINIER."
     )
     phase: TrialPhase | None = Field(default=None, description="Trial phase as the registry reports it.")
+    enrollment: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Number of participants as the registry reports it (trial size); "
+            "registry data, private export only (ADR 0039)."
+        ),
+    )
+    enrollment_type: EnrollmentType | None = Field(
+        default=None, description="Whether the size is the final count (actual) or the plan (estimated)."
+    )
 
 
 class Catalyst(Entity):

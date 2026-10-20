@@ -1,9 +1,10 @@
 """Fill the reference tables the entity resolver reads (ADR 0015, part 3).
 
 Company names and tickers come from the SEC company record each collection run already
-fetches. Trials, their study names, and their phases come from each ClinicalTrials.gov record as
-it is collected. Registry intervention lists are not imported as drugs: they mix in comparator
-drugs, placebos, and short forms such as "ETH", which would match the wrong company's drug.
+fetches. Trials, their study names, phases, and sizes come from each ClinicalTrials.gov record as
+it is collected (sizes: ADR 0039). Registry intervention lists are not imported as drugs: they
+mix in comparator drugs, placebos, and short forms such as "ETH", which would match the wrong
+company's drug.
 Every write is safe to repeat.
 """
 
@@ -37,6 +38,7 @@ from catalyst.schemas import (
     Drug,
     DrugName,
     DrugNameKind,
+    EnrollmentType,
     SourceDocument,
     Trial,
     TrialPhase,
@@ -179,44 +181,80 @@ _PHASES: dict[tuple[str, ...], TrialPhase] = {
 }
 
 
+_ENROLLMENT_TYPES = {"ACTUAL": EnrollmentType.ACTUAL, "ESTIMATED": EnrollmentType.ESTIMATED}
+_REGISTRY_VALUES = ("study_name", "phase", "enrollment", "enrollment_type")
+
+
 def trial_from_study(study: dict[str, Any]) -> Trial:
-    """Read a trial's registry number, the company's study name (acronym), and its phase."""
+    """Read a trial's registry number, study name (acronym), phase, and size (enrollment).
+
+    A size type the registry does not name as actual or estimated is left empty, and so is the
+    type of a record with no count.
+    """
     protocol = study["protocolSection"]
     identification = protocol["identificationModule"]
+    design: dict[str, Any] = protocol.get("designModule", {})
     acronym = (identification.get("acronym") or "").strip()
-    phases = tuple(protocol.get("designModule", {}).get("phases") or ())
-    return Trial(nct_id=identification["nctId"], study_name=acronym or None, phase=_PHASES.get(phases))
+    phases = tuple(design.get("phases") or ())
+    enrollment: dict[str, Any] = design.get("enrollmentInfo") or {}
+    count: int | None = enrollment.get("count")
+    return Trial(
+        nct_id=identification["nctId"],
+        study_name=acronym or None,
+        phase=_PHASES.get(phases),
+        enrollment=count,
+        enrollment_type=_ENROLLMENT_TYPES.get(enrollment.get("type", "")) if count is not None else None,
+    )
+
+
+_LOGGED_CHANGES = ("phase", "enrollment", "enrollment_type")
 
 
 def record_trial(session: Session, trial: Trial) -> None:
-    """Store the trial, or update its study name and phase if the registry changed them."""
+    """Store the trial, or update its study name, phase, and size if the registry changed them.
+
+    A change to a stored trial's phase or size is logged as `trial_registry_changed`.
+    """
+    values = trial.model_dump(mode="json")
+    stored = session.execute(select(_TRIAL).where(_TRIAL.c.nct_id == trial.nct_id)).mappings().one_or_none()
+    if stored is not None:
+        changed = {k: [stored[k], values[k]] for k in _LOGGED_CHANGES if stored[k] != values[k]}
+        if changed:
+            log_event(_log, "trial_registry_changed", nct_id=trial.nct_id, changed=changed)
     values = trial.model_dump()
     session.execute(
         insert(_TRIAL)
         .values(**values)
-        .on_conflict_do_update(
-            index_elements=["nct_id"], set_={"study_name": values["study_name"], "phase": values["phase"]}
-        )
+        .on_conflict_do_update(index_elements=["nct_id"], set_={k: values[k] for k in _REGISTRY_VALUES})
     )
 
 
 def recording_trials(
     session_factory: sessionmaker[Session], documents: Callable[[], Iterable[FetchedDocument]]
 ) -> Iterator[FetchedDocument]:
-    """Pass registry records through to the collector, recording each one's trial on the way.
+    """Pass registry records through to the collector, recording each one's trial once it is stored.
 
-    The trial is written before the collector stores the record. If storing then fails, the
-    trial row stays without its record until the next run stores it; nothing is duplicated.
+    The collector stores each record before it asks for the next, so the trial is written after
+    the record comes back, and only when the record's source key is then stored. A record the
+    collector failed to store therefore never changes the trial, so the trial's values never come
+    from a newer record than the newest stored one (ADR 0039). Nothing is duplicated.
     """
     for fetched in documents():
+        yield fetched
         try:
             trial = trial_from_study(json.loads(fetched.content))
             with session_factory.begin() as session:
-                record_trial(session, trial)
+                if _is_stored(session, fetched.source_key):
+                    record_trial(session, trial)
         except (ValidationError, KeyError, ValueError, SQLAlchemyError) as error:
             # One bad registry record must not stop the company's other trials (PR #25 review).
             log_event(_log, "reference_skipped", what="trial", error=f"{type(error).__name__}: {error}"[:300])
-        yield fetched
+
+
+def _is_stored(session: Session, source_key: str) -> bool:
+    document = TABLES[SourceDocument]
+    found = select(document.c.id).where(document.c.source_key == source_key)
+    return session.execute(found).first() is not None
 
 
 def company_refs(session: Session) -> list[CompanyRef]:
