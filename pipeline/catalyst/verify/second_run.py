@@ -232,13 +232,13 @@ def run_second_reading(
         published = row.published_at.astimezone(NEW_YORK).date()
         try:
             content = store.get(row.snapshot_key)
-            visible, cloaked = read_visible(content, row.content_type)
+            visible, differs = read_visible(content, row.content_type)
             reading = extract_catalysts(
                 client,
                 document_text(content, row.content_type),
                 published,
                 visible=visible,
-                cloaked=cloaked,
+                differs=differs,
                 role=VERIFIER_ROLE,
                 prompt_ref=VERIFIER_PROMPT,
             )

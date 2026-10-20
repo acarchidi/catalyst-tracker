@@ -6,6 +6,8 @@ set and the injection fixtures) and add the markup that blanks a whole page, or 
 element overrides, and check that the reader's words come back while every planted hide stays.
 """
 
+import hashlib
+import json
 import re
 from collections.abc import Callable
 from pathlib import Path
@@ -18,6 +20,7 @@ from catalyst.extract.text import (
     hidden_by,
     read_page,
     read_visible,
+    strict_visible_text,
     visible_text,
 )
 from conftest import FIXTURES, REPO_ROOT
@@ -385,3 +388,104 @@ def test_a_frame_or_text_box_is_never_a_cloak() -> None:
     for tag in ("iframe", "noembed", "canvas", "textarea"):
         assert visible_text(_page(f"<{tag}>Hidden words.</{tag}>"), "text/html") == "", tag
     assert visible_text(_page("<dialog><p>Hidden words.</p></dialog>"), "text/html") == ""
+
+
+# Fourth Opus review of PR #91: the guarantee is a second, strict reading (ADR 0044, decision 6).
+_V = "<p>Visible words here.</p>"
+ROUND_FOUR = {
+    "later inherit": (
+        _V + "<div style='visibility:hidden'>"
+        "<span style='visibility:visible;visibility:inherit'>INJECT</span></div>"
+    ),
+    "camelCase svg selector": (
+        _V + "<style>foreignObject{display:none}</style><svg><foreignObject>INJECT</foreignObject></svg>"
+    ),
+    "titled alternate sheet": (
+        _V + "<style title='a'>p{color:black}</style><style title='b'>span{visibility:visible}</style>"
+        "<div style='visibility:hidden'><span>INJECT</span></div>"
+    ),
+    "csp blocks inline styles": (
+        _V + "<meta http-equiv='Content-Security-Policy' content=\"style-src-attr 'none'\">"
+        "<style>.p{visibility:hidden}</style>"
+        "<div class='p'><span style='visibility:visible'>INJECT</span></div>"
+    ),
+}
+
+
+@pytest.mark.parametrize("html", ROUND_FOUR.values(), ids=ROUND_FOUR.keys())
+def test_text_the_strict_reader_hides_is_never_read_unflagged(html: str) -> None:
+    """Either the reading hides INJECT as main does, or it differs from main's and every claim is held."""
+    content = _page(html)
+    reading = read_page(content, "text/html")
+    assert "INJECT" not in strict_visible_text(content, "text/html")
+    assert "INJECT" not in reading.visible or reading.differs
+
+
+def test_the_cheap_round_four_fixes_hide_the_text_outright() -> None:
+    """B1: a later inherit undoes a show; B2: hide rules match SVG tag names whatever their case."""
+    for name in ("later inherit", "camelCase svg selector"):
+        reading = read_page(_page(ROUND_FOUR[name]), "text/html")
+        assert "INJECT" not in reading.visible, name
+
+
+def test_a_parent_hide_undone_by_a_child_differs_from_the_strict_reading() -> None:
+    content = _page(
+        "<p>Visible words.</p><div style='visibility:hidden'><p style='visibility:visible'>Shown.</p></div>"
+    )
+    assert read_page(content, "text/html") == PageReading("Visible words.\nShown.", True, None)
+    assert strict_visible_text(content, "text/html") == "Visible words."
+
+
+RECORDED = [*GOLD, *sorted(p for p in FIXTURES.rglob("*") if p.suffix in (".htm", ".html"))]
+
+
+@pytest.mark.parametrize("path", RECORDED, ids=[p.name[:24] for p in RECORDED])
+def test_a_recorded_page_reads_the_same_both_ways(path: Path) -> None:
+    """No recorded page, and so no gold-set release, is held for differing from the strict reading."""
+    content = path.read_bytes()
+    reading = read_page(content, "text/html")
+    assert reading.visible == strict_visible_text(content, "text/html")
+    assert not reading.differs
+
+
+MAIN_TEXT_BLOB = (
+    "8085e0f8747d560c37ba62b2a1ceebbebb787d9c"  # pipeline/catalyst/extract/text.py at main 6bbc06b
+)
+STRICT_OUTPUTS = FIXTURES / "strict-visible" / "main-outputs.json"
+
+
+def _strict_cases() -> dict[str, bytes]:
+    """Every page and input this file reads: the 80 recorded pages, cloaked copies, and each case."""
+    cases: dict[str, bytes] = {}
+    for path in RECORDED:
+        raw = path.read_bytes()
+        cases[f"page:{path.relative_to(REPO_ROOT)}"] = raw
+        if path in GOLD or path in HOSTILE:
+            for name, cloak in CLOAKS.items():
+                cases[f"cloak:{name}:{path.name}"] = cloak(raw.decode("utf-8")).encode()
+    groups = {
+        "seen": SEEN,
+        "hidden": STILL_HIDDEN,
+        "review": REVIEW_LEAKS,
+        "two": ROUND_TWO_LEAKS,
+        "three": ROUND_THREE_LEAKS,
+        "four": ROUND_FOUR,
+    }
+    for group, inputs in groups.items():
+        for name, html in inputs.items():
+            cases[f"{group}:{name}"] = _page(html + "<p>Seen.</p>")
+    for name, content in ENCODINGS.items():
+        cases[f"encoding:{name}"] = content
+    return cases
+
+
+def test_the_strict_reader_is_mains_reader() -> None:
+    """The strict reading is main's `visible_text`, byte for byte, and gives main's output on every case."""
+    source = (REPO_ROOT / "pipeline" / "catalyst" / "extract" / "strict_text.py").read_bytes()
+    assert hashlib.sha1(b"blob %d\0" % len(source) + source).hexdigest() == MAIN_TEXT_BLOB  # noqa: S324
+    expected: dict[str, str] = json.loads(STRICT_OUTPUTS.read_text())
+    found = {
+        name: hashlib.sha256(strict_visible_text(content, "text/html").encode()).hexdigest()
+        for name, content in _strict_cases().items()
+    }
+    assert found == expected

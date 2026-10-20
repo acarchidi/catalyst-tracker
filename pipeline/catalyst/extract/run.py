@@ -67,6 +67,7 @@ class DocumentResult:
     claims_stored: int = 0
     error: str | None = None
     skipped: ReadingSkip | None = None  # why no model read it, if none did
+    differs: bool = False  # its visible text is not the strict reader's: every claim waits for a person
     skipped_before: bool = False  # a re-check that found the same skip as an earlier run
 
 
@@ -288,7 +289,8 @@ def extract_documents(
         try:
             content = store.get(row.snapshot_key)
             text = document_text(content, row.content_type)
-            visible, cloaked, hidden = read_page(content, row.content_type)  # one reading of the page
+            visible, differs, hidden = read_page(content, row.content_type)  # one reading of the page
+            result.differs = differs
             # Words are counted in the visible text, not `document_text`: the model is shown only
             # the visible text and every quote must be in it, so hidden words can never give a
             # claim. A copy that is short only because `visible_text` drops too much is checked
@@ -304,7 +306,7 @@ def extract_documents(
                         hidden_by=hidden,
                     )
                 continue
-            extraction = extract_catalysts(client, text, published, visible=visible, cloaked=cloaked)
+            extraction = extract_catalysts(client, text, published, visible=visible, differs=differs)
         except InputTooLargeError as error:
             if skip(ReadingSkip.TOO_LARGE):  # an alert only the first time; re-checks just log the skip
                 log_alert(
@@ -335,4 +337,7 @@ def extract_documents(
         no_claim = None if claims else _reading(row.id, extraction.model, now(), catalysts=found)
         result.claims_stored = _store(session_factory, claims, no_claim)
         log_event(_log, "document_extracted", source_key=row.source_key, catalysts=len(result.catalysts))
+    # Counts only, never page text: copies whose claims all wait because the readings differ.
+    copies = sum(document.differs for document in report.documents)
+    log_event(_log, "copies_read_differently", copies=copies, documents=len(report.documents))
     return report

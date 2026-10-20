@@ -25,6 +25,8 @@ from xml.etree.ElementTree import Element
 
 import html5lib
 
+from catalyst.extract.strict_text import visible_text as strict_visible_text
+
 TEXT_VERSION = "1"
 
 # Tags whose text is never part of the document's words.
@@ -221,9 +223,18 @@ def _declarations(style: str) -> list[tuple[str, str]] | None:
 
 
 def _shows(style: str) -> tuple[bool, bool, bool]:
-    """Say whether the style sets visibility:visible, a readable font size, and a colour again."""
+    """Say whether the style sets visibility:visible, a readable font size, and a colour again.
+
+    A show counts only as the last declaration of its property and after any `all`: a later
+    `inherit`, `unset`, `currentcolor`, or `%` would undo it.
+    """
     visible = sized = coloured = False
-    for name, value in _declarations(style) or ():
+    found = _declarations(style) or []
+    last = {name: place for place, (name, _) in enumerate(found)}
+    for place, (name, value) in enumerate(found):
+        later = {"font-size", "font"} if name in ("font-size", "font") else {name}
+        if place < last.get("all", -1) or any(place < last.get(other, -1) for other in later):
+            continue
         if name == "visibility":
             visible = visible or _VISIBLE_VALUE.fullmatch(value) is not None
         elif name == "font-size":
@@ -361,9 +372,9 @@ class _Selector:
         )
 
     def matches_loosely(self, tag: str, classes: frozenset[str], ids: frozenset[str]) -> bool:
-        """Say whether the selector fits when the case of classes and ids is ignored."""
+        """Say whether the selector fits when the case of tags, classes, and ids is ignored."""
         return (
-            (self.tag is None or self.tag == tag)
+            (self.tag is None or self.tag == tag.lower())
             and {name.lower() for name in self.classes} <= {name.lower() for name in classes}
             and (self.id is None or self.id.lower() in {name.lower() for name in ids})
         )
@@ -693,10 +704,13 @@ def document_text(content: bytes, content_type: str) -> str:
 
 
 class PageReading(NamedTuple):
-    """What a reader sees of a page: its visible text, whether a page cloak was lifted, and what hides."""
+    """What a reader sees of a page, whether that differs from the strict reading, and what hides."""
 
     visible: str
-    cloaked: bool  # the page hid all of itself; it still hides its words, so a person reads it
+    # The visible text is not what main's strict reader (`strict_visible_text`) gives: a show, a
+    # lifted cloak, or a print rule let text through that the strict reader hides. Every claim from
+    # such a copy goes to a person (ADR 0044, decision 6).
+    differs: bool
     hidden_by: str | None  # the element hiding the most letters, for the log; None if nothing is hidden
 
 
@@ -718,7 +732,7 @@ def read_page(content: bytes, content_type: str) -> PageReading:
         if any(ch.isalpha() for ch in text) or not liftable:
             top = walk.hidden_letters.most_common(1)
             hidden = walk.hiders[top[0][0]] if top and top[0][1] else None
-            return PageReading(text, bool(lifted), hidden)
+            return PageReading(text, text != strict_visible_text(content, content_type), hidden)
         lifted |= {hiders[0]}
 
 
@@ -743,9 +757,9 @@ def visible_text(content: bytes, content_type: str) -> str:
 
 
 def read_visible(content: bytes, content_type: str) -> tuple[str, bool]:
-    """Return `visible_text`, and whether it lifted a page cloak: the page still hides its words."""
+    """Return `visible_text`, and whether it differs from the strict reading: hold its claims if so."""
     reading = read_page(content, content_type)
-    return reading.visible, reading.cloaked
+    return reading.visible, reading.differs
 
 
 def hidden_by(content: bytes, content_type: str) -> str | None:

@@ -158,7 +158,7 @@ def extract_catalysts(
     published: date,
     *,
     visible: str | None = None,
-    cloaked: bool = False,
+    differs: bool = False,
     role: str = ROLE,
     prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
 ) -> Extraction:
@@ -166,8 +166,8 @@ def extract_catalysts(
 
     `text` is the copy's `document_text`, where quotes are placed. `visible` is its
     `visible_text`: the reader sees only that, and every quote must be in it. None means the
-    whole text is visible (plain text). `cloaked` says the page hid all of itself and
-    `visible_text` lifted that cloak (ADR 0044): the page still hides its words from readers.
+    whole text is visible (plain text). `differs` says the visible text is not what main's
+    strict reader gives (ADR 0044, decision 6): text that reader hides reached the model.
     The extractor is the default; the verifier's second reading uses its own role and prompt.
     When the text addresses models, or the page hides words from readers, every proposal is
     flagged, since no code can tell which of them the text changed.
@@ -183,7 +183,7 @@ def extract_catalysts(
         instructions = tuple(dict.fromkeys((*instructions, *instruction_markers(visible))))
     flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
     # The page hides words; or the reader saw letters the stored text lacks, which no honest page does.
-    if cloaked or (visible is not None and (hidden_letters(text, visible) or hidden_letters(visible, text))):
+    if differs or (visible is not None and (hidden_letters(text, visible) or hidden_letters(visible, text))):
         flags.append(Problem.SOURCE_HIDES_TEXT)
     if flags:
         catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)
