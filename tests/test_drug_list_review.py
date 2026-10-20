@@ -220,19 +220,25 @@ def test_a_join_inside_brackets_is_a_combination(text: str) -> None:
 
 
 def test_a_registry_name_in_capitals_is_a_brand_and_shown_as_written() -> None:
-    """Sarepta's registry records name ELEVIDYS in capitals; a generic name is shown before it."""
+    """Sarepta's registry records name ELEVIDYS in capitals; a generic name is shown before it.
+
+    Since the fourth review, registry word main names join each other only, not codes, so the two
+    records here join through "ELEVIDYS" listed under the generic name.
+    """
     assert [(n.name, n.kind) for n in registry_names("ELEVIDYS") or []] == [("ELEVIDYS", DrugNameKind.BRAND)]
     records = [
         SourceRecord(
+            DrugNameSource.CTGOV, "NCT00000004", "Biogen", (ListedName("ELEVIDYS", DrugNameKind.BRAND),)
+        ),
+        SourceRecord(
             DrugNameSource.CTGOV,
-            ref,
+            "NCT00000005",
             "Biogen",
             (
-                ListedName(name, DrugNameKind.INN if name.islower() else DrugNameKind.BRAND),
-                ListedName("SRP-9001", DrugNameKind.CODE),
+                ListedName("delandistrogene moxeparvovec", DrugNameKind.INN),
+                ListedName("ELEVIDYS", DrugNameKind.BRAND, main=False),
             ),
-        )
-        for ref, name in (("NCT00000004", "ELEVIDYS"), ("NCT00000005", "delandistrogene moxeparvovec"))
+        ),
     ]
     code_only = SourceRecord(
         DrugNameSource.CTGOV, "NCT00000006", "Biogen", (ListedName("PBGENE-DMD", DrugNameKind.BRAND),)

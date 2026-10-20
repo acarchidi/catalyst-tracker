@@ -467,15 +467,22 @@ NON_DRUG_WORDS = frozenset(
     [
         "acetominophen",
         "anticoagulant",
+        "bioavailability",
         "factor",
         "galnac",
         "hormone",
         "menin",
+        "opioid",
+        "premedication",
         "prostacyclin",
+        "schedule",
         "sirna",
         "sting",
+        "switch",
         "tigit",
         "use",
+        "vaccination",
+        "various",
     ]
 )
 

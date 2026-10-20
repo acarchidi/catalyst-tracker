@@ -164,10 +164,22 @@ def test_one_record_whose_other_names_are_two_drugs_joins_neither() -> None:
     assert sorted(sorted(d.names) for d in plan.drugs) == [["xyz1000"], ["xyz2000"], ["xyz3000"]]
 
 
+def _approved(generic: str) -> SourceRecord:
+    """Return a constructed Drugs@FDA product of Regeneron's.
+
+    Since the fourth review, a registry word main name joins codes only when it is such a name.
+    """
+    names = (ListedName(generic.upper(), DrugNameKind.INN),)
+    return SourceRecord(
+        DrugNameSource.OPENFDA, "NDA000001", "REGENERON PHARMACEUTICALS", names, ingredient=name_key(generic)
+    )
+
+
 def test_an_alias_never_joins_two_codes_no_record_gives_together() -> None:
     """Constructed: "Zebra" is XYZ-1000 in one trial and is listed under XYZ-2000 in another."""
-    sponsor = "Inovio Pharmaceuticals"
+    sponsor = "Regeneron Pharmaceuticals"
     records = [
+        _approved("Zebrafin"),
         _registry(
             "NCT00000001", sponsor, ListedName("Zebrafin", DrugNameKind.INN), _code("XYZ-1000", main=False)
         ),
@@ -181,8 +193,9 @@ def test_an_alias_never_joins_two_codes_no_record_gives_together() -> None:
 
 def test_an_alias_with_a_code_both_records_give_still_joins() -> None:
     """Constructed: brensocatib lists INS1007, and a trial of INS1007 lists brensocatib: one drug."""
-    sponsor = "Inovio Pharmaceuticals"
+    sponsor = "Regeneron Pharmaceuticals"
     records = [
+        _approved("brensocatib"),
         _registry(
             "NCT00000001", sponsor, ListedName("brensocatib", DrugNameKind.INN), _code("INS1007", main=False)
         ),
@@ -248,13 +261,14 @@ def test_a_relatlimab_claim_on_a_quote_about_another_anti_lag_3_program_is_held(
     )
 
 
-def test_an_unmarked_other_name_counts_when_another_record_gives_it_as_a_main_name() -> None:
-    sponsor = "Inovio Pharmaceuticals"
+def test_an_unmarked_other_name_counts_when_drugs_at_fda_gives_it() -> None:
+    """Since the fourth review, another trial's word main name no longer joins it to a code."""
+    sponsor = "Regeneron Pharmaceuticals"
     records = [
         _registry(
             "NCT00000001", sponsor, _code("XYZ-1000"), ListedName("zebrafin", DrugNameKind.INN, main=False)
         ),
-        _registry("NCT00000002", sponsor, ListedName("zebrafin", DrugNameKind.INN)),
+        _approved("zebrafin"),
         _registry(
             "NCT00000003", sponsor, _code("XYZ-2000"), ListedName("Quokkamab", DrugNameKind.INN, main=False)
         ),
@@ -290,7 +304,8 @@ def test_a_partner_s_unapproved_drug_in_the_sponsor_s_trial_is_not_the_sponsor_s
     """NCT05137054 gives Roche's cevostamab (RO7187797) and PF-03084014 beside Regeneron's own drugs."""
     keys = _keys(plan, "REGN")
     assert not {"cevostamab", "ro7187797", "bfcr4350a", "nirogacestat", "pf03084014"} & keys
-    assert {"linvoseltamab", "regn5458", "fianlimab", "regn3767"} <= keys
+    # Their codes REGN5458 and REGN3767 are other names of word main names here (fourth review).
+    assert {"linvoseltamab", "fianlimab"} <= keys
 
 
 def test_a_code_with_a_big_sponsor_s_prefix_stays_that_sponsor_s() -> None:
@@ -298,19 +313,21 @@ def test_a_code_with_a_big_sponsor_s_prefix_stays_that_sponsor_s() -> None:
         _registry(
             "NCT00000001",
             "Hoffmann-La Roche",
-            ListedName("cevostamab", DrugNameKind.INN),
-            _code("RO7187797", main=False),
+            _code("RO7187797"),
         )
     ]
     plan = plan_drugs(records, _sponsors())
-    assert [(d.company_id, sorted(d.names)) for d in plan.drugs] == [
-        (COMPANY["RHHBY"], ["cevostamab", "ro7187797"])
-    ]
+    assert [(d.company_id, sorted(d.names)) for d in plan.drugs] == [(COMPANY["RHHBY"], ["ro7187797"])]
 
 
-def test_organon_s_merck_codes_stay_organon_s(plan: DrugPlan) -> None:
-    """Organon came out of Merck: corifollitropin alfa's code MK-8962 is Organon's own."""
-    assert "mk8962" in _drug(plan, "OGN", "corifollitropin alfa").names
+def test_organon_s_merck_codes_stay_organon_s() -> None:
+    """Organon came out of Merck: corifollitropin alfa's code MK-8962 is Organon's own.
+
+    Constructed with the code as the main name: since the fourth review, the registry's word main
+    name "Corifollitropin alfa" stands alone, without its codes.
+    """
+    plan = plan_drugs([_registry("NCT00000001", "Organon and Co", _code("MK-8962"))], _sponsors())
+    assert [(d.company_id, sorted(d.names)) for d in plan.drugs] == [(COMPANY["OGN"], ["mk8962"])]
 
 
 def test_follitropin_alfa_and_beta_are_never_one_drug(plan: DrugPlan) -> None:

@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections import defaultdict
+from collections import Counter, defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any, cast
@@ -632,11 +632,14 @@ def _partner_s_code(record: SourceRecord) -> bool:
 def _partners_drugs(kept: list[tuple[SourceRecord, Owner]]) -> set[int]:
     """Return the registry interventions (by `id`) that are a partner's drug, by a partner's code.
 
-    Unless the owner's other records give the same main name without such a code: Insmed's
-    brensocatib, licensed from AstraZeneca, keeps its code AZD7986 from Insmed's own trials.
+    Unless the main name is the owner's own approved drug in Drugs@FDA: Insmed's brensocatib,
+    licensed from AstraZeneca, keeps its code AZD7986. A trial of the sponsor that names a
+    partner's unapproved drug without the code does not count (fourth review of PR #73).
     """
     flagged = {id(r) for r, _ in kept if r.source is DrugNameSource.CTGOV and _partner_s_code(r)}
-    own = {(owner, name_key(r.names[0].name)) for r, owner in kept if r.names and id(r) not in flagged}
+    own = {
+        (owner, name_key(n.name)) for r, owner in kept if r.source is DrugNameSource.OPENFDA for n in r.names
+    }
     return {id(r) for r, owner in kept if id(r) in flagged and (owner, name_key(r.names[0].name)) not in own}
 
 
@@ -694,6 +697,7 @@ def _without_bridges(
     and a trial of "INS1007") still joins the two, if only one main name lists it and
     `_join_aliases` allows it; when it does not, the other name is dropped (third review).
     """
+    entries = _words_stand_alone(entries)
     mains = _Groups()
     main_keys: set[str] = set()
     for _, names in entries:
@@ -715,32 +719,112 @@ def _main_root(names: list[ListedName], mains: _Groups) -> str | None:
     return None if key is None else mains.find(key)
 
 
+def _fda_keys(entries: Iterable[tuple[SourceRecord, list[ListedName]]]) -> set[str]:
+    return {name_key(n.name) for r, ns in entries if r.source is DrugNameSource.OPENFDA for n in ns}
+
+
+def _is_words(record: SourceRecord, names: list[ListedName], fda: set[str]) -> bool:
+    """Say whether a registry record's main name has no digit and is no Drugs@FDA name of the company."""
+    main = names[0]
+    plain = not any(ch.isdigit() for ch in main.name) and name_key(main.name) not in fda
+    return record.source is DrugNameSource.CTGOV and main.main and plain
+
+
+def _words_stand_alone(
+    entries: list[tuple[SourceRecord, list[ListedName]]],
+) -> list[tuple[SourceRecord, list[ListedName]]]:
+    """Keep a registry main name without a digit from joining codes, FDA names, or marked brands.
+
+    "FGF Receptor" (LY2874455), "Avidin" (SSR29261), "Yellow Fever" (YF VAX®), and "Anti-Beta
+    Interferon (PF-06823859)" are a target, a protein, a disease, and a class, written where the
+    drug's name goes. Such a name may only stand alone as its own drug, or with other plain words
+    ("izalontamab brengitecan", "Iza-bren"); a word name that is the company's Drugs@FDA name
+    ("Brensocatib") joins as before (fourth review of PR #73).
+    """
+    fda = _fda_keys(entries)
+    kept: list[tuple[SourceRecord, list[ListedName]]] = []
+    for record, names in entries:
+        if _is_words(record, names, fda):
+            names = [
+                names[0],
+                *(n for n in names[1:] if not n.marked and not any(c.isdigit() for c in n.name)),
+            ]
+        kept.append((record, names))
+    return kept
+
+
+@dataclass
+class _GroupFacts:
+    """What one group of main names holds, for the alias rule."""
+
+    codes: set[str] = field(default_factory=set[str])
+    code_mains: set[str] = field(default_factory=set[str])
+    others: set[str] = field(default_factory=set[str])
+    words: bool = False  # a registry word main name (`_is_words`)
+    firm: bool = False  # a code, a Drugs@FDA name, or a marked brand
+
+
+def _group_facts(
+    entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups
+) -> defaultdict[str, _GroupFacts]:
+    fda = _fda_keys(entries)
+    facts: defaultdict[str, _GroupFacts] = defaultdict(_GroupFacts)
+    for record, names in entries:
+        own = _main_root(names, mains)
+        if own is None:
+            continue
+        found = facts[own]
+        found.codes |= {name_key(n.name) for n in names if n.kind is DrugNameKind.CODE}
+        found.code_mains |= {name_key(n.name) for n in names if n.kind is DrugNameKind.CODE and n.main}
+        found.others |= {name_key(n.name) for n in names if not n.main}
+        found.words = found.words or _is_words(record, names, fda)
+        firm = record.source is DrugNameSource.OPENFDA or any(
+            n.kind is DrugNameKind.CODE or n.marked for n in names
+        )
+        found.firm = found.firm or firm
+    return facts
+
+
+def _may_join(key: str, alias: _GroupFacts, listed: _GroupFacts, parts: int) -> bool:
+    """Say whether an alias may join two groups of main names (third and fourth reviews of PR #73)."""
+    if parts > 1:
+        return False  # the listing drug's records name two or more other drugs: a combination
+    if (alias.words and listed.firm) or (alias.firm and listed.words):
+        return False  # a word main name never joins a code, an FDA name, or a marked brand
+    if alias.code_mains and listed.code_mains:
+        return False  # two drugs with their own code main names: "INO-3112" and its part "VGX-3100"
+    mine, theirs = alias.codes - {key}, listed.codes - {key}
+    return not mine or not theirs or bool(mine & theirs)
+
+
 def _join_aliases(
     entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups, main_keys: set[str]
 ) -> None:
     """Join an other name that is another record's main name, listed under one main name only.
 
-    Never when one record's other names are the main names of two or more drugs: NCT02172911's
-    INO-3112 lists its parts VGX-3100 and INO-9012. Never when both drugs have codes and none is
-    the same: "panHer" is BMS-599626, and BMS-690514 trials list "panHER" (third review of PR #73).
+    Never when the listing drug's records, together, list the main names of two or more other
+    drugs: INO-3112's trials list its parts VGX-3100 and INO-9012, in one trial or one in each.
+    Never between two drugs that each have a code main name, or whose other codes differ ("panHer"
+    is BMS-599626; BMS-690514 trials list "panHER"). Never a word main name with a code (see
+    `_words_stand_alone`). And at most one hop: when A's trial lists B and B's trial lists C,
+    none of the three joins (third and fourth reviews of PR #73).
     """
-    codes: defaultdict[str, set[str]] = defaultdict(set)
-    spread: set[str] = set()
-    for _, names in entries:
-        own = _main_root(names, mains)
-        if own is None:
-            continue
-        codes[own] |= {name_key(n.name) for n in names if n.kind is DrugNameKind.CODE}
-        others = {name_key(n.name) for n in names if not n.main}
-        if len({mains.find(k) for k in others & main_keys} - {own}) > 1:
-            spread |= others
+    facts = _group_facts(entries, mains)
+    edges: list[tuple[str, str]] = []
     for key, roots in _listing(entries, mains).items():
-        if key not in main_keys or len(roots) != 1 or key in spread:
+        if key not in main_keys or len(roots) != 1:
             continue
-        alias, listed = mains.find(key), mains.find(next(iter(roots)))
-        if alias != listed and (not codes[alias] or not codes[listed] or codes[alias] & codes[listed]):
+        alias, listed = mains.find(key), next(iter(roots))
+        parts = len({mains.find(k) for k in facts[listed].others & main_keys} - {listed})
+        if alias != listed and _may_join(key, facts[alias], facts[listed], parts):
+            edges.append((alias, listed))
+    hops = _Groups()
+    for edge in edges:
+        hops.join(edge)
+    size = Counter(hops.find(group) for group in {group for edge in edges for group in edge})
+    for alias, listed in edges:
+        if size[hops.find(alias)] == 2:
             mains.join([alias, listed])
-            codes[alias] |= codes[listed]
 
 
 def _listing(entries: list[tuple[SourceRecord, list[ListedName]]], mains: _Groups) -> dict[str, set[str]]:

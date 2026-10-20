@@ -112,8 +112,11 @@ def test_an_isotope_two_radioligands_list_joins_neither(plan: DrugPlan) -> None:
 
 
 def test_a_target_two_bispecifics_list_joins_neither(plan: DrugPlan) -> None:
-    """Linvoseltamab (REGN5458) and vonsetamig (REGN5459) both list "BCMAxCD3"."""
-    linvoseltamab, vonsetamig = _drug(plan, "REGN", "REGN5458"), _drug(plan, "REGN", "REGN5459")
+    """Linvoseltamab (REGN5458) and vonsetamig (REGN5459) both list "BCMAxCD3".
+
+    Since the fourth review, a registry word main name (vonsetamig) stands alone, without its codes.
+    """
+    linvoseltamab, vonsetamig = _drug(plan, "REGN", "REGN5458"), _drug(plan, "REGN", "vonsetamig")
     assert linvoseltamab is not vonsetamig
     assert "bcmaxcd3" not in _keys(plan, "REGN")
     assert vonsetamig.preferred_name == "Vonsetamig"
@@ -134,8 +137,19 @@ def test_an_other_name_shared_by_two_records_with_different_main_names_joins_nei
 
 
 def test_an_other_name_that_is_another_record_s_main_name_still_joins_them() -> None:
-    """Constructed: one record lists INS1007 under brensocatib, another is named INS1007: one drug."""
+    """Constructed: one record lists INS1007 under brensocatib, another is named INS1007: one drug.
+
+    Brensocatib is the company's Drugs@FDA name here: since the fourth review, a registry word main
+    name that is not one stands alone, without codes.
+    """
     records = [
+        SourceRecord(
+            DrugNameSource.OPENFDA,
+            "NDA000001",
+            "REGENERON PHARMACEUTICALS, INC.",
+            (ListedName("BRENSOCATIB", DrugNameKind.INN),),
+            ingredient="brensocatib",
+        ),
         SourceRecord(
             DrugNameSource.CTGOV,
             "NCT00000001",
