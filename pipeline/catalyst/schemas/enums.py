@@ -206,6 +206,13 @@ class GateDecision(StrEnum):
     REVIEW = "review"
 
 
+class SampleVerdict(StrEnum):
+    """What the weekly sample checker concluded about one published catalyst (ADR 0040)."""
+
+    AGREES = "agrees"
+    DISAGREES = "disagrees"
+
+
 class MatchedEntity(StrEnum):
     """Which kind of record a name in a claim was matched to."""
 

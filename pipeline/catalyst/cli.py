@@ -23,6 +23,7 @@ from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run,
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
 from catalyst.api.read import read_session
+from catalyst.audit.sample import SAMPLE_SIZE, run_sample_check, week_of
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import SOURCES, build_clients, collect_all, load_companies
@@ -185,6 +186,21 @@ def _parser() -> argparse.ArgumentParser:
     planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
     planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     _issue_arguments(commands)
+    sample_check = commands.add_parser(
+        "sample-check",
+        help="Check the week's random draw of published catalysts against their sources (costs money).",
+    )
+    sample_check.add_argument(
+        "--limit", type=int, default=1, help="Most records to check in this run (default 1, inside the cap)."
+    )
+    sample_check.add_argument(
+        "--week-of",
+        type=date.fromisoformat,
+        default=None,
+        help="Any day of the week to check (default: today).",
+    )
+    sample_check.add_argument("--size", type=int, default=SAMPLE_SIZE, help="Records in the week's draw.")
+    _store_arguments(sample_check)
     check = commands.add_parser(
         "prospects-check",
         help="Check the outreach prospect list and print its counts (ADR 0020; sends nothing).",
@@ -267,6 +283,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mcp": _serve,
         "export-catalysts": _export,
         "planted-errors": _planted_errors,
+        "sample-check": _sample_check,
         "prospects-check": _prospects_check,
     }
     if args.command in standalone:
@@ -669,6 +686,30 @@ def _evaluate(args: argparse.Namespace) -> int:
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
     return 0
+
+
+def _sample_check(args: argparse.Namespace) -> int:
+    """Check part of the week's draw; fail only when a record could not be checked (ADR 0040)."""
+    try:
+        adapter = anthropic_adapter.from_settings()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    week = week_of(
+        datetime.combine(args.week_of, datetime.min.time(), NEW_YORK) if args.week_of else _utc_now()
+    )
+    engine = create_engine(settings.database_url())
+    try:
+        client = ModelClient(load_config(), {adapter.name: adapter}, DatabaseLedger(engine))
+        report = run_sample_check(
+            sessionmaker(engine), store, client, week=week, limit=args.limit, now=_utc_now, size=args.size
+        )
+    finally:
+        engine.dispose()
+    summary = report.summary()
+    print(json.dumps(summary, indent=2))
+    return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
 
 
 def _planted_errors(args: argparse.Namespace) -> int:
