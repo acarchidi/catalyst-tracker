@@ -16,8 +16,10 @@ from catalyst.schemas import (
     DateConfidence,
     DatePrecision,
     DrugRole,
+    EnrollmentType,
     LineOfTherapy,
     SourceTier,
+    TrialPhase,
 )
 
 
@@ -56,6 +58,30 @@ class DrugView(View):
     id: UUID = Field(description="Internal identifier.")
     name: str = Field(description="Name shown to users: generic name if any, else code name.")
     role: DrugRole = Field(description="Tested alone or in combination.")
+
+
+class RegistryRecordView(View):
+    """The stored ClinicalTrials.gov record a trial's phase and size were last read from (ADR 0038)."""
+
+    url: str = Field(description="Deep link to the trial's registry record.")
+    published_at: datetime = Field(description="When the registry posted this version of the record.")
+    retrieved_at: datetime = Field(description="When we first retrieved this version.")
+
+
+class TrialView(View):
+    """A trial the catalyst concerns; the quote that names it is in `sources` under 'trials' (ADR 0038)."""
+
+    id: UUID = Field(description="Internal identifier.")
+    nct_id: str = Field(description="ClinicalTrials.gov identifier, for example NCT04567890.")
+    study_name: str | None = Field(description="The company's name for the study, for example RAINIER.")
+    phase: TrialPhase | None = Field(description="Trial phase as the registry reports it.")
+    enrollment: int | None = Field(description="Number of participants as the registry reports it.")
+    enrollment_type: EnrollmentType | None = Field(
+        description="Whether the size is the final count (actual) or the plan (estimated)."
+    )
+    registry_record: RegistryRecordView | None = Field(
+        description="The registry record the phase and size come from; empty if none is stored."
+    )
 
 
 class IndicationView(View):
@@ -97,6 +123,7 @@ class CatalystSummary(View):
     company: CompanyView = Field(description="The company the event concerns.")
     indication: IndicationView | None = Field(description="The disease, if any.")
     drugs: list[DrugView] = Field(description="Drugs the event concerns.")
+    trials: list[TrialView] = Field(description="Trials the event concerns, by registry number.")
     window: WindowView = Field(description="When the event may happen.")
     date_confidence: DateConfidence = Field(description="Who stands behind the date.")
     status: CatalystStatus = Field(description="Upcoming, slipped, or resolved.")

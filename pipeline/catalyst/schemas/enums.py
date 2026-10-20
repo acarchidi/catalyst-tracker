@@ -79,6 +79,13 @@ class TrialPhase(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class EnrollmentType(StrEnum):
+    """Whether a trial's registered size is the final count or the planned one (ClinicalTrials.gov)."""
+
+    ACTUAL = "actual"
+    ESTIMATED = "estimated"
+
+
 class CatalystType(StrEnum):
     """Catalyst types (spec: Data sources and coverage, Catalyst types)."""
 

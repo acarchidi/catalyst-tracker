@@ -273,7 +273,9 @@ def test_a_publishable_claim_becomes_a_catalyst_the_read_api_shows_with_every_so
         "date_confidence",
         "status",
         "drugs",
+        "trials",  # the sentence names RAINIER, now shown on the catalyst (ADR 0038)
     }
+    assert [(t.id, t.nct_id, t.study_name) for t in shown.trials] == [(world.trial, "NCT04929483", "RAINIER")]
     assert {change.claim_id for change in world.rows(CatalystChange)} == {claim}
     assert all(change.old_value is None for change in world.rows(CatalystChange))
     assert shown.latest_date_change == []  # a first value is not a date move

@@ -11,10 +11,12 @@ from datetime import UTC, date, datetime
 from functools import partial
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import func, insert, select
+from pydantic import ValidationError
+from sqlalchemy import Engine, func, insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.run import Collector, PilotCompany, build_clients, collect_all
@@ -38,6 +40,7 @@ from catalyst.schemas import (
     Drug,
     DrugName,
     DrugNameKind,
+    EnrollmentType,
     SourceDocument,
     SourceTier,
     Trial,
@@ -172,6 +175,43 @@ def test_registry_phases_map_to_ours_or_to_nothing(phases: list[str], expected: 
     assert trial_from_study(study).phase is expected
 
 
+def test_a_registry_record_gives_the_trial_size_and_whether_it_is_final() -> None:
+    trials = {t.nct_id: t for t in map(trial_from_study, _studies())}
+    arise = trials["NCT04677543"]
+    assert (arise.enrollment, arise.enrollment_type) == (99, EnrollmentType.ACTUAL)
+    # On the second page, the registry gives NCT00351221's count without saying actual or estimated.
+    page = json.loads((FIXTURES / "ctgov-insmed" / "01_clinicaltrials.gov_api_v2_studies").read_text())
+    untyped = {t.nct_id: t for t in map(trial_from_study, page["studies"])}["NCT00351221"]
+    assert (untyped.enrollment, untyped.enrollment_type) == (24, None)
+
+
+@pytest.mark.parametrize(
+    ("enrollment_info", "expected"),
+    [
+        ({"count": 300, "type": "ESTIMATED"}, (300, EnrollmentType.ESTIMATED)),
+        ({"count": 0, "type": "ACTUAL"}, (0, EnrollmentType.ACTUAL)),
+        ({"type": "ESTIMATED"}, (None, None)),  # no count: nothing to say how sure it is about
+        (None, (None, None)),
+        ({"count": 12, "type": "SOMETHING_NEW"}, (12, None)),
+    ],
+)
+def test_registry_trial_sizes_map_to_ours_or_to_nothing(
+    enrollment_info: dict[str, Any] | None, expected: tuple[int | None, EnrollmentType | None]
+) -> None:
+    study = _studies()[0]
+    design = study["protocolSection"]["designModule"]
+    design.pop("enrollmentInfo")
+    if enrollment_info is not None:
+        design["enrollmentInfo"] = enrollment_info
+    trial = trial_from_study(study)
+    assert (trial.enrollment, trial.enrollment_type) == expected
+
+
+def test_a_negative_trial_size_is_refused() -> None:
+    with pytest.raises(ValidationError):
+        Trial(nct_id="NCT04677543", enrollment=-1)
+
+
 def test_a_trial_is_stored_once_and_follows_registry_updates(session_factory: sessionmaker[Session]) -> None:
     study = _studies()[0]
     with session_factory.begin() as session:
@@ -182,6 +222,30 @@ def test_a_trial_is_stored_once_and_follows_registry_updates(session_factory: se
     assert [(t["nct_id"], t["study_name"]) for t in _rows(session_factory, Trial)] == [
         ("NCT04677543", "ARISE-2")
     ]
+
+
+def test_a_changed_trial_size_replaces_the_old_one_without_a_second_row(
+    session_factory: sessionmaker[Session],
+) -> None:
+    study = _studies()[0]
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": 120, "type": "ESTIMATED"}
+    with session_factory.begin() as session:
+        record_trial(session, trial_from_study(study))
+    study["protocolSection"]["designModule"]["enrollmentInfo"] = {"count": 99, "type": "ACTUAL"}
+    for _ in range(2):  # re-collecting the same record changes nothing
+        with session_factory.begin() as session:
+            record_trial(session, trial_from_study(study))
+    assert [(t["nct_id"], t["enrollment"], t["enrollment_type"]) for t in _rows(session_factory, Trial)] == [
+        ("NCT04677543", 99, "actual")
+    ]
+
+
+def test_the_database_refuses_a_negative_trial_size(engine: Engine) -> None:
+    with (
+        pytest.raises(IntegrityError, match="ck_trial_enrollment_not_negative"),
+        engine.begin() as connection,
+    ):
+        connection.execute(insert(TABLES[Trial]).values(id=uuid4(), nct_id="NCT04677543", enrollment=-1))
 
 
 def test_trials_are_recorded_as_registry_records_are_collected(
@@ -199,6 +263,9 @@ def test_trials_are_recorded_as_registry_records_are_collected(
     )
     with session_factory() as session:
         assert session.execute(select(func.count()).select_from(TABLES[Trial])).scalar_one() == 9
+        sizes = select(TABLES[Trial].c.enrollment, TABLES[Trial].c.enrollment_type)
+        encore = sizes.where(TABLES[Trial].c.nct_id == "NCT04677569")
+        assert session.execute(encore).one() == (425, "actual")
         references = load_reference_data(session)
     arise = references.resolve_trial("ARISE", company_id=insmed)
     assert arise.status is Status.RESOLVED

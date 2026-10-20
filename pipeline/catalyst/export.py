@@ -3,8 +3,9 @@
 Published catalysts come from the read layer (`catalyst.api.read.published`), so they are
 exactly what the read API shows a paid caller, under the same rule: a record with a value no
 source states is left out. Held claims, when asked for, are a separate list read from the
-publish gate's stored decisions; they never enter the published list. Prices and returns are
-never read (spec: data license).
+publish gate's stored decisions; they never enter the published list. Each lists only the trials
+its names resolved to exactly one of (ADR 0038). Prices and returns are never read (spec: data
+license).
 """
 
 import json
@@ -20,8 +21,8 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from catalyst.api.access import NOTICE
-from catalyst.api.read import company_views, published
-from catalyst.api.views import CatalystDetail, CompanyView
+from catalyst.api.read import company_views, published, trial_views
+from catalyst.api.views import CatalystDetail, CompanyView, TrialView
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT
 from catalyst.publish.live import claim_value
@@ -93,12 +94,14 @@ def held_claims(session: Session) -> list[dict[str, Any]]:
         .where(decision.c.decision == GateDecision.REVIEW)
     ).all()
     companies = _held_companies(session, [row.id for row in rows])
+    trials = _held_trials(session, [row.id for row in rows])
     held = [
         {
             "claim_id": str(row.id),
             "status": HELD_STATUS,
             "company": _company(companies.get(row.id)),
             "values": row.value,
+            "trials": [trial.model_dump(mode="json") for trial in trials.get(row.id, [])],
             "quote": row.quote,
             "source": {
                 "url": row.url,
@@ -134,6 +137,24 @@ def _held_companies(session: Session, claim_ids: list[UUID]) -> dict[UUID, Compa
     single = {claim_id: next(iter(ids)) for claim_id, ids in found.items() if len(ids) == 1}
     views = company_views(session, list(set(single.values())))
     return {claim_id: views[company_id] for claim_id, company_id in single.items()}
+
+
+def _held_trials(session: Session, claim_ids: list[UUID]) -> dict[UUID, list[TrialView]]:
+    """Return the trials each held claim's names resolved to, by registry number; never a guess."""
+    match = TABLES[EntityMatch]
+    query = select(match.c.claim_id, match.c.matched_id).where(
+        match.c.claim_id.in_(claim_ids),
+        match.c.entity_type == MatchedEntity.TRIAL,
+        match.c.status == MatchStatus.RESOLVED,
+    )
+    found: defaultdict[UUID, set[UUID]] = defaultdict(set)
+    for row in session.execute(query):
+        found[row.claim_id].add(row.matched_id)
+    views = trial_views(session, list({trial for ids in found.values() for trial in ids}))
+    return {
+        claim_id: sorted((views[t] for t in ids if t in views), key=lambda t: (t.nct_id, str(t.id)))
+        for claim_id, ids in found.items()
+    }
 
 
 def _held_order(item: dict[str, Any]) -> tuple[Any, ...]:

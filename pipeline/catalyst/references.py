@@ -1,9 +1,10 @@
 """Fill the reference tables the entity resolver reads (ADR 0015, part 3).
 
 Company names and tickers come from the SEC company record each collection run already
-fetches. Trials, their study names, and their phases come from each ClinicalTrials.gov record as
-it is collected. Registry intervention lists are not imported as drugs: they mix in comparator
-drugs, placebos, and short forms such as "ETH", which would match the wrong company's drug.
+fetches. Trials, their study names, phases, and sizes come from each ClinicalTrials.gov record as
+it is collected (sizes: ADR 0038). Registry intervention lists are not imported as drugs: they
+mix in comparator drugs, placebos, and short forms such as "ETH", which would match the wrong
+company's drug.
 Every write is safe to repeat.
 """
 
@@ -37,6 +38,7 @@ from catalyst.schemas import (
     Drug,
     DrugName,
     DrugNameKind,
+    EnrollmentType,
     SourceDocument,
     Trial,
     TrialPhase,
@@ -179,24 +181,39 @@ _PHASES: dict[tuple[str, ...], TrialPhase] = {
 }
 
 
+_ENROLLMENT_TYPES = {"ACTUAL": EnrollmentType.ACTUAL, "ESTIMATED": EnrollmentType.ESTIMATED}
+_REGISTRY_VALUES = ("study_name", "phase", "enrollment", "enrollment_type")
+
+
 def trial_from_study(study: dict[str, Any]) -> Trial:
-    """Read a trial's registry number, the company's study name (acronym), and its phase."""
+    """Read a trial's registry number, study name (acronym), phase, and size (enrollment).
+
+    A size type the registry does not name as actual or estimated is left empty, and so is the
+    type of a record with no count.
+    """
     protocol = study["protocolSection"]
     identification = protocol["identificationModule"]
+    design: dict[str, Any] = protocol.get("designModule", {})
     acronym = (identification.get("acronym") or "").strip()
-    phases = tuple(protocol.get("designModule", {}).get("phases") or ())
-    return Trial(nct_id=identification["nctId"], study_name=acronym or None, phase=_PHASES.get(phases))
+    phases = tuple(design.get("phases") or ())
+    enrollment: dict[str, Any] = design.get("enrollmentInfo") or {}
+    count: int | None = enrollment.get("count")
+    return Trial(
+        nct_id=identification["nctId"],
+        study_name=acronym or None,
+        phase=_PHASES.get(phases),
+        enrollment=count,
+        enrollment_type=_ENROLLMENT_TYPES.get(enrollment.get("type", "")) if count is not None else None,
+    )
 
 
 def record_trial(session: Session, trial: Trial) -> None:
-    """Store the trial, or update its study name and phase if the registry changed them."""
+    """Store the trial, or update its study name, phase, and size if the registry changed them."""
     values = trial.model_dump()
     session.execute(
         insert(_TRIAL)
         .values(**values)
-        .on_conflict_do_update(
-            index_elements=["nct_id"], set_={"study_name": values["study_name"], "phase": values["phase"]}
-        )
+        .on_conflict_do_update(index_elements=["nct_id"], set_={k: values[k] for k in _REGISTRY_VALUES})
     )
 
 
