@@ -22,6 +22,8 @@ dropped when:
   or, as an other name, it is a code not shaped like a drug code;
 - another intervention of the same trial lists it too, or records with different main names do;
 - it is another drug's main name and the two are not joined (`_join_aliases`);
+- as a main name without a digit, it does not look like a drug's name (`looks_like_a_drug`);
+- it is another company's licensed vaccine, cell therapy, or plasma product (`drug_list_cber`);
 - as an other name or in brackets, it has no digit, no ® or ™, and no record gives it as a main name;
 - Drugs@FDA lists it for another sponsor, as it does for every approved comparator. When that is
   the intervention's main name, or one of its names is another sponsor's brand, or one of its

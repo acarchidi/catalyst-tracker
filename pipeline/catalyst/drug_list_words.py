@@ -597,4 +597,10 @@ INN_ENDINGS = (
     "rsen",
     "ciguat",
     "dutide",
+    "tug",
+    "glipron",
+    "xibat",
+    "estrant",
+    "ifene",
+    "gliatin",
 )
