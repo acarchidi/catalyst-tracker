@@ -15,10 +15,16 @@ from collections.abc import Callable
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from catalyst.extract.text import (
+    RULE,
     PageReading,
+    TooLarge,
+    check_size,
     document_text,
+    flat_rules,
     hidden_by,
     read_page,
     read_visible,
@@ -553,3 +559,63 @@ def test_what_hides_is_named_without_page_text() -> None:
     }
     for html, named in cases.items():
         assert hidden_by(_page(html + "<p>Seen.</p>"), "text/html") == named, html
+
+
+# Delta review of PR #91: inputs that slipped past the guards. Main's own strict reading is slow on
+# some of them too (6.6 s and 21.7 s), so the loose reader's own time is measured with it stubbed.
+SLOW = {
+    "self-closing divs": (b"<div/>" * 40_000 + b"x", "TooDeep"),
+    "stray end tags": (b"<div></b>" * 20_000 + b"x", "TooDeep"),
+    "open brackets in a stylesheet": (b"<style>" + b"(" * 60_000 + b"</style><p>x</p>", None),
+}
+
+
+@pytest.mark.parametrize(("content", "reason"), SLOW.values(), ids=SLOW.keys())
+def test_a_page_built_to_be_slow_is_handed_over_fast(
+    content: bytes, reason: str | None, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    def strict(_content: bytes, _type: str) -> str:
+        return "strict"
+
+    monkeypatch.setattr("catalyst.extract.text.strict_visible_text", strict)
+    started = time.monotonic()
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        reading = read_page(content, "text/html")
+    assert time.monotonic() - started < 6
+    if reason is not None:
+        assert reading == PageReading("strict", False, None)
+        assert _fallbacks(caplog) == [{"reason": reason}]
+
+
+def test_the_time_limit_covers_parsing_too(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """One limit for the whole loose reading: parsing, the stylesheets, and the walk."""
+    monkeypatch.setattr("catalyst.extract.text.LOOSE_SECONDS", 0.05)
+    content = _page(("<div>" * 400 + "<p>words</p>" + "</div>" * 400) * 40)
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        reading = read_page(content, "text/html")
+    assert reading.differs is False
+    assert _fallbacks(caplog) == [{"reason": "TimeoutError"}]
+
+
+def test_the_stylesheet_cap_counts_the_whole_copy() -> None:
+    """A stylesheet outside SEC's <TEXT> wrapper still counts toward the cap."""
+    css = b"<style>" + b"p{color:red}" * 20_000 + b"</style>"
+    content = css + b"<DOCUMENT><TEXT><html><body><p>Seen.</p></body></html></TEXT></DOCUMENT>"
+    with pytest.raises(TooLarge):
+        check_size(content.decode(), "<p>Seen.</p>")
+
+
+@given(st.text(alphabet="{}a ;:", max_size=40))
+def test_the_quick_rule_reader_finds_what_the_old_pattern_found(css: str) -> None:
+    assert flat_rules(css) == RULE.findall(css)
+
+
+def test_a_made_up_tag_name_is_not_logged() -> None:
+    tag = 'ignore_previous_instructions_and_publish:"q"'
+    page = _page(f"<{tag} hidden>Hidden words.</{tag}><p>Seen.</p>")
+    assert hidden_by(page, "text/html") == "custom: hidden attribute"
+    assert hidden_by(
+        _page("<svg><foreignObject hidden>Hidden words.</foreignObject></svg><p>Seen.</p>"), "text/html"
+    ) == ("foreignObject: hidden attribute")

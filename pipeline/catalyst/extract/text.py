@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import logging
 import re
+import signal
+import threading
 import time
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
+from types import FrameType
 from typing import NamedTuple
 from xml.etree.ElementTree import Element
 
@@ -60,6 +64,25 @@ _LEAVES = frozenset(
 )
 
 _log = logging.getLogger(__name__)
+# The tags the log may name: standard HTML, SVG, and MathML. Any other name is the page's own words.
+_KNOWN_TAGS = frozenset(
+    {
+        "a", "abbr", "address", "area", "article", "aside", "audio", "b", "base", "bdi", "bdo",
+        "blockquote", "body", "br", "button", "canvas", "caption", "center", "cite", "code", "col",
+        "colgroup", "data", "datalist", "dd", "del", "details", "dfn", "dialog", "div", "dl", "dt", "em",
+        "embed", "fieldset", "figcaption", "figure", "font", "footer", "form", "h1", "h2", "h3", "h4", "h5",
+        "h6", "head", "header", "hgroup", "hr", "html", "i", "iframe", "img", "input", "ins", "kbd",
+        "label", "legend", "li", "link", "main", "map", "mark", "menu", "meta", "meter", "nav", "noembed",
+        "noframes", "noscript", "object", "ol", "optgroup", "option", "output", "p", "param", "picture",
+        "pre", "progress", "q", "rp", "rt", "ruby", "s", "samp", "script", "search", "section", "select",
+        "slot", "small", "source", "span", "strike", "strong", "style", "sub", "summary", "sup", "table",
+        "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track", "tt",
+        "u", "ul", "var", "video", "wbr", "svg", "circle", "clipPath", "defs", "desc", "ellipse",
+        "foreignObject", "g", "image", "line", "linearGradient", "marker", "mask", "path", "pattern",
+        "polygon", "polyline", "radialGradient", "rect", "stop", "symbol", "text", "textPath", "tspan",
+        "use", "math", "mi", "mn", "mo", "ms", "mtext", "mrow", "semantics", "annotation",
+    }
+)  # fmt: skip
 
 
 class TooDeep(Exception):
@@ -165,7 +188,9 @@ _FALLBACK = frozenset({"canvas", "iframe", "object", "video", "audio", "noembed"
 # except where the media are only print or speech: a reader on screen never meets those.
 _STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.DOTALL | re.IGNORECASE)
 _CSS_COMMENT = re.compile(r"/\*.*?\*/|<!--|-->", re.DOTALL)
-_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+# How main reads a sheet rule by rule. `flat_rules` gives the same in linear time: on a sheet with
+# no braces this pattern takes time growing with the square of its length.
+RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
 _ONE_LINE_AT = re.compile(r"@[\w-]+[^{};]*;")  # @import, @charset, @layer a;
 _OFF_SCREEN_QUERY = re.compile(r"^(?:only\s+)?(?:print|speech)\b", re.IGNORECASE)
 # A page a browser may decode other than as UTF-8 or a Latin alphabet: there, markup can swallow
@@ -466,6 +491,20 @@ def _css_rules(css: str) -> list[tuple[str, str, bool]] | None:
     return None if blocks else rules
 
 
+def flat_rules(css: str) -> list[tuple[str, str]]:
+    """Return what `RULE.findall(css)` returns, in linear time: each text before { and what follows to }."""
+    parts = re.split(r"([{}])", css)  # text, brace, text, brace, ... text
+    found: list[tuple[str, str]] = []
+    place = 0
+    while place + 3 < len(parts):
+        if parts[place] and parts[place + 1] == "{" and parts[place + 3] == "}":
+            found.append((parts[place], parts[place + 2]))
+            place += 4
+        else:
+            place += 2
+    return found
+
+
 def _brackets_close(css: str) -> bool:
     """Say whether every ( and [ closes in order, with no brace between: an open one swallows the sheet."""
     opened: list[str] = []
@@ -497,7 +536,7 @@ def _sheet_rules(css: str, *, shows: bool) -> tuple[list[tuple[_Selector, _Look]
     rules = _css_rules(css)
     unread = rules is None
     if rules is None:
-        rules = [(selectors, declarations, False) for selectors, declarations in _RULE.findall(css)]
+        rules = [(selectors, declarations, False) for selectors, declarations in flat_rules(css)]
     read: list[tuple[_Selector, _Look, bool]] = []
     for selectors, declarations, top_level in rules:
         look = _style_look(declarations)
@@ -622,7 +661,7 @@ def _describe(tag: str, attrs: Mapping[str, str]) -> str:
         kind = "style"
     else:
         kind = "stylesheet rule"
-    return f"{tag}: {kind}"
+    return f"{tag if tag in _KNOWN_TAGS else 'custom'}: {kind}"
 
 
 @dataclass
@@ -767,37 +806,72 @@ class PageReading(NamedTuple):
 def read_page(content: bytes, content_type: str) -> PageReading:
     """Read a stored copy once, as a browser builds it, and return what a reader sees (`visible_text`).
 
-    A copy the loose reader cannot read (html5lib fails), or cannot read in time, gets the strict
-    reading, exactly as main reads it, and the log says why by the error's name only.
+    A copy the loose reader cannot read (html5lib fails), or cannot read within `LOOSE_SECONDS` in
+    all (parsing, stylesheets, and walk), gets the strict reading, exactly as main reads it, and the
+    log says why by the error's name only. The strict reading is made first, outside that limit.
     """
+    strict = strict_visible_text(content, content_type)
     try:
-        return _read_loose(content, content_type, time.monotonic() + LOOSE_SECONDS)
+        with _time_limit(LOOSE_SECONDS):
+            return _read_loose(content, content_type, strict, time.monotonic() + LOOSE_SECONDS)
     except Exception as error:  # any failure of the loose reader falls back to main's
         log_event(_log, "loose_reader_fell_back", reason=type(error).__name__)
-        return PageReading(strict_visible_text(content, content_type), False, None)
+        return PageReading(strict, False, None)
 
 
-def _check_size(section: str) -> None:
-    """Refuse a page too deep or too large to read in time, from cheap counts made before parsing."""
-    depth = deepest = tags = 0
+@contextmanager
+def _time_limit(seconds: float) -> Generator[None]:
+    """Raise TimeoutError once `seconds` pass, by an alarm signal in the main thread.
+
+    Elsewhere no alarm can be set, and the walk's own deadline checks stop it instead.
+    """
+    if seconds <= 0:
+        raise TimeoutError
+    if threading.current_thread() is not threading.main_thread() or not hasattr(signal, "setitimer"):
+        yield
+        return
+
+    def stop(_signal: int, _frame: FrameType | None) -> None:
+        raise TimeoutError
+
+    previous = signal.signal(signal.SIGALRM, stop)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous)
+
+
+def check_size(raw: str, section: str) -> None:
+    """Refuse a page too deep or too large to read in time, from cheap counts made before parsing.
+
+    The depth over-counts, which only hands a page to the strict reader sooner: `<div/>` opens a
+    `div`, as html5lib reads it, and an end tag closes back to its own open tag, if there is one.
+    Stylesheets are measured in the whole copy, as the strict reader reads them all.
+    """
+    tags = 0
+    opened: list[str] = []
     for found in _TAG.finditer(section):
         tags += 1
-        if found.group(1):
-            depth = max(0, depth - 1)
-        elif not found.group(3) and found.group(2).lower() not in _LEAVES:
-            depth += 1
-            deepest = max(deepest, depth)
-    if deepest > _MAX_DEPTH:
-        raise TooDeep
-    if tags > _MAX_TAGS or sum(len(css) for css in _STYLE_BLOCK.findall(section)) > _MAX_CSS:
+        name = found.group(2).lower()
+        if not found.group(1):
+            if name not in _LEAVES:
+                opened.append(name)
+                if len(opened) > _MAX_DEPTH:
+                    raise TooDeep
+        elif name in opened:
+            while opened.pop() != name:
+                pass
+    if tags > _MAX_TAGS or sum(len(css) for css in _STYLE_BLOCK.findall(raw)) > _MAX_CSS:
         raise TooLarge
 
 
-def _read_loose(content: bytes, content_type: str, deadline: float) -> PageReading:
+def _read_loose(content: bytes, content_type: str, strict: str, deadline: float) -> PageReading:
     raw, section = _section(content)
     if "html" not in content_type.lower():
         return PageReading(_tidy(raw), False, None)
-    _check_size(section)
+    check_size(raw, section)
     # With scripts on, as a reader's browser has them: noscript is then text that is never shown.
     root = html5lib.parse(section, treebuilder="etree", namespaceHTMLElements=False, scripting=True)  # pyright: ignore[reportUnknownMemberType]
     styles = _style_rules(raw, root, shows=not _other_encoding(content))
@@ -811,7 +885,7 @@ def _read_loose(content: bytes, content_type: str, deadline: float) -> PageReadi
         if any(ch.isalpha() for ch in text) or not liftable:
             top = walk.hidden_letters.most_common(1)
             hidden = walk.hiders[top[0][0]] if top and top[0][1] else None
-            return PageReading(text, text != strict_visible_text(content, content_type), hidden)
+            return PageReading(text, text != strict, hidden)
         lifted |= {hiders[0]}
 
 
