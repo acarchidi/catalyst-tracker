@@ -3,6 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-10-17
 - **Roadmap item:** Phase 1, "Entity resolver and reference tables"
+- **Amended by:** ADR 0037 (decision 4: a generic or brand name of another company's drug waits for review)
 
 ## Context
 
