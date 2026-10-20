@@ -293,8 +293,9 @@ def extract_documents(
             result.differs = differs
             # Words are counted in the visible text, not `document_text`: the model is shown only
             # the visible text and every quote must be in it, so hidden words can never give a
-            # claim. A copy that is short only because `visible_text` drops too much is checked
-            # again each run, so a fixed reader reaches it without anyone editing data (ADR 0038).
+            # claim. A copy that is short only because the reader drops too much (`read_page`, ADR
+            # 0044) is checked again each run, so a fixed reader reaches it without a data edit
+            # (ADR 0038). When that reading differs from main's strict one, every claim waits.
             if len(visible.split()) < MIN_WORDS:
                 skip(ReadingSkip.NO_READABLE_TEXT)
                 if len(text.split()) >= MIN_WORDS:  # the words are there, but the page hides them

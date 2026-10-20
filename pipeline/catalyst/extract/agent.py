@@ -108,7 +108,8 @@ def check_proposal(
 ) -> ExtractedCatalyst:
     """Check one proposal as the model gave it: find its quote, its date words, and its window.
 
-    `visible` is the copy's visible text (`visible_text`); when given, the quote must be in it too.
+    `visible` is the text the model read (`visible_text`: the copy without what it hides from a
+    reader, as a browser builds it); when given, the quote must be in it too.
     """
     catalyst_type = CatalystType(item["catalyst_type"])
     date_text = str(item["date_text"])

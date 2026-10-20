@@ -8,7 +8,9 @@ element overrides, and check that the reader's words come back while every plant
 
 import hashlib
 import json
+import logging
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 
@@ -171,7 +173,7 @@ def test_only_a_cloak_that_holds_every_word_is_lifted() -> None:
 
 def test_hidden_by_names_what_hides_the_most_words() -> None:
     two = '<div style="display:none">Hidden.</div><p class="x" style="opacity:0">Hidden more words.</p>'
-    assert hidden_by(_page(two), "text/html") == '<p class="x" style="opacity:0">'
+    assert hidden_by(_page(two), "text/html") == "p: style"
     assert hidden_by(_page("<p>Seen.</p>"), "text/html") is None
     assert hidden_by(b"plain words", "text/plain") is None
 
@@ -305,7 +307,7 @@ def test_one_reading_gives_the_text_the_cloak_and_what_hides() -> None:
     cloaked = _page("<div style='display:none'><p>Seen.</p></div>")
     assert read_page(cloaked, "text/html") == PageReading("Seen.", True, None)
     two = _page("<p>Seen.</p><p style='opacity:0'>Hidden words.</p>")
-    assert read_page(two, "text/html") == PageReading("Seen.", False, '<p style="opacity:0">')
+    assert read_page(two, "text/html") == PageReading("Seen.", False, "p: style")
 
 
 # Third Opus review of PR #91. Each keeps INJECT hidden in a browser.
@@ -489,3 +491,65 @@ def test_the_strict_reader_is_mains_reader() -> None:
         for name, content in _strict_cases().items()
     }
     assert found == expected
+
+
+# Fifth Opus review of PR #91: a page the loose reader cannot read, or not in time, gets main's reading.
+BROKEN = b"<table>\x00<math><html>"  # html5lib 1.1 raises AssertionError at the end of this input
+
+
+def _fallbacks(caplog: pytest.LogCaptureFixture) -> list[dict[str, object]]:
+    return [
+        r.__dict__["catalyst_fields"] for r in caplog.records if r.getMessage() == "loose_reader_fell_back"
+    ]
+
+
+@pytest.mark.parametrize(
+    "content",
+    [BROKEN, GOLD[0].read_bytes().replace(b"</TEXT>", BROKEN + b"</TEXT>")],
+    ids=["alone", "in a release"],
+)
+def test_a_page_the_parser_cannot_read_gets_mains_reading(
+    content: bytes, caplog: pytest.LogCaptureFixture
+) -> None:
+    assert visible_text(content, "text/html") == strict_visible_text(content, "text/html")
+    caplog.clear()
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        reading = read_page(content, "text/html")
+    assert reading == PageReading(strict_visible_text(content, "text/html"), False, None)
+    assert _fallbacks(caplog) == [{"reason": "AssertionError"}]
+
+
+def test_a_deeply_nested_page_falls_back_fast(caplog: pytest.LogCaptureFixture) -> None:
+    """html5lib takes minutes on 50,000 nested elements; the depth is counted before it is asked."""
+    content = b"<html><body><p>Seen.</p>" + b"<div>" * 50_000 + b"deep</body></html>"
+    started = time.monotonic()
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        reading = read_page(content, "text/html")
+    assert time.monotonic() - started < 5
+    assert reading == PageReading(strict_visible_text(content, "text/html"), False, None)
+    assert _fallbacks(caplog) == [{"reason": "TooDeep"}]
+
+
+def test_a_reading_over_its_time_falls_back(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr("catalyst.extract.text.LOOSE_SECONDS", 0.0)
+    content = _page(
+        "<div style='visibility:hidden'><p style='visibility:visible'>Shown.</p></div><p>Seen.</p>"
+    )
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        reading = read_page(content, "text/html")
+    assert reading == PageReading("Seen.", False, None)
+    assert _fallbacks(caplog) == [{"reason": "TimeoutError"}]
+
+
+def test_what_hides_is_named_without_page_text() -> None:
+    """The log names the tag and the kind of hide only, never attribute values."""
+    cases = {
+        "<p style='opacity:0'>Hidden words.</p>": "p: style",
+        "<p hidden class='secret-name'>Hidden words.</p>": "p: hidden attribute",
+        "<iframe>Hidden words.</iframe>": "iframe: never shown",
+        "<style>.x{display:none}</style><div class='x'>Hidden words.</div>": "div: stylesheet rule",
+    }
+    for html, named in cases.items():
+        assert hidden_by(_page(html + "<p>Seen.</p>"), "text/html") == named, html

@@ -15,7 +15,9 @@ as a browser builds it, with html5lib, which follows the HTML standard's parsing
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -26,6 +28,47 @@ from xml.etree.ElementTree import Element
 import html5lib
 
 from catalyst.extract.strict_text import visible_text as strict_visible_text
+from catalyst.logs import log_event
+
+# A page the loose reader cannot read, or not in time, gets the strict reading, as on main.
+# On the 80 recorded pages the most is 5,430 tags, nesting 15 deep, 138 characters of
+# stylesheet, and 0.32 s; html5lib takes minutes on 50,000 nested elements. The limits leave
+# room for releases many times larger than any on file.
+LOOSE_SECONDS = 5.0
+_MAX_DEPTH = 500
+_MAX_TAGS = 100_000
+_MAX_CSS = 200_000
+_TAG = re.compile(r"<(/?)([a-zA-Z][^\s/>]*)[^>]*?(/?)>")
+# Elements with no end tag: they never deepen the nesting.
+_LEAVES = frozenset(
+    {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+)
+
+_log = logging.getLogger(__name__)
+
+
+class TooDeep(Exception):
+    """The page nests elements deeper than the loose reader reads in time."""
+
+
+class TooLarge(Exception):
+    """The page has more tags or more stylesheet than the loose reader reads in time."""
+
 
 TEXT_VERSION = "1"
 
@@ -570,13 +613,16 @@ def _element_look(tag: str, attrs: Mapping[str, str], styles: _Styles) -> _Look:
 
 
 def _describe(tag: str, attrs: Mapping[str, str]) -> str:
-    """Name an element for the log: its tag with its id, class, style, and hidden attributes."""
-    shown = (
-        f'{name}="{value[:100]}"'
-        for name, value in attrs.items()
-        if name in ("id", "class", "style", "hidden")
-    )
-    return "<" + " ".join((tag, *shown)) + ">"
+    """Name an element for the log by its tag and the kind of hide only: never any page text."""
+    if _never_shown(tag, attrs):
+        kind = "never shown"
+    elif "hidden" in attrs:
+        kind = "hidden attribute"
+    elif _style_look(attrs.get("style", "")).hides():
+        kind = "style"
+    else:
+        kind = "stylesheet rule"
+    return f"{tag}: {kind}"
 
 
 @dataclass
@@ -592,17 +638,21 @@ class _Walk:
 _Todo = list[tuple["Element | str | None", _Look, "int | None"]]
 
 
-def _walk(root: Element, styles: _Styles, lifted: frozenset[int]) -> _Walk:
+def _walk(root: Element, styles: _Styles, lifted: frozenset[int], deadline: float) -> _Walk:
     """Walk the tree in reading order and keep the text a reader sees.
 
     Hidden letters are counted against the outermost element whose own look hides them, so a page
     cloak (one such element hiding every letter) can be found. Elements in `lifted` are cloaks: their
-    own look is ignored, but every hide inside them still holds.
+    own look is ignored, but every hide inside them still holds. Past `deadline`, it stops.
     """
     walk = _Walk()
+    steps = 0
     # To do, last first: an element to enter, a text, or None for the line that ends a block.
     todo: _Todo = [(root, _PLAIN, None)]
     while todo:
+        if steps % 1_000 == 0 and time.monotonic() >= deadline:
+            raise TimeoutError
+        steps += 1
         item, around, hider = todo.pop()
         if item is None:
             walk.parts.append("\n")
@@ -715,16 +765,45 @@ class PageReading(NamedTuple):
 
 
 def read_page(content: bytes, content_type: str) -> PageReading:
-    """Read a stored copy once, as a browser builds it, and return what a reader sees (`visible_text`)."""
+    """Read a stored copy once, as a browser builds it, and return what a reader sees (`visible_text`).
+
+    A copy the loose reader cannot read (html5lib fails), or cannot read in time, gets the strict
+    reading, exactly as main reads it, and the log says why by the error's name only.
+    """
+    try:
+        return _read_loose(content, content_type, time.monotonic() + LOOSE_SECONDS)
+    except Exception as error:  # any failure of the loose reader falls back to main's
+        log_event(_log, "loose_reader_fell_back", reason=type(error).__name__)
+        return PageReading(strict_visible_text(content, content_type), False, None)
+
+
+def _check_size(section: str) -> None:
+    """Refuse a page too deep or too large to read in time, from cheap counts made before parsing."""
+    depth = deepest = tags = 0
+    for found in _TAG.finditer(section):
+        tags += 1
+        if found.group(1):
+            depth = max(0, depth - 1)
+        elif not found.group(3) and found.group(2).lower() not in _LEAVES:
+            depth += 1
+            deepest = max(deepest, depth)
+    if deepest > _MAX_DEPTH:
+        raise TooDeep
+    if tags > _MAX_TAGS or sum(len(css) for css in _STYLE_BLOCK.findall(section)) > _MAX_CSS:
+        raise TooLarge
+
+
+def _read_loose(content: bytes, content_type: str, deadline: float) -> PageReading:
     raw, section = _section(content)
     if "html" not in content_type.lower():
         return PageReading(_tidy(raw), False, None)
+    _check_size(section)
     # With scripts on, as a reader's browser has them: noscript is then text that is never shown.
     root = html5lib.parse(section, treebuilder="etree", namespaceHTMLElements=False, scripting=True)  # pyright: ignore[reportUnknownMemberType]
     styles = _style_rules(raw, root, shows=not _other_encoding(content))
     lifted: frozenset[int] = frozenset()
     while True:
-        walk = _walk(root, styles, lifted)
+        walk = _walk(root, styles, lifted, deadline)
         text = _tidy("".join(walk.parts))
         hiders = [number for number, letters in walk.hidden_letters.items() if letters]
         # A page cloak: one element hides every letter on the page. Lift it and read again.

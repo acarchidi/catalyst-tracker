@@ -478,7 +478,7 @@ def test_a_page_that_hides_its_words_says_what_hides_them(
     assert (fields["source_key"], fields["words"], fields["hidden_by"]) == (
         "sec:a",
         MIN_WORDS + 2,
-        '<p style="display:none">',
+        "p: style",
     )
 
 
