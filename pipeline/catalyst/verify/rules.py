@@ -112,10 +112,22 @@ _TAKEN_BACK = re.compile(
 )
 
 
+# Words just after the date words that take them back: "the Q4 2026 readout has been
+# rescheduled", "guided for Q4 2026, were delayed to 2027" (review follow-ups of CP4 O3).
+_TAKEN_BACK_AFTER = re.compile(
+    r"\b(?:rescheduled|withdrawn|postponed|(?:delayed|moved|pushed|shifted)\s+(?:back\s+)?to)\b",
+    re.IGNORECASE,
+)
+
+
 # Words just before the date words that put the event outside them: "after", "beyond", "no earlier
-# than", "later than" (but not "no later than", a deadline), "not before" (CP4 round 2).
+# than", "later than", "not before" (CP4 round 2). Words that make them a deadline or a limit name no
+# window for the event either: "before", "prior to", "ahead of", "until", "through", "on or before",
+# "no later than" (review follow-ups of CP4 O3). A "by" deadline is held elsewhere: its words include
+# "by", and it publishes only when it writes its year.
 _OUTSIDE = re.compile(
-    r"\b(?:after|beyond|(?<!no )(?<!not )later\s+than|no\s+earlier\s+than|not\s+before)\s+(?:the\s+)?$",
+    r"\b(?:after|beyond|before|prior\s+to|ahead\s+of|until|through|"
+    r"(?:no\s+|not\s+)?(?:later|earlier)\s+than)\s+(?:the\s+)?$",
     re.IGNORECASE,
 )
 
@@ -123,14 +135,16 @@ _OUTSIDE = re.compile(
 def _taken_back(quote: str, words: str) -> bool:
     """Say whether, at any place the date words appear, the quote takes them back or points past them.
 
-    That is a negation within six words before them, or "after", "beyond", "no earlier than",
-    "later than", or "not before" right before them.
+    That is a negation within six words before them, a word such as "rescheduled" or "delayed to"
+    within six words after them, or a word right before them that puts the event outside them or
+    makes them a deadline ("after", "beyond", "before", "until", "through", "no later than").
     """
     pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, words.split())) + r"(?!\w)"
     for found in re.finditer(pattern, quote):
-        before = quote[: found.start()]
+        before, after = quote[: found.start()], quote[found.end() :]
         lead = " ".join(before.split()[-6:])
-        if _TAKEN_BACK.search(lead) or _OUTSIDE.search(before):
+        tail = " ".join(after.split()[:6])
+        if _TAKEN_BACK.search(lead) or _TAKEN_BACK_AFTER.search(tail) or _OUTSIDE.search(before):
             return True
     return False
 
@@ -144,7 +158,8 @@ def _date_words_in_quote(facts: ClaimFacts, _today: date) -> CheckResult:
     if _taken_back(facts.quote, text):
         return _failed(
             "date_words_in_quote",
-            f"the quote may say the date words '{text}' no longer hold, or that the event falls after them",
+            f"the quote may say the date words '{text}' no longer hold, or that they are a deadline "
+            "or a limit rather than the event's window",
         )
     cut = cut_short(facts.quote, text, facts.published)
     if cut is not None:
