@@ -1,0 +1,12 @@
+{
+  "https://clinicaltrials.gov/api/v2/studies?filter.ids=NCT00000099%2CNCT01487304&pageSize=2": {
+    "file": "00_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?filter.ids=NCT04677543%2CNCT04677569&pageSize=2": {
+    "file": "01_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

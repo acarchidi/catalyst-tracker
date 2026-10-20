@@ -26,7 +26,7 @@ from catalyst.api.mcp_server import build_server
 from catalyst.api.read import read_session
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
-from catalyst.collectors.run import SOURCES, build_clients, collect_all, load_companies
+from catalyst.collectors.run import ON_REQUEST, SOURCES, build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.export import build_export, write_export
@@ -95,7 +95,11 @@ def _parser() -> argparse.ArgumentParser:
         "--sources",
         type=_sources,
         default=None,
-        help=f"Only these collectors, comma-separated, from: {', '.join(SOURCES)} (default: all).",
+        help=(
+            f"Only these collectors, comma-separated, from: {', '.join(SOURCES)} (default: all); "
+            "also 'ctgov-linked', only the trials our claims and catalysts name (ADR 0040), "
+            "which runs only when named."
+        ),
     )
     _store_arguments(collect)
     commands.add_parser(
@@ -216,10 +220,11 @@ def _parser() -> argparse.ArgumentParser:
 def _sources(value: str) -> frozenset[str]:
     """Parse `--sources`: comma-separated names from `SOURCES`; refuse any other, naming the valid ones."""
     names = [name.strip() for name in value.split(",")]
-    unknown = [name for name in names if name not in SOURCES]
+    unknown = [name for name in names if name not in (*SOURCES, *ON_REQUEST)]
     if unknown:
         shown = ", ".join(repr(name) for name in unknown)
-        raise argparse.ArgumentTypeError(f"unknown source {shown}; valid sources: {', '.join(SOURCES)}")
+        valid = ", ".join((*SOURCES, *ON_REQUEST))
+        raise argparse.ArgumentTypeError(f"unknown source {shown}; valid sources: {valid}")
     return frozenset(names)
 
 

@@ -5,13 +5,17 @@ treated as rules for web crawlers (owner decision 2026-10-16, ADR 0005).
 """
 
 import json
-from collections.abc import Iterator
+import logging
+from collections.abc import Iterator, Sequence
 from datetime import date
 from typing import Any
 
 from catalyst.collectors.documents import FetchedDocument, new_york_midnight
 from catalyst.collectors.http import PoliteHttpClient
+from catalyst.logs import log_event
 from catalyst.schemas import SourceTier
+
+_log = logging.getLogger(__name__)
 
 API_URL = "https://clinicaltrials.gov/api/v2/studies"
 STUDY_URL = "https://clinicaltrials.gov/study/{nct_id}"
@@ -66,3 +70,28 @@ def collect_sponsor_studies(
             if not token:
                 break
             params["pageToken"] = token
+
+
+BY_ID_BATCH = 20  # registry numbers per request: about 0.6 MB of full records (ADR 0040)
+_MAX_PAGE_SIZE = 1000  # the API's largest page
+
+
+def collect_studies_by_id(
+    client: PoliteHttpClient, nct_ids: Sequence[str], batch_size: int = BY_ID_BATCH
+) -> Iterator[FetchedDocument]:
+    """Yield the full current record of each named trial, asking for `batch_size` numbers at a time.
+
+    Each request names its trials with `filter.ids` and asks for a page as large as the batch, so
+    one page holds the whole answer. A number the registry does not know is logged, not an error.
+    """
+    if not 1 <= batch_size <= _MAX_PAGE_SIZE:
+        raise ValueError(f"batch_size must be from 1 to {_MAX_PAGE_SIZE}")
+    for start in range(0, len(nct_ids), batch_size):
+        batch = list(nct_ids[start : start + batch_size])
+        params: dict[str, str | int] = {"filter.ids": ",".join(batch), "pageSize": batch_size}
+        studies: list[dict[str, Any]] = client.get(API_URL, params=params).json().get("studies", [])
+        found = {study["protocolSection"]["identificationModule"]["nctId"] for study in studies}
+        if missing := [nct for nct in batch if nct not in found]:
+            log_event(_log, "trials_not_in_registry", nct_ids=missing)
+        for study in studies:
+            yield to_document(study)
