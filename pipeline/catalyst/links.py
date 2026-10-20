@@ -10,6 +10,7 @@ from __future__ import annotations
 import random
 import re
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from urllib.parse import urlsplit
@@ -18,6 +19,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.api.read import published, read_session
 from catalyst.collectors.http import HostPolicy, PoliteHttpClient, RobotsDisallowedError, shared_limiter
 from catalyst.collectors.ratelimit import Limiter, NoWait
 from catalyst.collectors.sec.edgar import SEC_LIMITER
@@ -160,16 +162,51 @@ class LinkReport:
         return all(result.status is LinkStatus.OK for result in self.results)
 
 
+def published_urls(session_factory: sessionmaker[Session]) -> list[str]:
+    """Return every link a published record cites, as the read API shows them (ADR 0042)."""
+    with read_session(session_factory) as session:
+        details = published(session)
+    cited = {source.url for detail in details for source in detail.sources}
+    cited |= {change.source.url for detail in details for change in detail.history}
+    return sorted(cited)
+
+
 def check_links(
-    session_factory: sessionmaker[Session], client: LinkClient, sample: int | None = None, seed: int = 0
+    session_factory: sessionmaker[Session],
+    client: LinkClient,
+    sample: int | None = None,
+    seed: int = 0,
+    urls: Sequence[str] | None = None,
 ) -> LinkReport:
-    """Check every stored source link, or a repeatable random `sample` of them."""
-    table = TABLES[SourceDocument]
-    with session_factory() as session:
-        urls = sorted(set(session.execute(select(table.c.url)).scalars()))
+    """Check every stored source link, or only `urls`, or a repeatable random `sample` of them."""
+    if urls is None:
+        table = TABLES[SourceDocument]
+        with session_factory() as session:
+            urls = sorted(set(session.execute(select(table.c.url)).scalars()))
+    urls = sorted(set(urls))
     if sample is not None and sample < len(urls):
         urls = sorted(random.Random(seed).sample(urls, sample))  # noqa: S311 - a repeatable sample, not security
     return LinkReport([client.check(url) for url in urls])
+
+
+# A dead link no longer leads to its document. A refusal or a site error says nothing about the
+# document, so it is counted apart and never makes a link dead (ADR 0042).
+DEAD = (LinkStatus.BROKEN, LinkStatus.MOVED)
+
+
+def link_summary(report: LinkReport) -> dict[str, object]:
+    """Return the counts for the job's JSON report, with every dead link and its verdict."""
+    dead = [r for r in report.results if r.status in DEAD]
+    working = report.counts().get(LinkStatus.OK, 0)
+    checked = len(report.results)
+    return {
+        "checked": checked,
+        "working": working,
+        "dead": len(dead),
+        "dead_percent": f"{100 * len(dead) / checked:.1f}" if checked else None,
+        "not_answered": checked - working - len(dead),
+        "dead_links": [{"url": r.url, "verdict": r.status.value} for r in dead],
+    }
 
 
 def links_markdown(report: LinkReport) -> str:

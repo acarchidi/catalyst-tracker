@@ -34,7 +34,7 @@ from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
 from catalyst.issues import API, plan_markdown, post
-from catalyst.links import check_links, link_client, links_markdown
+from catalyst.links import DEAD, check_links, link_client, link_summary, links_markdown, published_urls
 from catalyst.llm import anthropic_adapter
 from catalyst.llm.client import ModelClient
 from catalyst.llm.config import load_config
@@ -123,6 +123,12 @@ def _parser() -> argparse.ArgumentParser:
         "--sample", type=int, default=None, help="Check a random sample instead of every link."
     )
     links.add_argument("--seed", type=int, default=GATE1_SEED, help="Seed for the repeatable sample.")
+    links.add_argument(
+        "--published",
+        action="store_true",
+        help="Only the links published records cite; fail only on a missing or moved one (weekly check).",
+    )
+    links.add_argument("--summary", type=Path, default=None, help="Also write the counts (JSON) here.")
     verify = commands.add_parser(
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
@@ -352,8 +358,16 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         except settings.MissingSettingError as error:
             print(error, file=sys.stderr)
             return 2
-        report = check_links(sessionmaker(engine), client, args.sample, args.seed)
+        if args.published:
+            urls = published_urls(sessionmaker(engine))
+            report = check_links(sessionmaker(engine), client, args.sample, args.seed, urls=urls)
+        else:
+            report = check_links(sessionmaker(engine), client, args.sample, args.seed)
+        if args.summary is not None:
+            args.summary.write_text(json.dumps(link_summary(report), indent=2) + "\n", encoding="utf-8")
         print(links_markdown(report), end="")
+        if args.published:  # a site error or a refusal says nothing about the document (ADR 0042)
+            return 1 if any(r.status in DEAD for r in report.results) else 0
         return 0 if report.ok else 1
     finally:
         engine.dispose()
