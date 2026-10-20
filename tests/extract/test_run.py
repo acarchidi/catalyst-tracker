@@ -17,7 +17,7 @@ from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import catalyst_claims
 from catalyst.extract.run import MIN_WORDS, extract_documents
-from catalyst.extract.text import TEXT_VERSION, find_quote
+from catalyst.extract.text import TEXT_VERSION, PageReading, find_quote
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
 from catalyst.llm.ledger import InMemoryLedger
@@ -301,10 +301,10 @@ def test_a_copy_with_no_readable_text_is_read_once_the_reader_finds_its_words(
     store = LocalSnapshotStore(tmp_path)
     _document(store, session_factory, "a", "8-K EX-99.1")
 
-    def blank(_content: bytes, _type: str) -> str:
-        return ""
+    def blank(_content: bytes, _type: str) -> PageReading:
+        return PageReading("", False, None)
 
-    monkeypatch.setattr("catalyst.extract.run.visible_text", blank)
+    monkeypatch.setattr("catalyst.extract.run.read_page", blank)
     fake = _Fake()
     assert _run(session_factory, store, fake)["documents_skipped_no_readable_text"] == 1
     monkeypatch.undo()  # the reader is fixed
@@ -453,10 +453,10 @@ def test_a_skip_is_counted_and_alerted_once_per_document_and_reason_whatever_the
     assert fake.calls == []
 
     # Another reason for the same copy is news, and is counted.
-    def blank(_content: bytes, _type: str) -> str:
-        return ""
+    def blank(_content: bytes, _type: str) -> PageReading:
+        return PageReading("", False, None)
 
-    monkeypatch.setattr("catalyst.extract.run.visible_text", blank)
+    monkeypatch.setattr("catalyst.extract.run.read_page", blank)
     other = _run(session_factory, store, fake, config=_other_model())
     assert (other["documents_skipped_no_readable_text"], other["documents_rechecked_still_skipped"]) == (1, 0)
 

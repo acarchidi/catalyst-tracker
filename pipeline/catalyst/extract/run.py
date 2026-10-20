@@ -37,7 +37,7 @@ from catalyst.extract.agent import (
     extract_catalysts,
     proposal_value,
 )
-from catalyst.extract.text import document_text, hidden_by, read_visible, visible_text
+from catalyst.extract.text import document_text, read_page
 from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.logs import log_alert, log_event
 from catalyst.schemas import Claim, Company, CompanyDocument, DocumentReading, ReadingSkip, SourceDocument
@@ -288,7 +288,7 @@ def extract_documents(
         try:
             content = store.get(row.snapshot_key)
             text = document_text(content, row.content_type)
-            visible = visible_text(content, row.content_type)
+            visible, cloaked, hidden = read_page(content, row.content_type)  # one reading of the page
             # Words are counted in the visible text, not `document_text`: the model is shown only
             # the visible text and every quote must be in it, so hidden words can never give a
             # claim. A copy that is short only because `visible_text` drops too much is checked
@@ -301,10 +301,9 @@ def extract_documents(
                         "document_hides_its_words",
                         source_key=row.source_key,
                         words=len(text.split()),
-                        hidden_by=hidden_by(content, row.content_type),
+                        hidden_by=hidden,
                     )
                 continue
-            cloaked = read_visible(content, row.content_type)[1]  # a lifted page cloak still holds claims
             extraction = extract_catalysts(client, text, published, visible=visible, cloaked=cloaked)
         except InputTooLargeError as error:
             if skip(ReadingSkip.TOO_LARGE):  # an alert only the first time; re-checks just log the skip

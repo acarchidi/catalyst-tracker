@@ -12,7 +12,14 @@ from pathlib import Path
 
 import pytest
 
-from catalyst.extract.text import document_text, hidden_by, read_visible, visible_text
+from catalyst.extract.text import (
+    PageReading,
+    document_text,
+    hidden_by,
+    read_page,
+    read_visible,
+    visible_text,
+)
 from conftest import FIXTURES, REPO_ROOT
 
 GOLD = sorted((REPO_ROOT / "evals" / "extract_catalysts" / "documents").glob("*.htm"))
@@ -212,3 +219,87 @@ def test_a_lifted_cloak_is_reported() -> None:
     assert read_visible(cloaked, "text/html") == ("Seen.", True)
     assert read_visible(_page("<p>Seen.</p><p hidden>Hidden.</p>"), "text/html") == ("Seen.", False)
     assert read_visible(b"plain", "text/plain") == ("plain", False)
+
+
+def _hidden(inner: str) -> str:
+    return f"<div style='visibility:hidden'>{inner}</div>"
+
+
+_S = "<p class='s'>INJECT</p>"
+# Second Opus review of PR #91. Each keeps INJECT hidden in a browser; each showed it on the first fix.
+ROUND_TWO_LEAKS = {
+    # 1. The browser builds a different tree from the markup than a tag-by-tag reader does.
+    "p closed by p": _hidden("<p style='visibility:visible'>ok<p>INJECT"),
+    "p closed by div": _hidden("<p style='visibility:visible'>ok<div>INJECT</div>"),
+    "li closed by li": _hidden("<ul><li style='visibility:visible'>ok<li>INJECT</ul>"),
+    "option closed by option": _hidden(
+        "<select><option style='visibility:visible'>ok<option>INJECT</select>"
+    ),
+    "dt closed by dd": _hidden("<dl><dt style='visibility:visible'>ok<dd>INJECT</dl>"),
+    "dd closed by dt": _hidden("<dl><dd style='visibility:visible'>ok<dt>INJECT</dl>"),
+    "td outside a table": _hidden("<td style='visibility:visible'>INJECT</td>"),
+    "caption outside a table": _hidden("<caption style='visibility:visible'>INJECT</caption>"),
+    "nested form": _hidden("<form><form style='visibility:visible'>INJECT</form></form>"),
+    "second body": _hidden("<body style='visibility:visible'>INJECT"),
+    "second html": _hidden("<html style='visibility:visible'>INJECT"),
+    "table text": _hidden("<table style='visibility:visible'>INJECT<tr><td>cell</td></tr></table>"),
+    # 2. An open bracket swallows the rest of the sheet.
+    "open bracket before a rule": "<style>x( {} .s{visibility:visible}</style>" + _hidden(_S),
+    "open square bracket": "<style>x[ {} .s{visibility:visible}</style>" + _hidden(_S),
+    "open bracket in an at-rule": "<style>@x ( ; .s{visibility:visible}</style>" + _hidden(_S),
+    # 3. A type with a leading space is not CSS.
+    "type with a space": "<style type=' text/css'>.s{visibility:visible}</style>" + _hidden(_S),
+    # 4. A stylesheet written inside script text.
+    "style in a template script": (
+        "<script type='text/template'><style>.s{visibility:visible}</style></script>" + _hidden(_S)
+    ),
+    # 5. Class names split only on ASCII spaces.
+    "no-break space in class": "<style>.s{visibility:visible}</style>"
+    + _hidden("<p class='a\u00a0s'>INJECT</p>"),
+    "em space in class": "<style>.s{visibility:visible}</style>" + _hidden("<p class='a\u2003s'>INJECT</p>"),
+    "vertical tab in class": "<style>.s{visibility:visible}</style>"
+    + _hidden("<p class='a\x0bs'>INJECT</p>"),
+    # Optional items: any unreadable hide anywhere stops every stylesheet show.
+    "unreadable hide in another sheet": (
+        "<style>.s{visibility:visible}</style><style>.s:not(.z){visibility:hidden}</style>" + _hidden(_S)
+    ),
+    "unreadable inline style": "<style>.s{visibility:visible}</style><i style='a:('>i</i>" + _hidden(_S),
+    "show rule is case-sensitive": "<style>.S{visibility:visible}</style>" + _hidden(_S),
+    "hide rule ignores case": "<style>.X{display:none}</style><p class='x'>INJECT</p>",
+    "hide id ignores case": "<style>#X{display:none}</style><p id='x'>INJECT</p>",
+    # Colours with little or no alpha, and font sizes code cannot judge, never show.
+    "rgba near zero": "<div style='color:transparent'><p style='color:rgba(0,0,0,0.05)'>INJECT</p></div>",
+    "hsla zero": "<div style='color:transparent'><p style='color:hsla(0,0%,0%,0)'>INJECT</p></div>",
+    "slash alpha 5%": "<div style='color:transparent'><p style='color:rgb(0 0 0 / 5%)'>INJECT</p></div>",
+    "hex with alpha": "<div style='color:transparent'><p style='color:#000000ff'>INJECT</p></div>",
+    "short hex with alpha": "<div style='color:transparent'><p style='color:#000f'>INJECT</p></div>",
+    "vw size": "<div style='font-size:0'><p style='font-size:10vw'>INJECT</p></div>",
+    "percent size": "<div style='font-size:0'><p style='font-size:500%'>INJECT</p></div>",
+    "rem size": "<div style='font-size:0'><p style='font-size:2rem'>INJECT</p></div>",
+    "calc size": "<div style='font-size:0'><p style='font-size:calc(10pt)'>INJECT</p></div>",
+}
+
+
+@pytest.mark.parametrize("html", ROUND_TWO_LEAKS.values(), ids=ROUND_TWO_LEAKS.keys())
+def test_text_the_second_review_found_shown_stays_hidden(html: str) -> None:
+    content = _page(html + "<p>Seen.</p>")
+    assert "INJECT" in document_text(content, "text/html")
+    visible = visible_text(content, "text/html")
+    assert "INJECT" not in visible
+    assert visible.endswith("Seen.")
+
+
+def test_text_that_is_never_page_text() -> None:
+    """Script, noscript, template, noembed, noframes, iframe, textarea, and title hold no page text."""
+    hidden = "".join(
+        f"<{tag}>INJECT</{tag}>"
+        for tag in ("script", "noscript", "template", "noembed", "noframes", "iframe", "textarea", "title")
+    )
+    assert visible_text(_page(hidden + "<p>Seen.</p>"), "text/html") == "Seen."
+
+
+def test_one_reading_gives_the_text_the_cloak_and_what_hides() -> None:
+    cloaked = _page("<div style='display:none'><p>Seen.</p></div>")
+    assert read_page(cloaked, "text/html") == PageReading("Seen.", True, None)
+    two = _page("<p>Seen.</p><p style='opacity:0'>Hidden words.</p>")
+    assert read_page(two, "text/html") == PageReading("Seen.", False, '<p style="opacity:0">')
