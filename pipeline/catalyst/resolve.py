@@ -183,7 +183,9 @@ class ReferenceData:
                 if key := normalize_name(name):
                     self._by_name[key].append(company.id)
         self._drug_names: defaultdict[str, list[tuple[DrugRef, DrugNameKind]]] = defaultdict(list)
+        self._drug_owner: dict[UUID, UUID | None] = {}
         for drug in drugs:
+            self._drug_owner[drug.id] = drug.company_id
             for name, kind in drug.names:
                 if key := name_key(name):
                     self._drug_names[key].append((drug, kind))
@@ -233,8 +235,13 @@ class ReferenceData:
         rule = _KIND_RULE[min((kind for _, kind in hits), key=list(DrugNameKind).index)]
         return _found((drug.id for drug, _ in hits), rule)
 
+    def drug_company(self, drug_id: UUID) -> UUID | None:
+        """Return the company that develops the drug, if one is known."""
+        return self._drug_owner.get(drug_id)
+
     def add_drug(self, drug: DrugRef) -> None:
         """Index a drug created after loading, so later lookups in the same run find it."""
+        self._drug_owner[drug.id] = drug.company_id
         for name, kind in drug.names:
             if key := name_key(name):
                 self._drug_names[key].append((drug, kind))
