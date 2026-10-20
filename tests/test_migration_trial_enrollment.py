@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from conftest import alembic_config, truncate_all
 
 REVISION = "b3f1c7e2a9d4"
-BEFORE = "5e7a0c3b9d21"
+BEFORE = "b7e2c4d9a1f3"
 
 
 @pytest.fixture
