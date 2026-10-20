@@ -109,6 +109,10 @@ CUT_SHORT = [
     ("Data are expected by the end of 2027.", "2027"),
     ("Data are expected in the fourth quarter of fiscal 2027.", "fourth quarter"),
     ("Data are expected in fiscal 2027.", "2027"),
+    ("Data are expected in FY-2027.", "2027"),
+    ("Data are expected in F.Y. 2027.", "2027"),
+    ("Data are expected in FY Q4 2027.", "Q4 2027"),
+    ("Data are expected in FY-Q4 2027.", "Q4 2027"),
     ("Acme will host investor meetings December 1-15, 2026.", "December 1"),
     ("Data are expected in Q4 2026-Q1 2027.", "Q4 2026"),
     ("Data are expected in Q4 2026-Q1 2027.", "Q1 2027"),
@@ -145,6 +149,23 @@ NEGATED = [
     ("Topline data will slip beyond the second half of 2027.", "second half of 2027"),
     ("The decision is expected no earlier than Q2 2027.", "Q2 2027"),
     ("The decision will come later than Q2 2027.", "Q2 2027"),
+    # A deadline or a limit names no window for the event (review follow-ups, CP4 O3).
+    ("Enrollment will close before the second half of 2027.", "second half of 2027"),
+    ("Topline data will not come prior to Q2 2027.", "Q2 2027"),
+    ("Acme will raise funds ahead of the second half of 2027.", "second half of 2027"),
+    ("Patients will be dosed until Q2 2027.", "Q2 2027"),
+    ("The study runs through the second half of 2027.", "second half of 2027"),
+    ("Acme will file the NDA on or before December 15, 2027.", "December 15, 2027"),
+    ("We expect data no later than Q4 2026.", "Q4 2026"),
+    ("We expect data not later than Q4 2026.", "Q4 2026"),
+    ("We expect data earlier than Q4 2026.", "Q4 2026"),
+    # Words just after the date words that take it back (review follow-ups, CP4 O3).
+    ("The Q4 2026 readout has been rescheduled.", "Q4 2026"),
+    ("Topline data, guided for Q4 2026, were delayed to 2027.", "Q4 2026"),
+    ("Topline data, guided for Q4 2026, were moved to 2027.", "Q4 2026"),
+    ("The Q4 2026 guidance for topline data was withdrawn.", "Q4 2026"),
+    ("The Q4 2026 readout is postponed.", "Q4 2026"),
+    ("The Q4 2026 readout was pushed back to 2027.", "Q4 2026"),
 ]
 
 
@@ -164,7 +185,7 @@ WHOLE = [
     ("The meeting runs November 16-19, 2026 in Boston.", "November 16-19, 2026"),
     ("Data are expected by the end of 2027.", "by the end of 2027"),
     ("Data for SPY001 in Q4 2026 and for SPY072 in Q1 2027.", "Q4 2026"),
-    ("We expect data no later than Q4 2026.", "Q4 2026"),
+    ("Data are expected in Q4 2026, as Acme said in October.", "Q4 2026"),
 ]
 
 
