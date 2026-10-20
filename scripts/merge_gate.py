@@ -12,11 +12,17 @@ JSON object, `{"action": ..., "reason": ...}`, where action is:
 - "skip": the pull request is not eligible, or a required check did not succeed.
 
 Usage: merge_gate.py SHA PR_JSON FILES_JSON CHECKS_JSON
+
+The repository this runs in comes from GITHUB_REPOSITORY (set by GitHub Actions); without it,
+nothing merges. The repository is public (2026-10-20), so anyone can open a pull request from a
+fork and name its branch claude/. The robot merges only pull requests whose branch is in this
+repository and that the repository's owner opened.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any
@@ -56,16 +62,30 @@ def _decision(action: str, reason: str) -> dict[str, str]:
     return {"action": action, "reason": reason}
 
 
-def _ineligible(sha: str, pr: dict[str, Any]) -> str | None:
+def _field(pr: dict[str, Any], key: str, inner: str) -> str:
+    """Return pr[key][inner] as text, or "" when it is missing or not an object."""
+    value: Any = pr.get(key)
+    if not isinstance(value, dict):
+        return ""
+    found: Any = value.get(inner)  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+    return found if isinstance(found, str) else ""
+
+
+def _ineligible(sha: str, pr: dict[str, Any], repo: str) -> str | None:
     """Return why the pull request is not one the robot handles, or None."""
     raw_labels: list[Any] = pr.get("labels") or []
     labels = {str(label.get("name", "")) for label in raw_labels if isinstance(label, dict)}  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType, reportUnknownVariableType]
+    owner, _, name = repo.partition("/")
+    head_repo = f"{_field(pr, 'headRepositoryOwner', 'login')}/{_field(pr, 'headRepository', 'name')}"
     rules = [
+        (bool(owner and name) and "/" not in name, "the robot does not know which repository it runs in"),
         (pr.get("state") == "OPEN", "the pull request is not open"),
         (pr.get("isDraft") is False, "the pull request is a draft"),
         (pr.get("baseRefName") == "main", "the pull request does not target main"),
         (str(pr.get("headRefName", "")).startswith("claude/"), "the branch is not a claude/ branch"),
         (pr.get("isCrossRepository") is False, "the pull request comes from another repository"),
+        (head_repo == repo, "the pull request comes from another repository"),
+        (_field(pr, "author", "login") == owner, "the pull request was not opened by the repository owner"),
         (pr.get("headRefOid") == sha, "the pull request has newer commits than the checked one"),
         (HOLD_LABEL not in labels, f'the pull request has the "{HOLD_LABEL}" label'),
     ]
@@ -86,9 +106,11 @@ def _check_problem(checks: list[dict[str, Any]]) -> tuple[str, str] | None:
     return None
 
 
-def decide(sha: str, pr: dict[str, Any], files: list[str], checks: list[dict[str, Any]]) -> dict[str, str]:
-    """Return the robot's decision for one pull request at one commit."""
-    reason = _ineligible(sha, pr)
+def decide(
+    sha: str, pr: dict[str, Any], files: list[str], checks: list[dict[str, Any]], *, repo: str
+) -> dict[str, str]:
+    """Return the robot's decision for one pull request at one commit, in repository `repo`."""
+    reason = _ineligible(sha, pr, repo)
     if reason:
         return _decision("skip", reason)
     problem = _check_problem(checks)
@@ -109,7 +131,7 @@ def main() -> int:
         return 2
     sha = sys.argv[1]
     pr, files, checks = (json.loads(Path(p).read_text(encoding="utf-8")) for p in sys.argv[2:])
-    print(json.dumps(decide(sha, pr, files, checks)))
+    print(json.dumps(decide(sha, pr, files, checks, repo=os.environ.get("GITHUB_REPOSITORY", ""))))
     return 0
 
 
