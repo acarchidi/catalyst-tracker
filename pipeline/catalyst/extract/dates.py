@@ -288,7 +288,11 @@ _DATE_PART = (
 # An unspaced hyphen, slash, or en dash that joins the words to another date part: "Q4 2026-Q1 2027".
 _JOINED_AFTER = re.compile(r"[-/\u2013]" + _DATE_PART, re.IGNORECASE | re.ASCII)
 _JOINED_BEFORE = re.compile(r"(?<![^\W_])" + _DATE_PART + r"[\w.']*[-/\u2013]$", re.IGNORECASE | re.ASCII)
-_FISCAL = re.compile(r"\bfiscal\b|\bFY\s?'?\d", re.IGNORECASE)
+# A fiscal year in any spelling: "fiscal 2027", "FY2027", "FY '27", "FY-2027", "F.Y. 2027",
+# "FY Q4 2027", "FY-Q4 2027", "FY 4Q27" (CP4 review, O2). "FYI" and "Fyarro" are not one.
+_FISCAL = re.compile(
+    r"\bfiscal\b|\bF\.?Y\.?(?=[\s\-\u2010-\u2013]*(?:'?\d|Q[1-4]|[1-4]Q|H[12]|[12]H))", re.IGNORECASE
+)
 
 
 def _key(window: DateWindow | None) -> tuple[date, date, DatePrecision] | None:
@@ -352,5 +356,8 @@ def writes_year(words: str, published: date) -> bool:
     earlier = parse_window(words, moved)
     if here is None or earlier is None or (here.end, here.precision) != (earlier.end, earlier.precision):
         return False
+    # Only the end of a "by" phrase is compared: `_deadline` always starts it on the document's
+    # date (or makes it that one day when the deadline is that day), so its start moves with the
+    # document whatever the words say. tests/extract/test_dates.py pins this (Claude review of PR #71).
     by = re.sub(r"\s+", " ", words.lower()).strip().startswith("by ")
     return by or here.start == earlier.start

@@ -8,8 +8,8 @@ A read that makes no claim is kept as a reading, so a re-run skips it too until 
 changes. Three kinds of copy never reach the model, each kept as a reading with its reason: one
 that is not a web page or plain text (a PDF copy, done for good), and one with under `MIN_WORDS`
 readable words or over the extractor's input limit. Those two are checked again each run, without
-a model call and after the new documents, so a fixed text reader or a higher limit reads them; each
-is counted only when first found (ADR 0038).
+a model call and after the new documents, the longest-unchecked first, so a fixed text reader or a
+higher limit reads them; each is counted only when first found with that reason (ADR 0038).
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import and_, exists, func, or_, select
+from sqlalchemy import and_, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
@@ -107,8 +107,10 @@ def _candidates(
     """Return the documents to work on, and how many are done.
 
     First the newest documents not yet extracted with this prompt and never skipped, up to `limit`;
-    then, up to `limit` more, the newest whose skip a fixed reader or a higher limit may undo, so
-    those re-checks never take the place of a new document.
+    then, up to `limit` more, those whose skip a fixed reader or a higher limit may undo, so those
+    re-checks never take the place of a new document. Re-checks go longest-unchecked first: each one
+    moves its skip's `read_at` to that run, so more than `limit` of them all come round in turn
+    (review of PR #79).
     """
     documents, claims, readings = TABLES[SourceDocument], TABLES[Claim], TABLES[DocumentReading]
     links, companies = TABLES[CompanyDocument], TABLES[Company]
@@ -130,6 +132,17 @@ def _candidates(
 
     undoable = [skip.value for skip in RECHECKED]
     recheck = reading(readings.c.skipped.in_(undoable))
+    last_checked = (
+        select(func.max(readings.c.read_at))
+        .where(
+            readings.c.source_document_id == documents.c.id,
+            readings.c.agent == ROLE,
+            readings.c.prompt_id == EXTRACTOR_PROMPT[0],
+            readings.c.prompt_version == EXTRACTOR_PROMPT[1],
+            readings.c.skipped.in_(undoable),
+        )
+        .scalar_subquery()
+    )
     done = or_(claimed, reading(readings.c.skipped.is_(None) | readings.c.skipped.not_in(undoable)))
     company = (
         select(companies.c.name)
@@ -147,7 +160,8 @@ def _candidates(
     skipped = session.execute(finished).scalar_one()
     newest = documents.c.published_at.desc()
     fresh = session.execute(query.where(~done, ~recheck).order_by(newest).limit(limit)).all()
-    again = session.execute(query.where(and_(~done, recheck)).order_by(newest).limit(limit)).all()
+    longest_unchecked = (last_checked.asc(), newest, documents.c.id)
+    again = session.execute(query.where(and_(~done, recheck)).order_by(*longest_unchecked).limit(limit)).all()
     return [*fresh, *again], skipped
 
 
@@ -187,11 +201,32 @@ _READING_KEY = list(DocumentReading.__unique__[0])
 
 
 def _keep_skip(session_factory: sessionmaker[Session], reading: DocumentReading) -> bool:
-    """Store a skip; return whether it is new, so a re-check is counted and alerted only once."""
+    """Store a skip; return whether it is new, so a re-check is counted and alerted only once.
+
+    New means new for this document and reason, whatever the model: the row's key includes the
+    model, so a model change would otherwise count and alert the same copy again (review of PR
+    #79). A skip already on file for the same reason only moves its `read_at` to this run, which
+    puts it last in the next re-check batch. A different reason replaces this model's skip and
+    counts as new. A model's reading is never replaced by a skip.
+    """
     table = TABLES[DocumentReading]
+    same_document = (
+        table.c.source_document_id == reading.source_document_id,
+        table.c.agent == reading.agent,
+        table.c.prompt_id == reading.prompt_id,
+        table.c.prompt_version == reading.prompt_version,
+    )
     with session_factory.begin() as session:
-        row = insert(table).values(**reading.model_dump()).on_conflict_do_nothing().returning(table.c.id)
-        return session.execute(row).first() is not None
+        seen = update(table).where(*same_document, table.c.skipped == reading.skipped)
+        if session.execute(seen.values(read_at=reading.read_at).returning(table.c.id)).first() is not None:
+            return False
+        row = insert(table).values(**reading.model_dump())
+        stored = row.on_conflict_do_update(
+            index_elements=_READING_KEY,
+            set_={"skipped": row.excluded.skipped, "read_at": row.excluded.read_at},
+            where=table.c.skipped.is_not(None),
+        )
+        return session.execute(stored.returning(table.c.id)).first() is not None
 
 
 def _reading(document_id: Any, model: str, at: datetime, catalysts: int = 0) -> DocumentReading:
@@ -254,6 +289,10 @@ def extract_documents(
             content = store.get(row.snapshot_key)
             text = document_text(content, row.content_type)
             visible = visible_text(content, row.content_type)
+            # Words are counted in the visible text, not `document_text`: the model is shown only
+            # the visible text and every quote must be in it, so hidden words can never give a
+            # claim. A copy that is short only because `visible_text` drops too much is checked
+            # again each run, so a fixed reader reaches it without anyone editing data (ADR 0038).
             if len(visible.split()) < MIN_WORDS:
                 skip(ReadingSkip.NO_READABLE_TEXT)
                 continue

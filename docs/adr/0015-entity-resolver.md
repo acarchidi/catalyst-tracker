@@ -29,8 +29,8 @@ On 2026-10-17 the owner ruled that a trial of several drugs names every drug and
    - An SEC number (CIK) decides alone. An unknown CIK is an unknown company, never a cue to try the name.
    - Otherwise, a ticker matches the company that held it on the document's date (today's tickers when no date is given).
    - Otherwise, the current or any former name matches.
-4. **Drugs.**
-   - A generic (INN) or brand name matches for any company, because licensed drugs change hands.
+4. **Drugs** (amended by ADR 0037).
+   - A generic (INN) or brand name matches for any company, because licensed drugs change hands. (Amended by ADR 0037: when its one drug belongs to another company, the matching job holds the claim for review.)
    - A code name matches only the given company's drugs, because two companies can use the same code. With no company given, a code name two companies share is ambiguous.
 5. **Trials.**
    - A ClinicalTrials.gov number in the text matches exactly. Two numbers in one text are ambiguous.
