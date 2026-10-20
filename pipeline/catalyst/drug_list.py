@@ -44,9 +44,11 @@ from typing import Any, cast
 from uuid import UUID
 
 from catalyst.collectors.coverage import normalize_name
+from catalyst.drug_list_cber import CBER_PRODUCTS
 from catalyst.drug_list_words import (
     DESCRIPTION_WORDS,
     FORM_WORDS,
+    INN_ENDINGS,
     METALS,
     NON_DRUG_WORDS,
     ORDINARY_WORDS,
@@ -425,6 +427,13 @@ class PlannedDrug:
         fda_generic = best.kind is DrugNameKind.INN and best.source is DrugNameSource.OPENFDA
         return best.name.lower() if fda_generic and best.name.isupper() else best.name  # FDA writes capitals
 
+    @property
+    def unconfirmed(self) -> bool:
+        """Say whether only registry words name the drug: no code, no Drugs@FDA name (fifth review)."""
+        return all(
+            n.source is DrugNameSource.CTGOV and n.kind is not DrugNameKind.CODE for n in self.names.values()
+        )
+
 
 _SOURCE_RANK = {DrugNameSource.OPENFDA: 0, DrugNameSource.CTGOV: 1, DrugNameSource.CLAIM: 2}
 _KIND_RANK = {DrugNameKind.INN: 0, DrugNameKind.BRAND: 1, DrugNameKind.CODE: 2}
@@ -462,6 +471,7 @@ class DrugPlan:
     comparators: int = 0  # registry names Drugs@FDA lists for another sponsor
     split_drugs: int = 0  # registry records that joined two approved products, left out
     foreign_records: int = 0  # registry interventions that are another sponsor's approved drug
+    plain_words: int = 0  # registry interventions whose main name has no digit and no drug-name shape
     bridges: int = 0  # other names that would join two records with different main names, dropped
 
 
@@ -643,6 +653,87 @@ def _partners_drugs(kept: list[tuple[SourceRecord, Owner]]) -> set[int]:
     return {id(r) for r, owner in kept if id(r) in flagged and (owner, name_key(r.names[0].name)) not in own}
 
 
+_SHORTEST_STEM_WORD = 6  # letters in a word whose ending counts as an INN stem ("skin" is not "-kin")
+
+
+def _inn_shaped(name: str) -> bool:
+    """Say whether a word of the name ends like a WHO generic name ("navitoclax", "tanruprubart")."""
+    words = re.findall(r"[^\W\d_]+", name)
+    return any(len(w) >= _SHORTEST_STEM_WORD and w.casefold().endswith(INN_ENDINGS) for w in words)
+
+
+def looks_like_a_drug(name: str) -> bool:
+    """Say whether a registry main name without a digit looks like a drug's name (fifth review of PR #73).
+
+    That is a generic name by its INN stem, or a brand the registry writes in capitals ("ELEVIDYS").
+    A class, target, or disease word ("Taxane", "FGF Receptor", "Clostridium difficile") does not,
+    nor does a coined name in mixed case ("Shingrix"): without a dictionary, plain code cannot tell
+    a brand from an ordinary or medical word. A name the registry marks ® or ™, or that Drugs@FDA
+    or the CBER list gives, counts too (`_drug_shaped`).
+    """
+    return _inn_shaped(name) or (name.isupper() and sum(ch.isalpha() for ch in name) >= _SHORTEST_GENERIC)
+
+
+def cber_records() -> list[SourceRecord]:
+    """Return the CBER list's products as Drugs@FDA-like records with no names of their own.
+
+    They feed only the comparator rule, so a rival's vaccine, cell therapy, or plasma product in a
+    covered company's trial is known to be another's. A brand's first word counts too ("FLUZONE"
+    for "Fluzone High-Dose", "PREVNAR" for "PREVNAR 20").
+    """
+    records: list[SourceRecord] = []
+    for licence, owner, brands in CBER_PRODUCTS:
+        first = [
+            b.split()[0] for b in brands if len(b.split()) > 1 and len(b.split()[0]) >= _SHORTEST_GENERIC
+        ]
+        records.append(
+            SourceRecord(
+                DrugNameSource.OPENFDA,
+                licence,
+                owner,
+                (),
+                other_names=tuple(dict.fromkeys([*brands, *first])),
+            )
+        )
+    return records
+
+
+def _drug_shaped(
+    plan: DrugPlan,
+    given: list[SourceRecord],
+    cber: list[SourceRecord],
+    sponsor_of: Mapping[DrugNameSource, Mapping[str, UUID]],
+) -> list[SourceRecord]:
+    """Set aside a registry main name that has no digit and does not look like a drug's name.
+
+    Unless the registry marks it ® or ™ or a Drugs@FDA or CBER record gives it: the comparator
+    rule then decides whose it is. So "Oral Taxane", "Clostridium difficile", and an unmarked
+    "Shingrix" name no drug. When the intervention gives a code, the code alone stands as its main
+    name ("FGF Receptor" with LY2874455 is LY2874455; "treprostinil palmitil" with INS1009 is
+    INS1009) (fifth review of PR #73). Records of no covered sponsor are left for `plan_drugs`.
+    """
+    fda = {
+        name_key(name)
+        for r in [*given, *cber]
+        if r.source is DrugNameSource.OPENFDA
+        for name in (*(n.name for n in r.names), *r.other_names)
+    }
+    kept: list[SourceRecord] = []
+    for record in given:
+        main = record.names[0] if record.names else None
+        if main is None or record.source is not DrugNameSource.CTGOV or _owner(record, sponsor_of) is None:
+            kept.append(record)
+            continue
+        plain = main.main and not main.marked and not any(c.isdigit() for c in main.name)
+        if not plain or name_key(main.name) in fda or looks_like_a_drug(main.name):
+            kept.append(record)
+            continue
+        plan.plain_words += 1
+        if code := next((n for n in record.names if n.kind is DrugNameKind.CODE), None):
+            kept.append(replace(record, names=(replace(code, main=True),)))
+    return kept
+
+
 def plan_drugs(
     records: Iterable[SourceRecord], sponsor_of: Mapping[DrugNameSource, Mapping[str, UUID]]
 ) -> DrugPlan:
@@ -653,12 +744,15 @@ def plan_drugs(
     """
     plan = DrugPlan()
     kept: list[tuple[SourceRecord, Owner]] = []
-    for record in _vouched(list(records)):
-        plan.records += 1
+    given, cber = list(records), cber_records()
+    plan.records = len(given)
+    for record in _vouched(_drug_shaped(plan, given, cber, sponsor_of)):
         if (owner := _owner(record, sponsor_of)) is None:
             plan.unlinked_records += 1
         else:
             kept.append((record, owner))
+    # The CBER list gives no names, only owners for the comparator rule; every one has an owner.
+    kept += [(record, _owner(record, sponsor_of) or f"other:{record.sponsor}") for record in cber]
     owners, listed = _owned_names(plan, kept)
     shared = {key for key, held in owners.items() if len(held) > 1}
     for record, _, names in listed:
@@ -724,10 +818,14 @@ def _fda_keys(entries: Iterable[tuple[SourceRecord, list[ListedName]]]) -> set[s
 
 
 def _is_words(record: SourceRecord, names: list[ListedName], fda: set[str]) -> bool:
-    """Say whether a registry record's main name has no digit and is no Drugs@FDA name of the company."""
+    """Say whether a registry record's main name has no digit and is no Drugs@FDA name of the company.
+
+    A generic name by its INN stem is not such a name ("navitoclax" with ABT-263 in one
+    intervention): the fifth review asked that it join the code its own intervention gives.
+    """
     main = names[0]
     plain = not any(ch.isdigit() for ch in main.name) and name_key(main.name) not in fda
-    return record.source is DrugNameSource.CTGOV and main.main and plain
+    return record.source is DrugNameSource.CTGOV and main.main and plain and not _inn_shaped(main.name)
 
 
 def _words_stand_alone(

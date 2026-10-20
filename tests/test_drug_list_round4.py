@@ -214,14 +214,18 @@ def test_spd476_keeps_only_its_code_without_an_fda_name_for_mesalazine(plan: Dru
 
 
 def test_plain_word_names_still_join_each_other() -> None:
-    """Constructed: "izalontamab brengitecan" lists "Iza-bren", another trial's main name: one drug."""
+    """Constructed: "izalontamab brengitecan" lists "IZA-BREN", another trial's main name: one drug.
+
+    Written in capitals since the fifth review: a mixed-case "Iza-bren" no longer looks like a
+    drug's name, so its trial names nothing.
+    """
     plan = plan_drugs(
         [
-            _trial("N1", ListedName("Iza-bren", DrugNameKind.INN)),
+            _trial("N1", ListedName("IZA-BREN", DrugNameKind.BRAND)),
             _trial(
                 "N2",
                 ListedName("izalontamab brengitecan", DrugNameKind.INN),
-                ListedName("Iza-bren", DrugNameKind.INN, main=False),
+                ListedName("IZA-BREN", DrugNameKind.BRAND, main=False),
             ),
         ],
         SPONSORS,

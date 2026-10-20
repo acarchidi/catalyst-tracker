@@ -174,6 +174,10 @@ def known_drug(references: ReferenceData, name: str, company_id: UUID | None) ->
         owner = references.drug_company(drug.id)
         if owner is not None and owner != company_id:
             return Resolution(drug.candidates, drug.matched_by, needs_review=True)
+    if drug.id is not None and references.drug_unconfirmed(drug.id):
+        # Named only by registry words, with no code or Drugs@FDA name: a person checks it is the
+        # company's own drug, not a rival's product the registry gave plainly (ADR 0035, fifth review).
+        return Resolution(drug.candidates, drug.matched_by, needs_review=True)
     if drug.status is not Status.UNKNOWN:
         return drug
     elsewhere = references.resolve_drug(name)
