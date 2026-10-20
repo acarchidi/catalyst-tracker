@@ -1063,11 +1063,12 @@ def test_only_the_actions_job_can_write() -> None:
 
 def test_the_workflow_counts_every_attempt_of_every_run() -> None:
     text = workflow()
-    assert "{id, run_attempt, conclusion, actor: .actor.login}" in text
+    # head_repo was added so a fork's runs can be left out; every attempt still counts.
+    assert "{id, run_attempt, conclusion, actor: .actor.login, head_repo: .head_repository.full_name}" in text
     assert "RUN_ATTEMPT: ${{ github.run_attempt }}" in text
     assert '--run-attempt "$RUN_ATTEMPT"' in text
     assert 'gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at' in text
-    assert '--created-at "$created_at" --today "$today"' in text
+    assert '--created-at "$created_at" --today "$today" --repo "$REPO"' in text
     assert '-f created=">=$today"' in text
 
 
