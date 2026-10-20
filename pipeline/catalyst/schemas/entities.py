@@ -525,7 +525,7 @@ class CatalystChange(Entity):
 
 
 class SampleCheck(Entity):
-    """The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0040).
+    """The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0041).
 
     A stronger model reads each source and says whether it states the published values; plain
     code turns its answers into the verdict and writes this row. A record is checked once per

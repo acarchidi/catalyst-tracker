@@ -1,4 +1,4 @@
-"""Sample checks: the weekly sample checker's verdict on each drawn catalyst (ADR 0040).
+"""Sample checks: the weekly sample checker's verdict on each drawn catalyst (ADR 0041).
 
 Adds `sample_check`, with row-level security on (ADR 0011). Each row is a stronger model's
 answers on one published catalyst, turned into a verdict by plain code. The downgrade drops
@@ -72,7 +72,7 @@ def upgrade() -> None:
             "model",
             name=op.f("uq_sample_check_catalyst_id_week_of_prompt_id_prompt_version_model"),
         ),
-        comment="The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0040).",
+        comment="The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0041).",
     )
     op.execute('ALTER TABLE "sample_check" ENABLE ROW LEVEL SECURITY')
 

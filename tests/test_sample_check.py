@@ -1,4 +1,4 @@
-"""The weekly sample checker (spec: Human review and accuracy measurement; ADR 0040).
+"""The weekly sample checker (spec: Human review and accuracy measurement; ADR 0041).
 
 Each week a repeatable random draw of published catalysts is checked against their sources by a
 stronger model. The model only answers in JSON; plain code decides each point and writes the
@@ -318,7 +318,7 @@ def test_the_draw_is_repeatable_and_only_from_records_published_before_the_week(
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
     old = [_seed(session_factory, store, n, PUBLISHED) for n in range(1, 6)]
-    _seed(session_factory, store, 9, datetime(2026, 10, 19, 12, tzinfo=UTC))  # published this week
+    new = _seed(session_factory, store, 9, datetime(2026, 10, 19, 12, tzinfo=UTC))  # published this week
     with read_session(session_factory) as session:
         details = published(session)
     first = draw(details, WEEK, size=3)
@@ -326,7 +326,8 @@ def test_the_draw_is_repeatable_and_only_from_records_published_before_the_week(
     assert len(first) == 3
     assert all(d.id in old for d in first)
     assert {d.id for d in draw(details, WEEK, size=30)} == set(old)
-    assert all(d.id in old for d in draw(details, WEEK + timedelta(days=7), size=3))
+    # A record published during the week joins the next week's population.
+    assert {d.id for d in draw(details, WEEK + timedelta(days=7), size=30)} == {*old, new}
 
 
 def test_the_limit_and_the_cap_leave_the_rest_for_the_next_run(

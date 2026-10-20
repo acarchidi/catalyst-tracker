@@ -689,7 +689,7 @@ def _evaluate(args: argparse.Namespace) -> int:
 
 
 def _sample_check(args: argparse.Namespace) -> int:
-    """Check part of the week's draw; fail only when a record could not be checked (ADR 0040)."""
+    """Check part of the week's draw; fail only when a record could not be checked (ADR 0041)."""
     try:
         adapter = anthropic_adapter.from_settings()
         store = _open_store(args, create_bucket=False)

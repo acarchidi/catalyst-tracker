@@ -1,4 +1,4 @@
-"""The weekly sample checker (spec: Weekly random sample; ADR 0040).
+"""The weekly sample checker (spec: Weekly random sample; ADR 0041).
 
 Each week plain code draws 30 published catalysts at random, from those published before the
 week began, with the week's Monday as the seed, so anyone can repeat the draw. A stronger model

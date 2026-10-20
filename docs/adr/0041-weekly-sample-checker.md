@@ -1,4 +1,4 @@
-# 0040 — The weekly sample checker: a stronger model re-reads a random draw; plain code decides
+# 0041 — The weekly sample checker: a stronger model re-reads a random draw; plain code decides
 
 - **Status:** accepted
 - **Date:** 2026-10-20

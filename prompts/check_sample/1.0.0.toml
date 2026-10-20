@@ -1,7 +1,7 @@
 id = "check_sample"
 version = "1.0.0"
 purpose = "Say, for each point of one published catalyst record, whether its source document states it, so plain code can count the weekly sample's errors."
-# Scored later on the planted-error records (ADR 0040); until then its agreements do not count
+# Scored later on the planted-error records (ADR 0041); until then its agreements do not count
 # toward the published error rate.
 eval_set = "evals/planted_errors/registry.json"
 tested_models = ["claude-opus-5-5"]

@@ -207,7 +207,7 @@ class GateDecision(StrEnum):
 
 
 class SampleVerdict(StrEnum):
-    """What the weekly sample checker concluded about one published catalyst (ADR 0040)."""
+    """What the weekly sample checker concluded about one published catalyst (ADR 0041)."""
 
     AGREES = "agrees"
     DISAGREES = "disagrees"

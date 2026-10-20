@@ -37,7 +37,7 @@ JOB_NAMES = {
     "spend-check": "Spending check",
     "sample-check": "Weekly sample check",
 }
-# The points the sample checker names, in the words an alert uses for them (ADR 0040).
+# The points the sample checker names, in the words an alert uses for them (ADR 0041).
 SAMPLE_POINTS = {
     "type": "the type of event",
     "company": "the company",
