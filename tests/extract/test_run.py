@@ -1,5 +1,7 @@
 """The extraction job on a disposable database: claims stored once, spend caps respected."""
 
+import hashlib
+import inspect
 import json
 import logging
 from dataclasses import dataclass, field
@@ -13,7 +15,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
+from catalyst.extract.agent import catalyst_claims
 from catalyst.extract.run import MIN_WORDS, extract_documents
+from catalyst.extract.text import TEXT_VERSION, find_quote
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
 from catalyst.llm.ledger import InMemoryLedger
@@ -383,3 +387,75 @@ def test_a_release_whose_proposals_all_lose_their_quotes_is_not_paid_for_again(
     assert _readings(session_factory) == [("1.0.0", None, 1)]
     assert _run(session_factory, store, fake)["documents_skipped_already_done"] == 1
     assert len(fake.calls) == 1
+
+
+# A model's reading that proposed catalysts but made no claim (`skipped IS NULL AND catalysts > 0`)
+# is a read whose every quote failed the quote check. It counts as done, so a fixed quote check
+# never reaches it unless a migration clears those readings (ADR 0038). This pins the quote check:
+# a change to it ships that migration in the same pull request, and only then updates the pin.
+QUOTE_CHECK_PIN = "e58c840265c074f9a1708b0193297f72a36feea86928cb40211d7b1fc7900757"
+
+
+def test_a_change_to_the_quote_check_ships_a_migration_that_clears_quote_failure_readings() -> None:
+    source = "\n".join([inspect.getsource(find_quote), inspect.getsource(catalyst_claims), TEXT_VERSION])
+    assert hashlib.sha256(source.encode()).hexdigest() == QUOTE_CHECK_PIN, (
+        "The quote check changed. Ship a migration that deletes the extractor's readings with "
+        "skipped IS NULL AND catalysts > 0, so those documents are read again (ADR 0038), then "
+        "update QUOTE_CHECK_PIN."
+    )
+
+
+def test_re_checks_take_the_longest_unchecked_skip_first_so_every_one_comes_round(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """More skipped copies than the re-check limit must all be checked in turn (review of PR #79)."""
+    store = LocalSnapshotStore(tmp_path)
+    for key in ("a", "b", "c"):
+        _document(store, session_factory, key, "8-K EX-99.1", b"<p>no words here</p>")
+    fake = _Fake()
+    _run(session_factory, store, fake)
+    checked: list[str] = []
+    for hour in (13, 14, 15):
+
+        def at(hour: int = hour) -> datetime:
+            return NOW.replace(hour=hour)
+
+        client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=at)
+        report = extract_documents(session_factory, store, client, limit=1, now=at)
+        checked += [d.source_key for d in report.documents]
+    assert sorted(checked) == ["sec:a", "sec:b", "sec:c"]
+    assert fake.calls == []
+
+
+def _other_model() -> ModelConfig:
+    config = _config()
+    price = config.pricing["claude-sonnet-5-5"]
+    role = config.roles["extractor"].model_copy(update={"model": "claude-opus-5-5"})
+    return config.model_copy(update={"pricing": {"claude-opus-5-5": price}, "roles": {"extractor": role}})
+
+
+def test_a_skip_is_counted_and_alerted_once_per_document_and_reason_whatever_the_model(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A model change must not count and alert the same too-large copy again (review of PR #79)."""
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1", b"<p>" + b"word " * 32_001 + b"</p>")
+    fake = _Fake()
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        first = _run(session_factory, store, fake)
+        moved = _run(session_factory, store, fake, config=_other_model())
+    assert first["documents_skipped_too_large"] == 1
+    assert (moved["documents_skipped_too_large"], moved["documents_rechecked_still_skipped"]) == (0, 1)
+    assert [r.getMessage() for r in caplog.records].count("document_too_large") == 1
+    assert fake.calls == []
+
+    # Another reason for the same copy is news, and is counted.
+    def blank(_content: bytes, _type: str) -> str:
+        return ""
+
+    monkeypatch.setattr("catalyst.extract.run.visible_text", blank)
+    other = _run(session_factory, store, fake, config=_other_model())
+    assert (other["documents_skipped_no_readable_text"], other["documents_rechecked_still_skipped"]) == (1, 0)
