@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from catalyst.extract.text import document_text, hidden_by, visible_text
+from catalyst.extract.text import document_text, hidden_by, read_visible, visible_text
 from conftest import FIXTURES, REPO_ROOT
 
 GOLD = sorted((REPO_ROOT / "evals" / "extract_catalysts" / "documents").glob("*.htm"))
@@ -164,3 +164,51 @@ def test_hidden_by_names_what_hides_the_most_words() -> None:
     assert hidden_by(_page(two), "text/html") == '<p class="x" style="opacity:0">'
     assert hidden_by(_page("<p>Seen.</p>"), "text/html") is None
     assert hidden_by(b"plain words", "text/plain") is None
+
+
+# Opus review of PR #91: inputs that showed the model text that main kept hidden. Each must stay hidden.
+_UNDER_HIDDEN = "<div style='visibility:hidden'><p class='s'>INJ</p></div>"
+REVIEW_LEAKS = {
+    # 1. A show the browser discards: the style does not read cleanly as declarations.
+    "brace before the size": "<div style='font-size:0'><p style='x:{;font-size:10pt'>INJ</p></div>",
+    "open bracket": "<div style='visibility:hidden'><p style='a:(;visibility:visible'>INJ</p></div>",
+    "open quote": '<div style="visibility:hidden"><p style="a:\';visibility:visible">INJ</p></div>',
+    "inherit as the family": "<div style='font-size:0'><p style='font: 10pt inherit'>INJ</p></div>",
+    "unclosed family": "<div style='font-size:0'><p style='font: 10pt \"Times'>INJ</p></div>",
+    # 2. A stylesheet the browser never applies.
+    "style in a comment": "<!-- <style>.s{visibility:visible}</style> -->" + _UNDER_HIDDEN,
+    "style in a script": "<script>var a = '<style>.s{visibility:visible}</style>';</script>" + _UNDER_HIDDEN,
+    "style in an attribute": "<div title='<style>.s{visibility:visible}</style>'></div>" + _UNDER_HIDDEN,
+    "style for tiny screens": "<style media='(max-width:1px)'>.s{visibility:visible}</style>" + _UNDER_HIDDEN,
+    "style that is not CSS": "<style type='text/plain'>.s{visibility:visible}</style>" + _UNDER_HIDDEN,
+    # 3. Braces inside strings, and one-line at-rules.
+    "brace in a print string": (
+        "<style>@media print { .a{content:\"{\"} } .x{display:none}</style><p class='x'>INJ</p>"
+    ),
+    "brace lifts a show out of media": (
+        '<style>@media (max-width:1px) { .a{content:"}"} .s{visibility:visible} }</style>' + _UNDER_HIDDEN
+    ),
+    "after @import": "<style>@import url(a.css); .x{display:none}</style><p class='x'>INJ</p>",
+    "after @charset": "<style>@charset \"utf-8\"; .x{display:none}</style><p class='x'>INJ</p>",
+    "after @layer": "<style>@layer a; .x{display:none}</style><p class='x'>INJ</p>",
+    # 4. A hide rule the code cannot read beats the show.
+    "attribute rule hides": (
+        "<style>.s{visibility:visible} .s[class]{visibility:hidden}</style>" + _UNDER_HIDDEN
+    ),
+    "not() rule hides": "<style>.s{visibility:visible} .s:not(.z){visibility:hidden}</style>" + _UNDER_HIDDEN,
+}
+
+
+@pytest.mark.parametrize("html", REVIEW_LEAKS.values(), ids=REVIEW_LEAKS.keys())
+def test_text_the_review_found_shown_stays_hidden(html: str) -> None:
+    content = _page(html + "<p>Seen.</p>")
+    assert "INJ" in document_text(content, "text/html")
+    assert visible_text(content, "text/html") == "Seen."
+
+
+def test_a_lifted_cloak_is_reported() -> None:
+    """A page that hides everything is read, but a person still checks it (`source_hides_text`)."""
+    cloaked = _page("<div style='display:none'><p>Seen.</p></div>")
+    assert read_visible(cloaked, "text/html") == ("Seen.", True)
+    assert read_visible(_page("<p>Seen.</p><p hidden>Hidden.</p>"), "text/html") == ("Seen.", False)
+    assert read_visible(b"plain", "text/plain") == ("plain", False)

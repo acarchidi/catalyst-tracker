@@ -25,7 +25,7 @@ from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE, catalyst_claims, extract_catalysts
 from catalyst.extract.evaluate import VERIFY_EVALS, gate_problems
 from catalyst.extract.run import NEW_YORK
-from catalyst.extract.text import document_text, visible_text
+from catalyst.extract.text import document_text, read_visible
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.config import ModelConfig
 from catalyst.llm.prompts import load_prompt
@@ -232,11 +232,13 @@ def run_second_reading(
         published = row.published_at.astimezone(NEW_YORK).date()
         try:
             content = store.get(row.snapshot_key)
+            visible, cloaked = read_visible(content, row.content_type)
             reading = extract_catalysts(
                 client,
                 document_text(content, row.content_type),
                 published,
-                visible=visible_text(content, row.content_type),
+                visible=visible,
+                cloaked=cloaked,
                 role=VERIFIER_ROLE,
                 prompt_ref=VERIFIER_PROMPT,
             )

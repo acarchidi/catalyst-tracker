@@ -37,7 +37,7 @@ from catalyst.extract.agent import (
     extract_catalysts,
     proposal_value,
 )
-from catalyst.extract.text import document_text, hidden_by, visible_text
+from catalyst.extract.text import document_text, hidden_by, read_visible, visible_text
 from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.logs import log_alert, log_event
 from catalyst.schemas import Claim, Company, CompanyDocument, DocumentReading, ReadingSkip, SourceDocument
@@ -304,7 +304,8 @@ def extract_documents(
                         hidden_by=hidden_by(content, row.content_type),
                     )
                 continue
-            extraction = extract_catalysts(client, text, published, visible=visible)
+            cloaked = read_visible(content, row.content_type)[1]  # a lifted page cloak still holds claims
+            extraction = extract_catalysts(client, text, published, visible=visible, cloaked=cloaked)
         except InputTooLargeError as error:
             if skip(ReadingSkip.TOO_LARGE):  # an alert only the first time; re-checks just log the skip
                 log_alert(

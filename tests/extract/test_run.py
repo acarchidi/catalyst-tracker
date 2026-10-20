@@ -480,3 +480,18 @@ def test_a_page_that_hides_its_words_says_what_hides_them(
         MIN_WORDS + 2,
         '<p style="display:none">',
     )
+
+
+def test_a_cloaked_release_is_read_but_held_for_a_person(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """A page hidden as a whole is read (ADR 0044), but every claim from it waits for review."""
+    store = LocalSnapshotStore(tmp_path)
+    cloaked = RELEASE.replace(b"<body>", b"<body style='display:none'>")
+    _document(store, session_factory, "a", "8-K EX-99.1", cloaked)
+    fake = _Fake()
+    client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
+    report = extract_documents(session_factory, store, client, limit=10, now=lambda: NOW)
+    assert len(fake.calls) == 1
+    (catalyst,) = report.documents[0].catalysts
+    assert any("hides words" in problem for problem in catalyst["problems"])

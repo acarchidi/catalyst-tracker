@@ -60,27 +60,37 @@ _INVISIBLE = re.compile(r"visibility\s*:\s*hidden", re.IGNORECASE)
 _OPACITY = re.compile(r"(?<![\w-])opacity\s*:\s*(?P<value>[\d.]+)", re.IGNORECASE)
 _FONT_SIZE = re.compile(r"font-size\s*:\s*(?P<value>[\d.]+)\s*(?P<unit>px|pt|em|rem|%)?", re.IGNORECASE)
 _TINY = {"px": 1.0, "pt": 1.0, "em": 0.1, "rem": 0.1, "%": 10.0, "": 0.0}
-# Declarations that set an inherited property again, so a child shows what a parent hid. Each must
-# be whole and valid, or a browser ignores it and the child inherits: a size in absolute units (em
+# Declarations that set an inherited property again, so a child shows what a parent hid. A browser
+# drops a declaration it cannot read, and the child inherits, so a show counts only from a style
+# that reads cleanly (`_declarations`) and from a whole, valid value: a size in absolute units (em
 # and % scale the parent's), a `font` shorthand with a family, a plain colour, visibility:visible.
-_END = r"\s*(?:!important\s*)?(?=;|$)"
 _ABSOLUTE = r"(?P<value>\d*\.?\d+)(?P<unit>px|pt|in|cm|mm|pc)"
-_SHOWING = (
-    re.compile(r"(?<![\w-])font-size\s*:\s*" + _ABSOLUTE + _END, re.IGNORECASE),
-    re.compile(
-        r"(?<![\w-])font\s*:\s*(?:(?:normal|italic|oblique|bold|bolder|lighter|small-caps|\d00)\s+)*"
-        + _ABSOLUTE
-        + r"(?:/[\w.%]+)?\s+[\w'\", -]*[\w'\"]"
-        + _END,
-        re.IGNORECASE,
-    ),
-)
-_OWN_COLOUR = re.compile(
-    r"(?<![\w-])color\s*:\s*(?:#[0-9a-f]{3}|#[0-9a-f]{6}|(?:rgb|hsl)a?\([\d.,%\s/]+\)"
-    r"|black|white|gray|grey|red|blue|green|navy|maroon|windowtext)" + _END,
+_IMPORTANT = r"(?:\s*!\s*important)?"
+_SIZE_VALUE = re.compile(_ABSOLUTE + _IMPORTANT, re.IGNORECASE)
+_FAMILY = r'(?:""|[a-z][\w-]*(?:\s+[a-z][\w-]*)*)'
+_FONT_VALUE = re.compile(
+    r"(?:(?:normal|italic|oblique|bold|bolder|lighter|small-caps|[1-9]00)\s+)*"
+    + _ABSOLUTE
+    + r"(?:/[\w.%]+)?\s+"
+    + _FAMILY
+    + r"(?:\s*,\s*"
+    + _FAMILY
+    + ")*"
+    + _IMPORTANT,
     re.IGNORECASE,
 )
-_VISIBLE = re.compile(r"(?<![\w-])visibility\s*:\s*visible" + _END, re.IGNORECASE)
+_COLOUR_VALUE = re.compile(
+    r"(?:#[0-9a-f]{3}|#[0-9a-f]{6}|(?:rgb|hsl)a?\([\d.,%\s/]+\)"
+    r"|black|white|gray|grey|red|blue|green|navy|maroon|windowtext)" + _IMPORTANT,
+    re.IGNORECASE,
+)
+_VISIBLE_VALUE = re.compile("visible" + _IMPORTANT, re.IGNORECASE)
+_CSS_WIDE = frozenset({"inherit", "initial", "unset", "revert", "revert-layer", "default"})
+_STRING = re.compile(r"\"(?:[^\"\\\n]|\\.)*\"|'(?:[^'\\\n]|\\.)*'")
+_DECLARATION = re.compile(r"\s*(?P<name>-?[a-z][\w-]*)\s*:(?P<value>.*)", re.IGNORECASE | re.DOTALL)
+_BRACKETS = {")": "(", "]": "["}
+# A `font` shorthand's size, for hiding only: read loosely, since a false hide is safe.
+_SHORTHAND_SIZE = re.compile(r"(?<![\w-])font\s*:[^;]*?(?<![\w.-])" + _ABSOLUTE, re.IGNORECASE)
 _UNKNOWN_VALUE = re.compile(r"\b(?:var|env|attr|calc)\(", re.IGNORECASE)  # resolved only in a browser
 _LENGTH = r"(?P<sign>[-+]?)\s*(?P<value>[\d.]+)\s*(?P<unit>px|pt|em|rem|in|cm|mm|%|vw|vh)?"
 # Where an element sits: left, right, top, or bottom far off either side; a margin or indent far to
@@ -115,6 +125,8 @@ _FALLBACK = frozenset({"canvas", "iframe", "object", "video", "audio", "noembed"
 # except where the media are only print or speech: a reader on screen never meets those.
 _STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style\s*>", re.DOTALL | re.IGNORECASE)
 _CSS_COMMENT = re.compile(r"/\*.*?\*/|<!--|-->", re.DOTALL)
+_RULE = re.compile(r"([^{}]+)\{([^{}]*)\}")
+_ONE_LINE_AT = re.compile(r"@[\w-]+[^{};]*;")  # @import, @charset, @layer a;
 _OFF_SCREEN_QUERY = re.compile(r"^(?:only\s+)?(?:print|speech)\b", re.IGNORECASE)
 # A page hides all of itself (a cloak) at most this deep: the html element, the body, and a wrapper.
 _MAX_CLOAKS = 3
@@ -150,26 +162,77 @@ def _see_through(style: str) -> bool:
     )
 
 
-def _tiny(style: str) -> bool | None:
-    """Say whether the font is 1px or 1pt and under (True), set again in pt or px (False), or inherited."""
+def _tiny(style: str) -> bool:
+    """Say whether the font is set at 1px or 1pt and under."""
     for found in _FONT_SIZE.finditer(style):
         value = _number(found.group("value"))
         if value is not None and value <= _TINY[(found.group("unit") or "").lower()]:
             return True
-    sizes: list[bool] = []  # for each absolute size: whether it is 1px or 1pt and under
-    for found in (found for pattern in _SHOWING for found in pattern.finditer(style)):
-        value, unit = _number(found.group("value")), found.group("unit").lower()
-        if value is not None:
-            pixels = value * (16.0 if unit == "pc" else _PIXELS[unit])
-            sizes.append(pixels <= (1.0 if unit == "px" else 4 / 3))
-    return any(sizes) if sizes else None
+    return any(not _readable(found) for found in _SHORTHAND_SIZE.finditer(style))
 
 
-def _clear(style: str) -> bool | None:
-    """Say whether the text is transparent (True), set in a colour of its own (False), or inherits one."""
-    if any(_ZERO_ALPHA.match(found.group("value").strip()) for found in _COLOUR.finditer(style)):
-        return True
-    return False if _OWN_COLOUR.search(style) else None
+def _readable(found: re.Match[str] | None) -> bool:
+    """Say whether a matched absolute size is over 1px or 1pt."""
+    if found is None or (value := _number(found.group("value"))) is None:
+        return False
+    unit = found.group("unit").lower()
+    return value * (16.0 if unit == "pc" else _PIXELS[unit]) > (1.0 if unit == "px" else 4 / 3)
+
+
+def _clear(style: str) -> bool:
+    """Say whether the text is transparent."""
+    return any(_ZERO_ALPHA.match(found.group("value").strip()) for found in _COLOUR.finditer(style))
+
+
+def _strings_out(css: str) -> str | None:
+    """Return CSS with every string emptied, or None if it escapes or leaves a string open."""
+    if "\\" in css:
+        return None
+    bare = _STRING.sub('""', css)
+    return None if "'" in bare or '"' in bare.replace('""', "") else bare
+
+
+def _declarations(style: str) -> list[tuple[str, str]] | None:
+    """Return a style's declarations as (property, value), or None if it does not read cleanly.
+
+    Cleanly: no braces, comments, escapes, or open strings or brackets, and every part between
+    semicolons a property and a value. A browser recovers from such a style in ways code cannot
+    follow, so none of it may show text.
+    """
+    bare = _strings_out(style)
+    if bare is None or "{" in bare or "}" in bare or "/*" in bare:
+        return None
+    opened: list[str] = []
+    for mark in bare:
+        if mark in "([":
+            opened.append(mark)
+        elif mark in _BRACKETS and (not opened or opened.pop() != _BRACKETS[mark]):
+            return None
+    if opened:
+        return None
+    found: list[tuple[str, str]] = []
+    for piece in bare.split(";"):
+        if piece.strip():
+            declaration = _DECLARATION.fullmatch(piece)
+            if declaration is None:
+                return None
+            found.append((declaration.group("name").lower(), declaration.group("value").strip()))
+    return found
+
+
+def _shows(style: str) -> tuple[bool, bool, bool]:
+    """Say whether the style sets visibility:visible, a readable font size, and a colour again."""
+    visible = sized = coloured = False
+    for name, value in _declarations(style) or ():
+        if name == "visibility":
+            visible = visible or _VISIBLE_VALUE.fullmatch(value) is not None
+        elif name == "font-size":
+            sized = sized or _readable(_SIZE_VALUE.fullmatch(value))
+        elif name == "font" and not _CSS_WIDE & set(re.findall(r"[a-z][\w-]*", value.lower())):
+            sized = sized or _readable(_FONT_VALUE.fullmatch(value))
+        elif name == "color":
+            coloured = coloured or _COLOUR_VALUE.fullmatch(value) is not None
+    return visible, sized, coloured
 
 
 def _moved_away(style: str) -> bool:
@@ -260,8 +323,13 @@ def _style_look(style: str) -> _Look:
         return _PLAIN
     gone = bool(_NO_DISPLAY.search(style) or _CLIPPED_AWAY.search(style))
     gone = gone or _see_through(style) or _moved_away(style) or _clipped_small(style)
-    invisible = True if _INVISIBLE.search(style) else (False if _VISIBLE.search(style) else None)
-    look = _Look(gone, invisible, _tiny(style), _clear(style))
+    visible, sized, coloured = _shows(style)
+    look = _Look(
+        gone,
+        True if _INVISIBLE.search(style) else (False if visible else None),
+        True if _tiny(style) else (False if sized else None),
+        True if _clear(style) else (False if coloured else None),
+    )
     return look.hiding_only() if _UNKNOWN_VALUE.search(style) else look
 
 
@@ -288,57 +356,122 @@ def _off_screen(prelude: str) -> bool:
     return all(_OFF_SCREEN_QUERY.match(query.strip()) for query in prelude[len("@media") :].split(","))
 
 
-def _css_rules(css: str) -> list[tuple[str, str, bool]]:
+def _css_rules(css: str) -> list[tuple[str, str, bool]] | None:
     """Return each rule as (selectors, declarations, top level), leaving out print-only @media.
 
-    A rule inside any at-rule block (such as @media) is not top level: it applies only on some screens.
+    A rule inside any at-rule block (such as @media) is not top level: it applies only on some
+    screens. Strings are emptied and one-line at-rules dropped before braces are counted. None when
+    the sheet does not read cleanly: an escape, an open string, a nested rule, or unbalanced braces.
     """
+    bare = _strings_out(css)
+    if bare is None:
+        return None
+    bare = _ONE_LINE_AT.sub(" ", bare)
     rules: list[tuple[str, str, bool]] = []
     # Each open block: its prelude, where its inside starts, and whether its rules are read.
     blocks: list[tuple[str, int, bool]] = []
     start = 0
-    for brace in re.finditer(r"[{}]", css):
+    for brace in re.finditer(r"[{}]", bare):
         if brace.group() == "{":
-            prelude = css[start : brace.start()].strip()
+            prelude = bare[start : brace.start()].strip()
             read = (not blocks or blocks[-1][2]) and not _off_screen(prelude)
             blocks.append((prelude, brace.end(), read))
-        elif blocks:
+        elif not blocks:
+            return None
+        else:
             prelude, opened, read = blocks.pop()
-            inner = css[opened : brace.start()]
-            if read and not prelude.startswith("@") and "{" not in inner:
-                rules.append((prelude, inner, not blocks))
+            inner = bare[opened : brace.start()]
+            if not prelude.startswith("@"):
+                if "{" in inner:
+                    return None  # a nested rule
+                if read:
+                    rules.append((prelude, inner, not blocks))
         start = brace.end()
-    return rules
+    return None if blocks else rules
 
 
-def _style_rules(raw: str) -> tuple[tuple[_Selector, _Look], ...]:
-    """Return each stylesheet selector whose rule changes how text shows, with that change.
+def _sheet_rules(css: str, *, shows: bool) -> list[tuple[_Selector, _Look]]:
+    """Return a stylesheet's selectors that change how text shows, with that change.
 
     Only the selector's last part is matched, so a rule may fit more elements than it does in a
     browser. That is safe for a rule that hides, so it is kept; a rule that shows (visibility:visible,
-    a readable font size, a colour) is kept only when it is one plain part outside any @media block,
-    so that it never shows more than a browser would. A selector with a pseudo-class or an attribute
-    test (":hover", "[lang]") is left out: it applies only sometimes, or where code cannot tell.
+    a readable font size, a colour) is kept only when `shows` (a sheet the browser applies on every
+    screen), when it is one plain part outside any @media block, and when no rule in the sheet that
+    hides was left unread. A selector with a pseudo-class or an attribute test (":hover", "[lang]")
+    is left out: it applies only sometimes, or where code cannot tell. A sheet that does not read
+    cleanly is read as main read it, rule by rule, and only its hides count.
     """
-    found: list[tuple[_Selector, _Look]] = []
-    for block in _STYLE_BLOCK.findall(raw):
-        for selectors, declarations, top_level in _css_rules(_CSS_COMMENT.sub(" ", block)):
-            look = _style_look(declarations)
-            for selector in selectors.split(","):
-                parts = re.split(r"[\s>+~]+", selector.strip())
-                shape = _COMPOUND.match(parts[-1]) if parts[-1] else None
-                if shape is None:
-                    continue
-                fits = look if top_level and len(parts) == 1 else look.hiding_only()
-                if fits == _PLAIN:
-                    continue
-                rest, tag = shape.group("rest"), shape.group("tag")
-                exact = _Selector(
-                    tag=None if tag in (None, "*") else tag.lower(),
-                    classes=frozenset(re.findall(r"\.([\w-]+)", rest)),
-                    id=next(iter(re.findall(r"#([\w-]+)", rest)), None),
-                )
-                found.append((exact, fits))
+    css = _CSS_COMMENT.sub(" ", css)
+    rules = _css_rules(css)
+    if rules is None:
+        rules, shows = (
+            [(selectors, declarations, False) for selectors, declarations in _RULE.findall(css)],
+            False,
+        )
+    read: list[tuple[_Selector, _Look, bool]] = []
+    for selectors, declarations, top_level in rules:
+        look = _style_look(declarations)
+        for selector in selectors.split(","):
+            parts = re.split(r"[\s>+~]+", selector.strip())
+            if parts[0].startswith("@"):
+                continue
+            shape = _COMPOUND.match(parts[-1]) if parts[-1] else None
+            if shape is None:
+                shows = shows and not look.hides()  # an unread hide could beat any show
+                continue
+            rest, tag = shape.group("rest"), shape.group("tag")
+            exact = _Selector(
+                tag=None if tag in (None, "*") else tag.lower(),
+                classes=frozenset(re.findall(r"\.([\w-]+)", rest)),
+                id=next(iter(re.findall(r"#([\w-]+)", rest)), None),
+            )
+            read.append((exact, look, top_level and len(parts) == 1))
+    found = [(exact, look if shows and plain else look.hiding_only()) for exact, look, plain in read]
+    return [(exact, look) for exact, look in found if look != _PLAIN]
+
+
+class _Sheets(HTMLParser):
+    """Collect the stylesheets a browser applies on every screen.
+
+    That is a `<style>` element in the head or body, with no media attribute and a CSS type. A
+    `<style>` in a comment, a script, or an attribute is not an element, and is never collected.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=False)
+        self.sheets: list[str] = []
+        self._open: list[str] = []
+        self._sheet: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag == "style":
+            kind = next(((value or "").strip().lower() for name, value in attrs if name == "type"), "")
+            applies = set(self._open) <= {"html", "head", "body"} and kind in ("", "text/css")
+            self._sheet = [] if applies and not any(name == "media" for name, _ in attrs) else None
+        elif tag not in _VOID:
+            self._open.append(tag)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "style":
+            if self._sheet is not None:
+                self.sheets.append("".join(self._sheet))
+            self._sheet = None
+        elif tag in self._open:
+            while self._open.pop() != tag:
+                pass
+
+    def handle_data(self, data: str) -> None:
+        if self._sheet is not None:
+            self._sheet.append(data)
+
+
+def _style_rules(raw: str, section: str) -> tuple[tuple[_Selector, _Look], ...]:
+    """Return the rules that change how text shows: hides from any `<style>` text, shows only from sheets."""
+    found = [rule for css in _STYLE_BLOCK.findall(raw) for rule in _sheet_rules(css, shows=False)]
+    sheets = _Sheets()
+    sheets.feed(section)
+    sheets.close()
+    found += [rule for css in sheets.sheets for rule in _sheet_rules(css, shows=True)]
     return tuple(found)
 
 
@@ -455,22 +588,24 @@ def _tidy(text: str) -> str:
     return "\n".join(line for line in lines if line)
 
 
-def _read(content: bytes, content_type: str, *, drop_hidden: bool) -> tuple[str, _Words | None]:
+def _read(content: bytes, content_type: str, *, drop_hidden: bool) -> tuple[str, _Words | None, bool]:
+    """Return the text, the parser that read it, and whether a page cloak was lifted."""
     raw = content.decode("utf-8", errors="replace")
     if "html" not in content_type.lower():
-        return _tidy(raw), None
+        return _tidy(raw), None, False
     wrapped = _SEC_TEXT.search(raw)
-    rules = _style_rules(raw) if drop_hidden else ()
+    section = wrapped.group(1) if wrapped else raw
+    rules = _style_rules(raw, section) if drop_hidden else ()
     lifted: frozenset[int] = frozenset()
     while True:
         parser = _Words(drop_hidden=drop_hidden, rules=rules, lifted=lifted)
-        parser.feed(wrapped.group(1) if wrapped else raw)
+        parser.feed(section)
         parser.close()
         text = _tidy("".join(parser.parts))
         hiders = [number for number, letters in parser.hidden_letters.items() if letters]
         # A page cloak: one element hides every letter on the page. Lift it and read again.
         if any(ch.isalpha() for ch in text) or len(hiders) != 1 or len(lifted) >= _MAX_CLOAKS:
-            return text, parser
+            return text, parser, bool(lifted)
         lifted |= {hiders[0]}
 
 
@@ -494,6 +629,12 @@ def visible_text(content: bytes, content_type: str) -> str:
     holds is read with its own hides (ADR 0044). Plain text has no markup, so all of it is visible.
     """
     return _read(content, content_type, drop_hidden=True)[0]
+
+
+def read_visible(content: bytes, content_type: str) -> tuple[str, bool]:
+    """Return `visible_text`, and whether it lifted a page cloak: the page still hides its words."""
+    text, _, cloaked = _read(content, content_type, drop_hidden=True)
+    return text, cloaked
 
 
 def hidden_by(content: bytes, content_type: str) -> str | None:
