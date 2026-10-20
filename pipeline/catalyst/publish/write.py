@@ -28,6 +28,10 @@ review queue see what the writer saw, including every reason it held a claim.
 The title it writes is composed in code from checked fields (`catalyst.publish.title`), never the
 extractor's own words; its change row cites the claim whose checked fields it names (part 5d).
 
+A claim a person approved in the review queue (ADR 0040) is checked again like any other; the
+approval excuses only the holds the person saw (`gate.approve`), never the quote match, and of
+the writer's own holds only a date move or a window that does not overlap (`PERSON_MAY_APPROVE`).
+
 Safe to re-run: a claim a change row already cites is done, and the job holds a database lock
 while it runs, so two runs never both create one catalyst. Everything is written in one
 transaction, so a failure leaves nothing half written. It never deletes or unpublishes.
@@ -69,6 +73,7 @@ from catalyst.publish.live import (
 )
 from catalyst.publish.sanity import (
     PASSED,
+    PERSON_MAY_APPROVE,
     Candidate,
     drug_names,
     drug_role,
@@ -78,6 +83,7 @@ from catalyst.publish.sanity import (
     same_dates,
 )
 from catalyst.publish.title import TitleNames, load_title_names
+from catalyst.review import approvals
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -137,6 +143,7 @@ class PublishReport:
     trial_links_written: int = 0
     copies_unreadable: int = 0
     checks_updated: int = 0
+    published_by_approval: int = 0  # claims a person approved that this run wrote
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
@@ -239,6 +246,7 @@ class _Run:
 
     at: datetime
     report: PublishReport
+    approved: dict[UUID, frozenset[str]] = field(default_factory=dict[UUID, frozenset[str]])
     results: dict[UUID, list[CheckResult]] = field(default_factory=dict[UUID, list[CheckResult]])
 
 
@@ -274,6 +282,8 @@ def _recheck(
             if live.is_live(claim.id, key):
                 checks = excuse_passed_window(claim.id, checks, at)
             decision = gate.decide(claim, checks, gate.match_quote(claim, copy))
+            if claim.id in run.approved:
+                decision = gate.approve(decision, run.approved[claim.id], PERSON_MAY_APPROVE)
             if decision.decision is not GateDecision.PUBLISH:
                 report.held_on_recheck += 1
                 report.reasons.update(hold.label for hold in decision.holds)
@@ -458,11 +468,26 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
             # the run began; an earlier write in this run can make it a new event instead, and a new
             # catalyst whose window has ended is never published (Claude review of PR #59).
             result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, PASSED)
-        if result.outcome is CheckOutcome.PASS:
+        if result.outcome is CheckOutcome.PASS or _approved(run, item, result):
+            written = _written(run.report)
             result = _apply(session, item, where.catalyst, catalysts, run) or result
-        run.results.setdefault(item.claim.id, []).append(result)
-        if result.outcome is CheckOutcome.FAIL:
+            if item.claim.id in run.approved and _written(run.report) > written:
+                run.report.published_by_approval += 1
+                log_event(_log, "approved_claim_written", claim_id=str(item.claim.id))
+        run.results.setdefault(item.claim.id, []).append(result)  # an approved hold is stored as found
+        if result.outcome is CheckOutcome.FAIL and not _approved(run, item, result):
             _hold(run, item, result.reason or "")
+
+
+def _written(report: PublishReport) -> int:
+    return report.catalysts_created + report.catalysts_updated
+
+
+def _approved(run: _Run, item: _Ready, result: CheckResult) -> bool:
+    """Say whether a person approved this writer hold: one that needs only a yes, word for word."""
+    seen = run.approved.get(item.claim.id, frozenset())
+    reason = result.reason or ""
+    return reason in PERSON_MAY_APPROVE and f"{gate.WRITER_CHECK}: {reason}" in seen
 
 
 def _ended(item: _Ready, today: date) -> bool:
@@ -530,6 +555,7 @@ def publish_claims(
     report = run.report
     with session_factory.begin() as session:
         session.execute(select(func.pg_advisory_xact_lock(LOCK)))
+        run.approved = approvals(session)
         rows = _marked(session)
         report.claims_marked_publish = len(rows)
         live = load_live(session)

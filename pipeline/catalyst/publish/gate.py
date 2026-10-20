@@ -212,3 +212,29 @@ def decide(claim: Claim, checks: Iterable[ClaimCheck], quote_ok: CheckResult) ->
         holds.append(Hold(QUOTE_CHECK, quote_ok.reason or f"{QUOTE_CHECK} did not pass"))
     holds += [hold for name in REQUIRED_CHECKS if (hold := _hold(name, stored.get(name)))]
     return Decision(GateDecision.REVIEW, tuple(holds)) if holds else Decision(GateDecision.PUBLISH)
+
+
+# Holds no person's approval excuses (ADR 0040): no value publishes without its verbatim quote
+# in the stored copy (spec: Provenance), only the extractor's catalyst claims become catalysts,
+# and a new catalyst needs a window that has not passed.
+PERSON_MAY_NOT_EXCUSE: frozenset[str] = frozenset(
+    {QUOTE_CHECK, "extractor_claim", "has_window", "window_not_past"}
+)
+
+
+def approve(decision: Decision, seen: frozenset[str], writer_reasons: frozenset[str]) -> Decision:
+    """Apply a person's approval from the review queue: excuse only the holds whose reasons they saw.
+
+    `seen` holds the stored reasons, word for word, the person approved; a hold with any other
+    reason still holds the claim. Holds in `PERSON_MAY_NOT_EXCUSE` always hold. A `safe_to_write`
+    hold is excused only for a reason in `writer_reasons`, the writer's holds that need a yes and
+    no choice (`catalyst.publish.sanity.PERSON_MAY_APPROVE`), since the writer must never guess.
+    """
+
+    def excused(hold: Hold) -> bool:
+        if hold.check in PERSON_MAY_NOT_EXCUSE or hold.reason not in seen:
+            return False
+        return hold.check != WRITER_CHECK or hold.reason in {f"{WRITER_CHECK}: {r}" for r in writer_reasons}
+
+    holds = tuple(hold for hold in decision.holds if not excused(hold))
+    return Decision(GateDecision.REVIEW, holds) if holds else Decision(GateDecision.PUBLISH)

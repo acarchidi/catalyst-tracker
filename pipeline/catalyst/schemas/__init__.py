@@ -25,6 +25,7 @@ from catalyst.schemas.entities import (
     Indication,
     ModelCall,
     Outcome,
+    ReviewDecision,
     Target,
     Trial,
 )
@@ -48,6 +49,7 @@ from catalyst.schemas.enums import (
     ModelCallStatus,
     OutcomeResult,
     ReadingSkip,
+    ReviewAction,
     SourceTier,
     TrialPhase,
 )
@@ -74,6 +76,7 @@ ALL_MODELS: tuple[type[Entity], ...] = (
     EntityMatch,
     ClaimCheck,
     ClaimDecision,
+    ReviewDecision,
     DocumentReading,
     CatalystChange,
     Outcome,
@@ -123,6 +126,8 @@ __all__ = [
     "OutcomeResult",
     "ReadingSkip",
     "References",
+    "ReviewAction",
+    "ReviewDecision",
     "SourceDocument",
     "SourceTier",
     "Target",
