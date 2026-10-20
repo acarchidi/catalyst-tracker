@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import os
 import sys
 from collections import Counter
 from collections.abc import Sequence
@@ -46,6 +47,7 @@ from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
+from catalyst.sealed import SealError, generate_keypair, seal, unseal
 from catalyst.snapshots import (
     LocalSnapshotStore,
     SnapshotStore,
@@ -168,6 +170,21 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Also list, apart, the claims the publish gate holds for review, with its reasons.",
     )
+    _store_arguments(export)  # the held claims' paragraphs come from the stored copies
+    keygen = commands.add_parser(
+        "seal-keygen",
+        help="Make a one-off key pair for a sealed export: save the private key, print the public line.",
+    )
+    keygen.add_argument("--private-key", type=Path, required=True, help="New file for the private key.")
+    seal_cmd = commands.add_parser(
+        "seal", help="Print a file sealed to a public line, safe for a public job log (ADR 0034)."
+    )
+    seal_cmd.add_argument("--to", dest="public", required=True, help="The public line from seal-keygen.")
+    seal_cmd.add_argument("--in", dest="source", type=Path, required=True, help="The file to seal.")
+    unseal_cmd = commands.add_parser("unseal", help="Open a sealed file, or a job log that holds one.")
+    unseal_cmd.add_argument("--private-key", type=Path, required=True, help="The private key file.")
+    unseal_cmd.add_argument("--in", dest="source", type=Path, required=True, help="Sealed text or job log.")
+    unseal_cmd.add_argument("--out", type=Path, required=True, help="Write the opened file here.")
     evaluate = commands.add_parser(
         "eval-extractor", help="Score the extractor on the gold set (costs money; about 12 model calls)."
     )
@@ -266,6 +283,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "api": _serve,
         "mcp": _serve,
         "export-catalysts": _export,
+        "seal-keygen": _seal_keygen,
+        "seal": _seal,
+        "unseal": _unseal,
         "planted-errors": _planted_errors,
         "prospects-check": _prospects_check,
     }
@@ -581,10 +601,17 @@ def _export(args: argparse.Namespace) -> int:
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
+    store = None
+    if args.include_held:
+        try:
+            store = _open_store(args, create_bucket=False)
+        except settings.MissingSettingError as error:
+            print(error, file=sys.stderr)
+            return 2
     engine = create_engine(database)
     try:
         with read_session(sessionmaker(engine)) as session:
-            export = build_export(session, _utc_now(), include_held=args.include_held)
+            export = build_export(session, _utc_now(), include_held=args.include_held, store=store)
     except OperationalError:
         print("Nothing written: cannot reach the database. Is it running? See README.", file=sys.stderr)
         return 1
@@ -592,6 +619,49 @@ def _export(args: argparse.Namespace) -> int:
         engine.dispose()
     write_export(args.out, export)
     print(json.dumps(export["counts"]))
+    return 0
+
+
+def _seal_keygen(args: argparse.Namespace) -> int:
+    """Save a new private key where only this user can read it; print its public line."""
+    private, public = generate_keypair()
+    try:
+        descriptor = os.open(args.private_key, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        print(f"Nothing written: {args.private_key} already exists.", file=sys.stderr)
+        return 1
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(private)
+    print(public)
+    return 0
+
+
+def _seal(args: argparse.Namespace) -> int:
+    """Print the file sealed to the public line; on any problem print only why, never the file."""
+    try:
+        print(seal(args.source.read_bytes(), args.public), end="")
+    except SealError as error:
+        print(f"Nothing sealed: {error}.", file=sys.stderr)
+        return 2
+    except OSError as error:
+        print(f"Nothing sealed: the file could not be read ({type(error).__name__}).", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _unseal(args: argparse.Namespace) -> int:
+    """Write the opened file; refuse to write over an existing one."""
+    try:
+        opened = unseal(args.source.read_text(encoding="utf-8"), args.private_key.read_bytes())
+        with args.out.open("xb") as stream:
+            stream.write(opened)
+    except SealError as error:
+        print(f"Nothing written: {error}.", file=sys.stderr)
+        return 1
+    except FileExistsError:
+        print(f"Nothing written: {args.out} already exists.", file=sys.stderr)
+        return 1
+    print(json.dumps({"out": str(args.out), "bytes": len(opened)}))
     return 0
 
 

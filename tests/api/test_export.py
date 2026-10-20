@@ -15,7 +15,8 @@ from catalyst import cli
 from catalyst.api.access import NOTICE, Access
 from catalyst.api.read import catalyst, read_session
 from catalyst.db.tables import TABLES
-from catalyst.export import HELD_STATUS, build_export
+from catalyst.export import HELD_STATUS, PARAGRAPH_CONTEXT, build_export, paragraph
+from catalyst.extract.text import document_text
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -32,7 +33,9 @@ from catalyst.schemas import (
     MatchedEntity,
     MatchStatus,
     SourceDocument,
+    SourceTier,
 )
+from catalyst.snapshots import LocalSnapshotStore
 
 NOW = datetime(2026, 10, 18, 14, 30, tzinfo=UTC)
 HELD_REASONS = ["independent_source: no second source agrees", "check type_named_in_quote has not run"]
@@ -322,3 +325,153 @@ def test_the_command_without_a_database_setting_names_the_setup_step(
     assert cli.main(["export-catalysts", "--out", str(tmp_path / "x.json")]) == 2
     assert "docs/setup.md" in capsys.readouterr().err
     assert not (tmp_path / "x.json").exists()
+
+
+# --- Paragraphs and the review-decision slot for held claims (ADR 0034, amended 2026-10-20) ---
+
+RELEASE = (
+    b"<html><body><p>Acme Bio today reported results.</p>"
+    b"<p>The company expects to submit the NDA in 2H26. It also plans a meeting with the FDA.</p>"
+    b"<p>About Acme Bio</p></body></html>"
+)
+HELD_QUOTE = "expects to submit the NDA in 2H26"
+
+
+def _held_on_a_real_copy(factory: sessionmaker[Session], store: LocalSnapshotStore, quote: str) -> UUID:
+    """Store RELEASE, a document for it, and a held claim quoting it at its place in the text."""
+    snapshot = store.put(RELEASE)
+    text = document_text(RELEASE, "text/html")
+    start = max(text.find(quote), 0)
+    doc = SourceDocument(
+        source_key="wire:acme:1",
+        url="https://example.com/acme-1",
+        publisher="PR Newswire",
+        source_tier=SourceTier.WIRE,
+        document_type="press release",
+        published_at=FIRST,
+        retrieved_at=FIRST,
+        sha256=snapshot.sha256,
+        snapshot_key=snapshot.key,
+        content_type="text/html",
+    )
+    claim = Claim(
+        source_document_id=doc.id,
+        subject_type=ClaimSubject.CATALYST,
+        field="window",
+        value={"quote": quote},
+        quote=quote,
+        quote_start=start,
+        quote_end=start + len(quote),
+        agent="extractor",
+        prompt_id="extract_catalysts",
+        prompt_version="1.0.0",
+        provider="anthropic",
+        model="m",
+        extracted_at=FIRST,
+    )
+    decision = ClaimDecision(claim_id=claim.id, decision=GateDecision.REVIEW, reasons=["x"], decided_at=FIRST)
+    with factory.begin() as session:
+        _add(session, doc)
+        _add(session, claim)
+        _add(session, decision)
+    return claim.id
+
+
+def _held_item(export: dict[str, Any], claim_id: UUID) -> dict[str, Any]:
+    [item] = [h for h in export["held"] if h["claim_id"] == str(claim_id)]
+    return item
+
+
+def test_a_held_claim_carries_the_paragraph_its_quote_sits_in(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    claim_id = _held_on_a_real_copy(session_factory, store, HELD_QUOTE)
+    with read_session(session_factory) as session:
+        export = build_export(session, NOW, include_held=True, store=store)
+    item = _held_item(export, claim_id)
+    assert item["paragraph"] == (
+        "The company expects to submit the NDA in 2H26. It also plans a meeting with the FDA."
+    )
+    assert item["paragraph_missing"] is None
+    assert item["review_decision"] is None  # filled by the review queue (PR #84)
+
+
+def test_without_a_store_the_paragraph_is_null_with_the_reason(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(tmp_path), HELD_QUOTE)
+    item = _held_item(_export(session_factory, include_held=True), claim_id)
+    assert item["paragraph"] is None
+    assert item["paragraph_missing"] == "no snapshot store was given"
+
+
+def test_a_missing_copy_gives_a_null_paragraph_with_the_reason(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    _hold(session_factory, seed)  # the seed's documents have no stored copy
+    with read_session(session_factory) as session:
+        export = build_export(session, NOW, include_held=True, store=LocalSnapshotStore(tmp_path))
+    item = _held_item(export, seed.unpublished_claim)
+    assert item["paragraph"] is None
+    assert item["paragraph_missing"] == "the stored copy is missing"
+
+
+def test_a_quote_not_at_its_place_gives_no_paragraph(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    claim_id = _held_on_a_real_copy(session_factory, store, "words that are not in the release")
+    with read_session(session_factory) as session:
+        item = _held_item(build_export(session, NOW, include_held=True, store=store), claim_id)
+    assert item["paragraph"] is None
+    assert item["paragraph_missing"] == "the quote is not at its stored place in the copy"
+
+
+def test_a_long_paragraph_is_cut_around_the_quote() -> None:
+    before, after = "a" * (PARAGRAPH_CONTEXT + 50), "b" * (PARAGRAPH_CONTEXT + 50)
+    text = f"first line\n{before}QUOTE{after}\nlast line"
+    start = text.index("QUOTE")
+    found = paragraph(text, "QUOTE", start, start + 5)
+    assert found == "…" + "a" * PARAGRAPH_CONTEXT + "QUOTE" + "b" * PARAGRAPH_CONTEXT + "…"
+
+
+def test_a_short_paragraph_is_whole_and_the_quote_may_span_lines() -> None:
+    text = "one\ntwo QUOTE\nGOES ON three\nfour"
+    start = text.index("QUOTE")
+    quote = "QUOTE\nGOES ON"
+    assert paragraph(text, quote, start, start + len(quote)) == "two QUOTE\nGOES ON three"
+    assert paragraph(text, "QUOTE", 0, 5) is None
+    assert paragraph("QUOTE", "QUOTE", 0, 5) == "QUOTE"
+
+
+def test_the_command_reads_paragraphs_from_the_chosen_store(
+    session_factory: sessionmaker[Session],
+    seed: Seed,
+    database_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    copies = tmp_path / "copies"
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(copies), HELD_QUOTE)
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    out = tmp_path / "export.json"
+    args = ["export-catalysts", "--out", str(out), "--include-held", "--snapshot-dir", str(copies)]
+    assert cli.main(args) == 0
+    assert "2H26" not in capsys.readouterr().out  # counts only
+    item = _held_item(json.loads(out.read_text(encoding="utf-8")), claim_id)
+    assert item["paragraph"].startswith("The company expects")
+
+
+def test_the_command_without_supabase_settings_names_them(
+    database_url: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
+    monkeypatch.delenv("SUPABASE_SECRET_KEY", raising=False)
+    out = tmp_path / "export.json"
+    args = ["export-catalysts", "--out", str(out), "--include-held", "--snapshot-store", "supabase"]
+    assert cli.main(args) == 2
+    assert "SUPABASE" in capsys.readouterr().err
+    assert not out.exists()
