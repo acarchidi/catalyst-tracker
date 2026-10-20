@@ -2,9 +2,10 @@
 
 ADR 0039.
 
-A trial is shown only through a trial link whose claim this catalyst's change rows cite, so the
-quote that names the trial is one of the catalyst's sources. Phase and size have no claim or
-quote, so the read API and MCP tools never return them (spec: Provenance, rules 4 and 8). The
+A trial is shown only through a trial link whose claim the latest change of one of this
+catalyst's fields cites, so the quote that names the trial is one of its current sources. Phase
+and size have no claim or quote, so the read API and MCP tools never return them (spec:
+Provenance, rules 4 and 8). The
 private export adds them, labelled as registry data, with the registry record they come from. A
 held claim lists only the trials its names resolved to exactly; nothing is guessed.
 """
@@ -30,9 +31,12 @@ from catalyst.api.read import catalyst, read_session
 from catalyst.db.tables import TABLES
 from catalyst.export import REGISTRY_NOTE, build_export
 from catalyst.schemas import (
+    CatalystChange,
+    CatalystField,
     CatalystTrial,
     Claim,
     ClaimDecision,
+    ClaimSubject,
     EnrollmentType,
     Entity,
     EntityMatch,
@@ -170,6 +174,59 @@ def test_a_trial_link_citing_a_claim_this_catalyst_never_published_is_left_out(
     assert "HIDDEN" not in result.model_dump_json()
     assert UNPUBLISHED_QUOTE not in result.model_dump_json()
     assert any(r.getMessage() == "trial_link_withheld" for r in caplog.records)
+
+
+def test_a_trial_named_only_in_a_release_whose_values_were_all_replaced_is_left_out(
+    session_factory: sessionmaker[Session],
+    seed: Seed,
+    trials: dict[str, UUID],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Like drug links, only a claim behind a current value counts (Claude review of PR #80).
+
+    The outdated release gave the window words "3Q26"; a later release replaced them, and the
+    outdated release backs no other value, so its trial is no longer the catalyst's.
+    """
+    outdated_quote = "OUTDATED: topline data from STALE in the third quarter of 2026"
+    stale = Trial(nct_id="NCT02222222", study_name="STALE")
+    with session_factory.begin() as session:
+        first = _claim(session, FIRST_QUOTE)
+        document = session.execute(
+            select(TABLES[Claim].c.source_document_id).where(TABLES[Claim].c.id == first)
+        ).scalar_one()
+        outdated = Claim(
+            source_document_id=document,
+            subject_type=ClaimSubject.CATALYST,
+            field="catalyst:9",
+            value={"quote": outdated_quote},
+            quote=outdated_quote,
+            quote_start=0,
+            quote_end=len(outdated_quote),
+            agent="extractor",
+            prompt_id="extract_catalysts",
+            prompt_version="1.0.0",
+            provider="anthropic",
+            model="m",
+            extracted_at=FIRST,
+        )
+        _add(session, outdated)
+        change = CatalystChange(
+            catalyst_id=seed.slipped,
+            field=CatalystField.WINDOW_RAW_TEXT,
+            new_value="3Q26",
+            claim_id=outdated.id,
+            learned_at=FIRST,
+        )
+        _add(session, change)
+        _add(session, stale)
+        _add(session, CatalystTrial(catalyst_id=seed.slipped, trial_id=stale.id, claim_id=outdated.id))
+    with caplog.at_level(logging.INFO, logger="catalyst"), read_session(session_factory) as session:
+        result = catalyst(session, seed.slipped, Access.PAID)
+    assert result is not None
+    assert [t.id for t in result.catalyst.trials] == [trials["small"], trials["rainier"]]
+    assert all(outdated_quote != s.quote for s in result.catalyst.sources)
+    withheld = [r for r in caplog.records if r.getMessage() == "trial_link_withheld"]
+    assert str(stale.id) in [r.__dict__["catalyst_fields"]["trial_id"] for r in withheld]
 
 
 def test_free_callers_see_the_trials_too(

@@ -12,7 +12,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from catalyst.resolve import CompanyRef, DrugRef, MatchedBy, ReferenceData, Status, TrialRef
+from catalyst.resolve import CompanyRef, DrugRef, MatchedBy, ReferenceData, Status, TrialRef, name_key
 from catalyst.schemas import DrugNameKind
 
 VERTEX, SPYRE, OTHER = uuid4(), uuid4(), uuid4()
@@ -137,6 +137,21 @@ def test_generic_and_brand_names_match_for_any_company() -> None:
 @pytest.mark.parametrize("name", ["SPY", "SPY0011", "maralixibat chloride", "", "®"])
 def test_a_different_or_empty_drug_name_is_no_match(name: str) -> None:
     assert _references(_drugs()).resolve_drug(name, company_id=SPYRE).status is Status.UNKNOWN
+
+
+@pytest.mark.parametrize(
+    "written", ["Cemdisiran\u2122", "cemdisiran\u00ae", "CEMDISIRAN\u2120", "Cemdisiran \u2122"]
+)
+def test_a_trademark_sign_is_not_part_of_the_name(written: str) -> None:
+    """Unicode spells "\u2122" as the letters "TM"; the sign must go first (review of PR #77)."""
+    assert name_key(written) == name_key("cemdisiran") == "cemdisiran"
+    drug = DrugRef(id=uuid4(), company_id=None, names=(("cemdisiran", DrugNameKind.INN),))
+    references = ReferenceData(companies=_companies(), drugs=[drug], trials=[])
+    assert references.resolve_drug(written, company_id=SPYRE).id == drug.id
+
+
+def test_letters_tm_written_out_stay_part_of_the_name() -> None:
+    assert name_key("XYZ-TM") == "xyztm"
 
 
 _CODE = st.from_regex(r"[A-Z]{2,4}[0-9]{2,4}", fullmatch=True)
