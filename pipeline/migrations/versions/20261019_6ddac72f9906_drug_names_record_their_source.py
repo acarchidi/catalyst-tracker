@@ -8,7 +8,7 @@ for names several companies' records give. The drug list rebuilds those rows on 
 downgrade may drop them; it also drops the two new columns, which the drug list can refill.
 
 Revision ID: 6ddac72f9906
-Revises: 5e7a0c3b9d21
+Revises: b3f1c7e2a9d4
 Create Date: 2026-10-19 13:53:42.104480
 """
 
@@ -19,7 +19,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "6ddac72f9906"
-down_revision: str | None = "5e7a0c3b9d21"
+down_revision: str | None = "b3f1c7e2a9d4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

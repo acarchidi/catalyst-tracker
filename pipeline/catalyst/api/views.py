@@ -58,6 +58,18 @@ class DrugView(View):
     role: DrugRole = Field(description="Tested alone or in combination.")
 
 
+class TrialView(View):
+    """A trial the catalyst concerns; the quote that names it is in `sources` under 'trials' (ADR 0039).
+
+    Registry values with no quote behind them, such as phase and size, are never shown here
+    (spec: Provenance, rules 4 and 8).
+    """
+
+    id: UUID = Field(description="Internal identifier.")
+    nct_id: str = Field(description="ClinicalTrials.gov identifier, for example NCT04567890.")
+    study_name: str | None = Field(description="The company's name for the study, for example RAINIER.")
+
+
 class IndicationView(View):
     """The disease the catalyst concerns."""
 
@@ -97,6 +109,7 @@ class CatalystSummary(View):
     company: CompanyView = Field(description="The company the event concerns.")
     indication: IndicationView | None = Field(description="The disease, if any.")
     drugs: list[DrugView] = Field(description="Drugs the event concerns.")
+    trials: list[TrialView] = Field(description="Trials the event concerns, by registry number.")
     window: WindowView = Field(description="When the event may happen.")
     date_confidence: DateConfidence = Field(description="Who stands behind the date.")
     status: CatalystStatus = Field(description="Upcoming, slipped, or resolved.")

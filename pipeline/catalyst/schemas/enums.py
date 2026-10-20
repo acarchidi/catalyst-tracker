@@ -87,6 +87,13 @@ class TrialPhase(StrEnum):
     NOT_APPLICABLE = "not_applicable"
 
 
+class EnrollmentType(StrEnum):
+    """Whether a trial's registered size is the final count or the planned one (ClinicalTrials.gov)."""
+
+    ACTUAL = "actual"
+    ESTIMATED = "estimated"
+
+
 class CatalystType(StrEnum):
     """Catalyst types (spec: Data sources and coverage, Catalyst types)."""
 
@@ -174,6 +181,14 @@ class ModelCallStatus(StrEnum):
     INVALID_OUTPUT = "invalid_output"
     MODEL_SWITCHED = "model_switched"
     ERROR = "error"
+
+
+class ReadingSkip(StrEnum):
+    """Why a reader made no model call for a document (ADR 0038)."""
+
+    NOT_TEXT = "not_text"  # not a web page or plain text, such as a PDF copy
+    NO_READABLE_TEXT = "no_readable_text"  # fewer readable words than any real release has
+    TOO_LARGE = "too_large"  # over the role's input limit
 
 
 class MatchStatus(StrEnum):

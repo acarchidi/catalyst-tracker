@@ -3,7 +3,8 @@
 Only the publish gate writes `catalyst` and its links, so those tables hold nothing from the
 review queue (ADR 0003). Claims are read only through `catalyst_change` rows. A catalyst is shown
 only when every value, its drug links included, matches its field's latest change, and each drug
-link cites the claim of one of the catalyst's `drugs` changes. Review and check tables are never read.
+link cites the claim of one of the catalyst's `drugs` changes. A trial is shown only when its link
+cites a claim one of the catalyst's changes cites (ADR 0039). Review and check tables are never read.
 """
 
 import base64
@@ -32,6 +33,7 @@ from catalyst.api.views import (
     DrugView,
     IndicationView,
     SourceView,
+    TrialView,
     WindowView,
 )
 from catalyst.db.tables import TABLES
@@ -42,6 +44,7 @@ from catalyst.schemas import (
     CatalystDrug,
     CatalystField,
     CatalystStatus,
+    CatalystTrial,
     CatalystType,
     Claim,
     Company,
@@ -50,6 +53,7 @@ from catalyst.schemas import (
     DrugName,
     Indication,
     SourceDocument,
+    Trial,
 )
 
 _log = logging.getLogger(__name__)
@@ -63,10 +67,13 @@ _TICKER = TABLES[CompanyTicker]
 _DRUG = TABLES[Drug]
 _DRUG_NAME = TABLES[DrugName]
 _INDICATION = TABLES[Indication]
+_TRIAL_LINK = TABLES[CatalystTrial]
+_TRIAL = TABLES[Trial]
 
 OPEN_STATUSES = (CatalystStatus.UPCOMING, CatalystStatus.SLIPPED)
 BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.DRUGS)
 DRUGS = CatalystField.DRUGS.value
+TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0039)
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
 _BATCH = 1000  # catalysts per `published` read
@@ -292,11 +299,19 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     )
     for link in session.execute(links):
         drugs[link.catalyst_id].append(link)
+    trial_links: dict[UUID, list[Row[Any]]] = defaultdict(list)
+    linked: Select[*tuple[Any, ...]] = select(
+        _TRIAL_LINK.c.catalyst_id, _TRIAL_LINK.c.trial_id, _TRIAL_LINK.c.claim_id
+    )
+    for link in session.execute(linked.where(_TRIAL_LINK.c.catalyst_id.in_(ids))):
+        trial_links[link.catalyst_id].append(link)
+    trials = trial_views(session, list({link.trial_id for links in trial_links.values() for link in links}))
     companies = company_views(session, list({row.company_id for row in rows}))
     indications = _indications(session, [row.indication_id for row in rows if row.indication_id])
     built: list[CatalystDetail] = []
     for row in rows:
-        detail = _build(row, changes[row.id], drugs[row.id], companies, indications)
+        shown_trials = _cited_trials(row.id, trial_links[row.id], changes[row.id], trials)
+        detail = _build(row, changes[row.id], drugs[row.id], shown_trials, companies, indications)
         if detail is None:
             log_event(_log, "catalyst_withheld", catalyst_id=str(row.id), reason="a value has no source")
         else:
@@ -304,10 +319,29 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     return built
 
 
+def _cited_trials(
+    catalyst_id: UUID, links: list[Row[Any]], changes: list[Row[Any]], trials: dict[UUID, TrialView]
+) -> list[tuple[UUID, TrialView]]:
+    """Return each linked trial with its link's claim, when one of the catalyst's changes cites it.
+
+    Any other link is left out and logged, so a hand-added link never shows a claim the gate did
+    not accept for this catalyst. Ordered by registry number.
+    """
+    cited = {change.claim_id for change in changes}
+    shown: list[tuple[UUID, TrialView]] = []
+    for link in links:
+        if link.claim_id in cited:
+            shown.append((link.claim_id, trials[link.trial_id]))
+        else:
+            log_event(_log, "trial_link_withheld", catalyst_id=str(catalyst_id), trial_id=str(link.trial_id))
+    return sorted(shown, key=lambda pair: (pair[1].nct_id, str(pair[1].id)))
+
+
 def _build(
     row: Row[Any],
     changes: list[Row[Any]],
     links: list[Row[Any]],
+    trials: list[tuple[UUID, TrialView]],
     companies: dict[UUID, CompanyView],
     indications: dict[UUID, IndicationView],
 ) -> CatalystDetail | None:
@@ -330,6 +364,11 @@ def _build(
         fields = backing.setdefault(link.claim_id, (drug_changes[link.claim_id], []))[1]
         if DRUGS not in fields:
             fields.append(DRUGS)
+    first_change = {c.claim_id: c for c in reversed(changes)}
+    for claim_id, _ in trials:
+        fields = backing.setdefault(claim_id, (first_change[claim_id], []))[1]
+        if TRIALS not in fields:
+            fields.append(TRIALS)
     history = [_change(c) for c in changes]
     return CatalystDetail(
         id=row.id,
@@ -338,6 +377,7 @@ def _build(
         company=companies[row.company_id],
         indication=indications.get(row.indication_id) if row.indication_id else None,
         drugs=[DrugView(id=link.drug_id, name=link.preferred_name, role=link.role) for link in links],
+        trials=[trial for _, trial in trials],
         window=WindowView(
             start=row.window_start,
             end=row.window_end,
@@ -394,6 +434,14 @@ def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
         row.id: CompanyView(id=row.id, name=row.name, cik=row.cik, ticker=row.ticker)
         for row in session.execute(statement)
     }
+
+
+def trial_views(session: Session, ids: list[UUID]) -> dict[UUID, TrialView]:
+    """Return each trial's registry number and study name, by id; registry values stay out (ADR 0039)."""
+    rows = session.execute(
+        select(_TRIAL.c.id, _TRIAL.c.nct_id, _TRIAL.c.study_name).where(_TRIAL.c.id.in_(ids))
+    )
+    return {row.id: TrialView(id=row.id, nct_id=row.nct_id, study_name=row.study_name) for row in rows}
 
 
 def _indications(session: Session, ids: list[UUID]) -> dict[UUID, IndicationView]:

@@ -23,6 +23,7 @@ from catalyst.schemas.enums import (
     DrugNameKind,
     DrugNameSource,
     DrugRole,
+    EnrollmentType,
     GateDecision,
     LineOfTherapy,
     MatchedEntity,
@@ -30,6 +31,7 @@ from catalyst.schemas.enums import (
     Modality,
     ModelCallStatus,
     OutcomeResult,
+    ReadingSkip,
     TrialPhase,
 )
 from catalyst.schemas.identifiers import (
@@ -234,6 +236,7 @@ class Trial(Entity):
 
     __tablename__ = "trial"
     __unique__ = (("nct_id",),)
+    __checks__: ClassVar[dict[str, str]] = {"enrollment_not_negative": "enrollment >= 0"}
 
     nct_id: NctId = Field(description="ClinicalTrials.gov identifier, for example NCT04567890.")
     eu_ct_number: EuCtNumber | None = Field(default=None, description="EU trial number (CTIS or EudraCT).")
@@ -241,6 +244,17 @@ class Trial(Entity):
         default=None, description="The company's name for the study, for example RAINIER."
     )
     phase: TrialPhase | None = Field(default=None, description="Trial phase as the registry reports it.")
+    enrollment: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Number of participants as the registry reports it (trial size); "
+            "registry data, private export only (ADR 0039)."
+        ),
+    )
+    enrollment_type: EnrollmentType | None = Field(
+        default=None, description="Whether the size is the final count (actual) or the plan (estimated)."
+    )
 
 
 class Catalyst(Entity):
@@ -486,7 +500,8 @@ class ClaimDecision(Entity):
 class DocumentReading(Entity):
     """One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2).
 
-    A re-run skips a document this reader has already read with the same prompt and model.
+    A re-run skips a document this reader has already read with the same prompt and model. The
+    extractor also keeps a row for a document it found nothing in, or never sent (ADR 0038).
     """
 
     __tablename__ = "document_reading"
@@ -499,9 +514,14 @@ class DocumentReading(Entity):
     agent: ShortText = Field(description="Which reader, for example 'verifier'.")
     prompt_id: ShortText = Field(description="Prompt used.")
     prompt_version: ShortText = Field(description="Version of that prompt.")
-    model: ShortText = Field(description="Model that answered.")
+    model: ShortText = Field(
+        description="Model that answered, or for a skipped document the one it was meant for."
+    )
     catalysts: Annotated[int, Field(ge=0)] = Field(description="How many catalysts the reader proposed.")
     read_at: AwareDatetime = Field(description="When the document was read.")
+    skipped: ReadingSkip | None = Field(
+        default=None, description="Why no model read the document; empty when a model read it."
+    )
 
 
 class CatalystChange(Entity):

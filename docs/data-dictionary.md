@@ -203,10 +203,13 @@ A clinical trial, identified by its ClinicalTrials.gov number.
 | `eu_ct_number` | text, up to 17 characters | no | EU trial number (CTIS or EudraCT). |
 | `study_name` | text, up to 300 characters | no | The company's name for the study, for example RAINIER. |
 | `phase` | one of: `early_phase_1`, `phase_1`, `phase_1_2`, `phase_2`, `phase_2_3`, `phase_3`, `phase_4`, `not_applicable` | no | Trial phase as the registry reports it. |
+| `enrollment` | whole number | no | Number of participants as the registry reports it (trial size); registry data, private export only (ADR 0039). |
+| `enrollment_type` | one of: `actual`, `estimated` | no | Whether the size is the final count (actual) or the plan (estimated). |
 
 Rules:
 
 - Unique: `nct_id`
+- Database check `enrollment_not_negative`: `enrollment >= 0`
 
 ## `catalyst`
 
@@ -366,7 +369,7 @@ Rules:
 
 ## `document_reading`
 
-One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model.
+One reader's pass over one source document, kept even when it found nothing (ADR 0018, part 2). A re-run skips a document this reader has already read with the same prompt and model. The extractor also keeps a row for a document it found nothing in, or never sent (ADR 0038).
 
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
@@ -375,9 +378,10 @@ One reader's pass over one source document, kept even when it found nothing (ADR
 | `agent` | text, up to 100 characters | yes | Which reader, for example 'verifier'. |
 | `prompt_id` | text, up to 100 characters | yes | Prompt used. |
 | `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
-| `model` | text, up to 100 characters | yes | Model that answered. |
+| `model` | text, up to 100 characters | yes | Model that answered, or for a skipped document the one it was meant for. |
 | `catalysts` | whole number | yes | How many catalysts the reader proposed. |
 | `read_at` | date and time (with time zone) | yes | When the document was read. |
+| `skipped` | one of: `not_text`, `no_readable_text`, `too_large` | no | Why no model read the document; empty when a model read it. |
 
 Rules:
 

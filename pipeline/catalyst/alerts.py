@@ -124,7 +124,35 @@ def _extract_problems(summary: dict[str, Any]) -> list[str]:
         ("error" in _mapping(summary.get("decisions")), "The publish decisions did not finish."),
         ("error" in _mapping(summary.get("published")), "Writing the published catalysts did not finish."),
     ]
-    return [text.format(_plural(int(n), "document")) for n, text in found if n]
+    problems = [text.format(_plural(int(n), "document")) for n, text in found if n]
+    if large := _count(summary, "documents_skipped_too_large"):
+        verb = "was" if large == 1 else "were"
+        problems.append(
+            f"{_plural(large, 'document')} {verb} too large to send to the model (over the size limit), "
+            "so no model read them. Each is counted once; later runs check them again for free, "
+            "and read them if a higher limit lets them fit."
+        )
+    return problems
+
+
+# The extraction's documents that no model read, in the order the alert lists them (ADR 0038).
+_SKIPS = (
+    ("documents_skipped_already_done", "already read"),
+    ("documents_skipped_not_text", "that {is} not a web page or plain text (such as a PDF copy)"),
+    ("documents_skipped_no_readable_text", "with no readable text"),
+    ("documents_skipped_too_large", "over the size limit"),
+    ("documents_rechecked_still_skipped", "checked again and still not sent"),
+)
+
+
+def _extract_notes(summary: dict[str, Any]) -> list[str]:
+    """Say, in one line, how many documents the extraction skipped without a model call, and why."""
+    parts = [
+        f"{_plural(n, 'document')} {words.replace('{is}', 'is' if n == 1 else 'are')}"
+        for key, words in _SKIPS
+        if (n := _count(summary, key))
+    ]
+    return ["", "Skipped without a model call: " + ", ".join(parts) + "."] if parts else []
 
 
 def _collect_problems(summary: list[Any]) -> list[str]:
@@ -165,6 +193,7 @@ def _job_alert(run: JobRun, problems: list[str], limits: Thresholds, run_url: st
         "",
         "What went wrong:",
         *(f"- {problem}" for problem in problems),
+        *(_extract_notes(_mapping(run.summary)) if run.name == "extract-catalysts" else []),
         "",
         f"What to do: ask the coding session to look at the run log: {run_url}",
         "",

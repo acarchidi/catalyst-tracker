@@ -32,7 +32,7 @@ The spec (Machine access) puts one API under the web app, the MCP server, and th
    - Once a catalyst has a `drugs` change row, its links must match the latest one, even when there are no links.
 
    One date move is the set of date rows (`window_*` fields with an old value) that cite the same claim. The latest move is the one whose claim the newest such row cites. Rows are ordered by `learned_at`, then row id, so ties break the same way every time. A move whose rows were written at slightly different times stays whole.
-3. **Trials are not shown yet.** When this was decided, `catalyst_trial` had no claim column, so a trial link had no quote behind it. The catalyst writer's migration now gives each trial link its claim (ADR 0018, part 5b); showing trials, and the phase filter, are left for a later item.
+3. **Trials are not shown yet.** When this was decided, `catalyst_trial` had no claim column, so a trial link had no quote behind it. The catalyst writer's migration now gives each trial link its claim (ADR 0018, part 5b); showing trials, and the phase filter, are left for a later item. *Update 2026-10-20:* each catalyst now shows its trials' registry numbers and study names, each with the quote that names it; registry phase and size are not shown, since no quote states them, and the phase filter is still to come (ADR 0039).
 4. **Endpoints.** All are GET, under `/v1`:
    - `/v1/catalysts`: upcoming and slipped catalysts whose window overlaps a date window (spec: Search and filters, "Date window"), earliest first. Filters are `from`, `to`, `company`, `drug`, and `type` (repeatable).
    - `/v1/catalysts/{id}`: one catalyst.
