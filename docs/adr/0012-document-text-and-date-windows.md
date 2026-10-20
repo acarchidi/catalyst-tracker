@@ -34,6 +34,8 @@ A claim stores a verbatim quote and its character offsets "in the stored copy's 
 
    A "by" deadline already past on the document's date gives no window, and a "by" window that is one day long has day precision (the `catalyst` table requires that). Vague phrases ("soon", "in the coming months", "upon approval") and impossible dates (February 30) give no window: the claim goes to review rather than get an invented date.
 
+   Two forms the reader does not read whole, noted after the CP4 review (optional finding O4): "15 December 2027" (day before month) and "the week of December 14, 2027". Neither gives a window as a whole phrase, but date words cut from them do, and nothing longer around them reads as another window, so they are stored as written: "December 2027" from the first with month precision, and "December 14, 2027" from the second with day precision, although the event is one day or one week. Both windows contain the real date; the second is narrower than the source means.
+
 ## Alternatives
 
 - **Let the model return start and end dates.** Faster to build, but a model's arithmetic is not checkable and the spec puts dates under rule checks written in code. The model returns the phrase; code makes the window.
