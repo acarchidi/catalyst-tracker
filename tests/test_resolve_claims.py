@@ -319,6 +319,38 @@ def test_the_company_s_own_generic_name_and_one_with_no_owner_still_resolve(
     )
 
 
+def _named_drug(session: Session, company: UUID, *names: tuple[str, DrugNameKind]) -> UUID:
+    drug = Drug(company_id=company, preferred_name=names[0][0])
+    session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
+    for name, kind in names:
+        row = DrugName(drug_id=drug.id, name=name, kind=kind)
+        session.execute(insert(TABLES[DrugName]).values(**row.model_dump()))
+    return drug.id
+
+
+def test_a_brand_with_its_generic_in_brackets_resolves_when_both_name_one_drug(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    """ADR 0035: "TRYNGOLZA (olezarsen)" names one drug when both names are that drug's."""
+    with session_factory.begin() as session:
+        own = _named_drug(
+            session, spyre["company"], ("olezarsen", DrugNameKind.INN), ("TRYNGOLZA", DrugNameKind.BRAND)
+        )
+        other = _named_drug(session, spyre["company"], ("SPY001", DrugNameKind.CODE))
+        quote = "Data for TRYNGOLZA are expected in 2027."
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (olezarsen)", 1)
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (sefaxersen)", 2)
+        _claim(session, spyre["release"], quote, "TRYNGOLZA (SPY001)", 3)
+    resolve_claims(session_factory, lambda: NOW)
+    drugs = _by(_matches(session_factory), MatchedEntity.DRUG)
+    both = drugs["TRYNGOLZA (olezarsen)"]
+    assert (both["status"], both["matched_id"], both["matched_by"]) == ("resolved", own, "brand")
+    # A part that names no drug on file, or another drug, never resolves the whole.
+    assert drugs["TRYNGOLZA (sefaxersen)"]["status"] == "unknown"
+    two = drugs["TRYNGOLZA (SPY001)"]
+    assert (two["status"], sorted(two["candidates"])) == ("ambiguous", sorted([str(own), str(other)]))
+
+
 def test_a_name_of_two_drugs_one_of_them_the_company_s_stays_ambiguous(
     session_factory: sessionmaker[Session], spyre: dict[str, UUID]
 ) -> None:

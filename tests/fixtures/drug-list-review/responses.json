@@ -1,0 +1,12 @@
+{
+  "https://api.fda.gov/drug/drugsfda.json?search=application_number%3ANDA021445+application_number%3ANDA021687+application_number%3ANDA022433+application_number%3ANDA204063+application_number%3ANDA211855+application_number%3ANDA215973+application_number%3ANDA220018&limit=100&skip=0": {
+    "file": "00_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?filter.ids=NCT07683000%2CNCT00552097%2CNCT03126695%2CNCT07177209%2CNCT00442897&pageSize=100&fields=protocolSection.identificationModule.nctId%2CprotocolSection.sponsorCollaboratorsModule.leadSponsor%2CprotocolSection.armsInterventionsModule": {
+    "file": "01_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

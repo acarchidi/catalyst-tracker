@@ -29,6 +29,8 @@ from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import ON_REQUEST, SOURCES, build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
+from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
+from catalyst.drug_list_store import load_drugs
 from catalyst.export import build_export, write_export
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
@@ -97,8 +99,8 @@ def _parser() -> argparse.ArgumentParser:
         default=None,
         help=(
             f"Only these collectors, comma-separated, from: {', '.join(SOURCES)} (default: all); "
-            "also 'ctgov-linked', only the trials our claims and catalysts name (ADR 0040), "
-            "which runs only when named."
+            "also 'ctgov-linked', only the trials our claims and catalysts name (ADR 0040), and "
+            "'drugs', the drug list (ADR 0035); both run only when named."
         ),
     )
     _store_arguments(collect)
@@ -165,6 +167,20 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
+    drugs = commands.add_parser(
+        "load-drugs",
+        help=(
+            "Fill the drug list from Drugs@FDA and ClinicalTrials.gov for collected companies "
+            "(free; about 550 requests, 13 minutes; ADR 0035)."
+        ),
+    )
+    drugs.add_argument("--companies", type=Path, default=DEFAULT_COVERAGE, help="Company list (TOML).")
+    drugs.add_argument(
+        "--sources",
+        type=_drug_sources,
+        default=frozenset(DRUG_SOURCES),
+        help=f"Comma-separated, from: {', '.join(DRUG_SOURCES)} (default: both; ctgov needs openfda).",
+    )
     api = commands.add_parser(
         "api", help="Serve the read-only data API on this computer only, at http://127.0.0.1:<port>/v1."
     )
@@ -221,6 +237,18 @@ def _parser() -> argparse.ArgumentParser:
         "--previous", type=Path, help="An earlier copy; fail if it had a do_not_contact row now missing."
     )
     return parser
+
+
+def _drug_sources(value: str) -> frozenset[str]:
+    """Parse `load-drugs --sources`; registry names need Drugs@FDA for the comparator rule."""
+    names = frozenset(name.strip() for name in value.split(","))
+    if unknown := names - set(DRUG_SOURCES):
+        raise argparse.ArgumentTypeError(
+            f"unknown source {', '.join(sorted(unknown))}; valid: openfda, ctgov"
+        )
+    if "ctgov" in names and "openfda" not in names:
+        raise argparse.ArgumentTypeError("ctgov needs openfda: Drugs@FDA tells approved comparators apart")
+    return names
 
 
 def _sources(value: str) -> frozenset[str]:
@@ -286,6 +314,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "extract-catalysts": _extract,
         "eval-extractor": _evaluate,
         "resolve-claims": _resolve,
+        "load-drugs": _load_drugs,
         "verify-claims": _verify_claims,
         "alerts": _alerts,
         "post-issues": _post_issues,
@@ -529,6 +558,36 @@ def _resolve(_args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         report = resolve_claims(sessionmaker(engine), _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
+    return 0
+
+
+def _load_drugs(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        email = settings.sec_contact_email()
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = load_drugs(
+            sessionmaker(engine),
+            build_clients(email).web,
+            load_companies(args.companies),
+            _utc_now,
+            args.sources,
+        )
+    except httpx.HTTPError as error:
+        print(f"Nothing stored: a request failed ({error}).", file=sys.stderr)
+        return 1
+    except (
+        ValueError
+    ) as error:  # an answer that could not be read, or more trials than a search pages through
+        print(f"Nothing stored: {error}.", file=sys.stderr)
+        return 1
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))

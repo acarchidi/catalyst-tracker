@@ -48,6 +48,14 @@ class DrugNameKind(StrEnum):
     BRAND = "brand"
 
 
+class DrugNameSource(StrEnum):
+    """Where a drug name was first recorded (ADR 0035)."""
+
+    CLAIM = "claim"  # a code name the company's own document quoted, recorded by the matching job
+    OPENFDA = "openfda"  # an approved product in Drugs@FDA
+    CTGOV = "ctgov"  # an intervention in a ClinicalTrials.gov record
+
+
 class DrugRole(StrEnum):
     """How a drug is tested in the trial a catalyst concerns (owner ruling 2026-10-17, rule 3)."""
 

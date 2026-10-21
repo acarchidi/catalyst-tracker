@@ -2,9 +2,9 @@
 
 Company names and tickers come from the SEC company record each collection run already
 fetches. Trials, their study names, phases, and sizes come from each ClinicalTrials.gov record as
-it is collected (sizes: ADR 0039). Registry intervention lists are not imported as drugs: they
+it is collected (sizes: ADR 0039). Registry intervention lists are not imported as drugs here: they
 mix in comparator drugs, placebos, and short forms such as "ETH", which would match the wrong
-company's drug.
+company's drug. The drug list (`catalyst.drug_list`, ADR 0035) reads them with rules that drop those.
 Every write is safe to repeat.
 """
 
@@ -38,6 +38,7 @@ from catalyst.schemas import (
     Drug,
     DrugName,
     DrugNameKind,
+    DrugNameSource,
     EnrollmentType,
     SourceDocument,
     Trial,
@@ -281,10 +282,21 @@ def drug_refs(session: Session) -> list[DrugRef]:
     """Read every drug with every name it goes by, as the resolver matches them."""
     drug, drug_name = TABLES[Drug], TABLES[DrugName]
     names: defaultdict[UUID, list[tuple[str, DrugNameKind]]] = defaultdict(list)
-    for row in session.execute(select(drug_name.c.drug_id, drug_name.c.name, drug_name.c.kind)):
+    sources: defaultdict[UUID, set[str]] = defaultdict(set)
+    query = select(drug_name.c.drug_id, drug_name.c.name, drug_name.c.kind, drug_name.c.source)
+    for row in session.execute(query):
         names[row.drug_id].append((row.name, DrugNameKind(row.kind)))
+        sources[row.drug_id].add(row.source)
     return [
-        DrugRef(id=row.id, company_id=row.company_id, names=tuple(names[row.id]))
+        DrugRef(
+            id=row.id,
+            company_id=row.company_id,
+            names=tuple(names[row.id]),
+            # Only registry words: no code, and no name from Drugs@FDA or a claim (ADR 0035).
+            unconfirmed=bool(names[row.id])
+            and sources[row.id] == {DrugNameSource.CTGOV.value}
+            and all(kind is not DrugNameKind.CODE for _, kind in names[row.id]),
+        )
         for row in session.execute(select(drug.c.id, drug.c.company_id))
     ]
 
