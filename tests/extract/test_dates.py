@@ -6,7 +6,7 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from catalyst.extract.dates import DateWindow, parse_window, writes_year
+from catalyst.extract.dates import DateWindow, cut_short, parse_window, writes_year
 from catalyst.schemas.enums import DatePrecision
 
 PUBLISHED = date(2026, 10, 14)
@@ -201,6 +201,49 @@ def test_a_by_window_starts_on_the_document_date(published: date, quarter: int, 
     else:
         assert window is not None
         assert (window.start, window.end) == (published, end)
+
+
+BY_PHRASES = (
+    "by Q{q} {y}",
+    "by the end of Q{q} {y}",
+    "by end of {y}",
+    "by year-end {y}",
+    "by the end of the year",
+    "by year-end",
+    "by {y}",
+    "by mid-{y}",
+    "by the second half of {y}",
+    "by {q}H{yy}",
+    "by December {q}, {y}",
+    "by the end of December {y}",
+)
+
+
+@given(
+    published=published_days,
+    phrase=st.sampled_from(BY_PHRASES),
+    quarter=st.integers(min_value=1, max_value=4),
+    year=years,
+)
+def test_every_by_phrase_starts_on_the_document_date(
+    published: date, phrase: str, quarter: int, year: int
+) -> None:
+    """`writes_year` compares only a "by" phrase's end, because its start is always the release date.
+
+    Pinned here so a change to the "by" rule cannot quietly make `writes_year` pass words whose
+    start moves with the document (Claude review of PR #71).
+    """
+    words = phrase.format(q=quarter if "H" not in phrase else min(quarter, 2), y=year, yy=f"{year % 100:02d}")
+    window = parse_window(words, published)
+    if window is not None:
+        assert window.start == published, words
+
+
+@given(rest=st.text(max_size=30), published=published_days)
+def test_any_by_phrase_the_parser_reads_starts_on_the_document_date(rest: str, published: date) -> None:
+    window = parse_window("by " + rest, published)
+    if window is not None:
+        assert window.start == published
 
 
 # Date ranges (ADR 0018, part 3): the window runs from the first part's start to the last part's
@@ -435,3 +478,39 @@ def test_a_february_29_without_a_year_does_not_write_its_year() -> None:
     assert writes_year("February 29, 2028", released) is True
     assert writes_year("December 15", date(2028, 2, 29)) is False
     assert writes_year("December 15, 2028", date(2028, 2, 29)) is True
+
+
+FISCAL = "are part of a fiscal-year date, not a calendar one"
+
+
+@pytest.mark.parametrize(
+    ("quote", "words"),
+    [
+        ("Data are expected in fiscal 2027.", "2027"),
+        ("Data are expected in FY2027.", "FY2027"),
+        ("Data are expected in FY 2027.", "2027"),
+        ("Data are expected in FY-2027.", "2027"),
+        ("Data are expected in F.Y. 2027.", "2027"),
+        ("Data are expected in F.Y.2027.", "F.Y.2027"),
+        ("Data are expected in FY Q4 2027.", "Q4 2027"),
+        ("Data are expected in FY-Q4 2027.", "Q4 2027"),
+        ("Data are expected in fy q4 2027.", "q4 2027"),
+        ("Data are expected in FY 4Q27.", "4Q27"),
+        ("Data are expected in FY '27.", "'27"),
+    ],
+)
+def test_every_spelling_of_a_fiscal_year_holds_the_date_words(quote: str, words: str) -> None:
+    """A fiscal year need not be the calendar year, so its dates are held (CP4 review, O2)."""
+    assert cut_short(quote, words, PUBLISHED) == FISCAL
+
+
+@pytest.mark.parametrize(
+    ("quote", "words"),
+    [
+        ("Data for Fyarro are expected in Q4 2027.", "Q4 2027"),
+        ("FYI: data are expected in Q4 2027.", "Q4 2027"),
+        ("Data are expected in Q4 2027.", "Q4 2027"),
+    ],
+)
+def test_words_that_only_start_like_fy_are_not_a_fiscal_year(quote: str, words: str) -> None:
+    assert cut_short(quote, words, PUBLISHED) is None
