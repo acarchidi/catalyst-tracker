@@ -884,3 +884,32 @@ def test_extract_catalysts_runs_the_writers_check_before_deciding_and_decides_no
         "error": "OperationalError: the safe-to-write check did not finish"
     }
     assert summary["decisions"] == {"skipped": "the checks did not finish, so nothing was decided"}
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (LinkStatus.OK, 0),
+        (LinkStatus.FAILED, 0),
+        (LinkStatus.REFUSED, 0),
+        (LinkStatus.BROKEN, 1),
+        (LinkStatus.MOVED, 1),
+    ],
+)
+def test_the_weekly_check_reads_published_links_and_fails_only_on_a_dead_one(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, status: LinkStatus, expected: int
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_check(*_args: object, **options: Any) -> LinkReport:
+        calls.append(options)
+        return LinkReport([LinkResult("https://www.sec.gov/x", status)])
+
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "published_urls", lambda *_args: ["https://www.sec.gov/x"])  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_links", fake_check)
+    out = tmp_path / "links.json"
+    assert main(["check-links", "--published", "--summary", str(out)]) == expected
+    assert calls[0]["urls"] == ["https://www.sec.gov/x"]
+    assert json.loads(out.read_text())["checked"] == 1
