@@ -516,25 +516,83 @@ PARTNER_PREFIXES: dict[str, tuple[str, ...]] = {
     "VX": ("vertex",),
 }
 
-# Class and ordinary words that end like an INN stem but name no drug ("interleukin" is "-kin",
-# "nucleotide" is "-tide", "transgene" is "-gene", "cancel" is "-cel") (sixth review of PR #73).
+# Class and ordinary words that end like an INN stem but name no drug ("cancel" is "-cel",
+# "hodgkin" is "-kin", "constant" is "-tant", "concept" is "-cept", "chosen" is "-sen") (sixth and
+# seventh reviews of PR #73). Real INNs share these endings ("etanercept", "aprepitant",
+# "olezarsen"), so ordinary words are listed one by one, never banned by suffix.
 NOT_INN_WORDS = frozenset(
     [
         "cancel",
         "excel",
-        "interleukin",
         "napkin",
-        "nucleotide",
-        "oligonucleotide",
-        "oncogene",
         "parcel",
-        "peptide",
-        "polypeptide",
         "pumpkin",
         "thermostat",
-        "transgene",
+        # Seventh review
+        "gonadotropin",
+        "haemostat",
+        "hemostat",
+        "hodgkin",
+        "surfactant",
+        # -tant
+        "accountant",
+        "assistant",
+        "blatant",
+        "combatant",
+        "concomitant",
+        "constant",
+        "consultant",
+        "contestant",
+        "decongestant",
+        "disinfectant",
+        "distant",
+        "exorbitant",
+        "expectant",
+        "hesitant",
+        "important",
+        "inhabitant",
+        "instant",
+        "irritant",
+        "militant",
+        "pollutant",
+        "protestant",
+        "reactant",
+        "reluctant",
+        "resistant",
+        "resultant",
+        # -pant
+        "discrepant",
+        "flippant",
+        "nonparticipant",
+        "occupant",
+        "participant",
+        "rampant",
+        # -cept
+        "concept",
+        "intercept",
+        "percept",
+        "precept",
+        # -sen (and the company Janssen, which the registry gives as a sponsor and collaborator)
+        "chosen",
+        "janssen",
+        "lessen",
+        "loosen",
+        "unchosen",
+        "worsen",
     ]
 )
+
+# Class words that end longer class words too ("neuropeptide", "glycopeptide", "dinucleotide").
+# No INN ends in them (seventh review of PR #73).
+NOT_INN_ENDINGS = ("peptide", "nucleotide")
+
+# Class words that are also real INN stems ("axicabtagene", "aglatimagene", "bempegaldesleukin",
+# "aldesleukin" end in them): they count as class words alone or after ordinary prefixes only
+# ("transgene", "protooncogene", "interleukin") (seventh review of PR #73).
+NOT_INN_PREFIXED = {
+    "gene": ("anti", "homeo", "mini", "onco", "proto", "pseudo", "retro", "trans"),
+    "leukin": ("inter",),
+}
 
 # Endings of WHO international nonproprietary names (INN stems), by which a registry main name
 # without a digit looks like a drug's generic name: "navitoclax", "tanruprubart", "inaxaplin",

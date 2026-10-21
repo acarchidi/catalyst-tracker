@@ -53,6 +53,8 @@ from catalyst.drug_list_words import (
     INN_ENDINGS,
     METALS,
     NON_DRUG_WORDS,
+    NOT_INN_ENDINGS,
+    NOT_INN_PREFIXED,
     NOT_INN_WORDS,
     ORDINARY_WORDS,
     PARTNER_PREFIXES,
@@ -660,16 +662,37 @@ _SHORTEST_STEM_WORD = 6  # letters in a word whose ending counts as an INN stem 
 _LETTERS_BEFORE_STEM = 3  # "lasofoxifene", not a stem with one letter before it
 
 
+def _class_word(word: str) -> bool:
+    """Say whether a word is a class or ordinary word that ends like an INN stem (`NOT_INN_WORDS`).
+
+    A class ending ends longer class words too ("neuropeptide", "dinucleotide": `NOT_INN_ENDINGS`).
+    "-gene" and "-leukin" are real stems ("axicabtagene", "aldesleukin"), so a word ending in them
+    is a class word only when ordinary prefixes come before ("protooncogene", "interleukin":
+    `NOT_INN_PREFIXED`) (seventh review of PR #73).
+    """
+    if word in NOT_INN_WORDS or word.endswith(NOT_INN_ENDINGS):
+        return True
+    for root, prefixes in NOT_INN_PREFIXED.items():
+        if word.endswith(root):
+            rest = word.removesuffix(root)
+            while rest and (prefix := next((p for p in prefixes if rest.startswith(p)), None)):
+                rest = rest.removeprefix(prefix)
+            if not rest:
+                return True
+    return False
+
+
 def _inn_shaped(name: str) -> bool:
     """Say whether a word of the name ends like a WHO generic name ("navitoclax", "tanruprubart").
 
     The word needs three letters or more before the stem, and must not be a class or ordinary word
-    that ends like one ("interleukin", "nucleotide": `NOT_INN_WORDS`) (sixth review of PR #73).
+    that ends like one ("interleukin", "neuropeptide", "constant": `_class_word`) (sixth and seventh
+    reviews of PR #73).
     """
     words = [w.casefold() for w in re.findall(r"[^\W\d_]+", name)]
     return any(
         len(w) >= _SHORTEST_STEM_WORD
-        and w not in NOT_INN_WORDS
+        and not _class_word(w)
         and any(w.endswith(stem) and len(w) - len(stem) >= _LETTERS_BEFORE_STEM for stem in INN_ENDINGS)
         for w in words
     )
