@@ -9,6 +9,7 @@ posts: issues to raise, and alerts a clean run has solved.
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, NamedTuple, cast
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import Engine
@@ -34,6 +36,16 @@ JOB_NAMES = {
     "sample-records": "Ten-record sample",
     "migrate": "Database update",
     "spend-check": "Spending check",
+    "sample-check": "Weekly sample check",
+}
+# The points the sample checker names, in the words an alert uses for them (ADR 0041).
+SAMPLE_POINTS = {
+    "type": "the type of event",
+    "company": "the company",
+    "drugs": "the drugs",
+    "indication": "the disease",
+    "date": "the date",
+    "trials": "the trials",
 }
 Plan = dict[str, Any]
 
@@ -173,6 +185,15 @@ def _copy_problems(summary: dict[str, Any]) -> list[str]:
     return found
 
 
+def _sample_problems(summary: dict[str, Any]) -> list[str]:
+    problems: list[str] = []
+    if failed := _count(summary, "documents_failed"):
+        problems.append(f"{_plural(failed, 'record')} could not be checked.")
+    if summary.get("stopped_early"):
+        problems.append("It stopped early, before checking every record it could (usually a spending cap).")
+    return problems
+
+
 _LINK_LIST_LIMIT = 20  # dead links named in one alert; the run log lists every one
 
 
@@ -206,6 +227,8 @@ def _problems(run: JobRun) -> list[str]:
         problems += _collect_problems(_sequence(run.summary))
     elif run.name == "snapshots-verify":
         problems += _copy_problems(_mapping(run.summary))
+    elif run.name == "sample-check":
+        problems += _sample_problems(_mapping(run.summary))
     elif run.name == "check-links":
         problems += _link_problems(_mapping(run.summary))
     if run.outcome == "failure" and not problems:
@@ -233,6 +256,55 @@ def _job_alert(run: JobRun, problems: list[str], limits: Thresholds, run_url: st
         "body": "\n".join(body),
         "escalate_at": limits.failed_runs_in_a_row,
     }
+
+
+_MARKDOWN = re.compile(r"([\\`*_\[\]<>#|~])")  # what can make a link, an image, a tag, or formatting
+
+
+def _plain(text: str) -> str:
+    """Show text as written in an issue: Markdown marks escaped, and no `@` that could mention anyone."""
+    return _MARKDOWN.sub(r"\\\1", text).replace("@", "&#64;")
+
+
+def _sample_alerts(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return one alert per record the sample checker disagrees with; only the owner closes it.
+
+    The text holds only the record's id, title, code-chosen point names, and its source links;
+    an entry with any other shape is left out, and the checker's own words never appear.
+    """
+    week = str(summary.get("week_of", ""))
+    alerts: list[dict[str, Any]] = []
+    for entry in map(_mapping, _sequence(summary.get("disagreements"))):
+        try:
+            catalyst = UUID(str(entry.get("catalyst_id")))
+            day = date.fromisoformat(week)
+        except ValueError:
+            continue
+        points = [SAMPLE_POINTS[p] for p in _sequence(entry.get("points")) if p in SAMPLE_POINTS]
+        links = [str(u) for u in _sequence(entry.get("links")) if str(u).startswith("https://")]
+        title = _plain(str(entry.get("title", ""))[:300])
+        body = [
+            "**The weekly sample checker disagrees with a published record.**",
+            "",
+            f"Record: {title} (id {catalyst})",
+            f"It disagrees on: {', '.join(points) or 'a point it could not name'}.",
+            "",
+            "Sources:",
+            *(f"- {link}" for link in links),
+            "",
+            "What to do: open the source and check those points against the record. Tell the "
+            "coding session which value is right; a fix is published as a correction. Close this "
+            "issue once it is settled. No run closes it for you.",
+        ]
+        alerts.append(
+            {
+                "key": f"sample-disagrees:{catalyst}:{day.isoformat()}",
+                "title": "The sample checker disagrees with a published record",
+                "body": "\n".join(body),
+                "escalate_at": None,
+            }
+        )
+    return alerts
 
 
 def _spend_alert(role: str, spent: Decimal, cap: Decimal) -> dict[str, Any]:
@@ -271,6 +343,8 @@ def build_alerts(
             issues.append(_job_alert(run, problems, limits, run_url))
         else:
             solved.append({"key": f"job-failed:{run.name}", "comment": clean})
+        if run.name == "sample-check":
+            issues += _sample_alerts(_mapping(run.summary))
     for role, (spent, cap, smallest_call) in sorted((spend or {}).items()):
         # The model client stops a role when its next call could pass the cap, which can be well
         # under the share for a role whose calls are large next to its cap (ADR 0022).

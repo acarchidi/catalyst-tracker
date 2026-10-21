@@ -446,6 +446,27 @@ Rules:
 - Database check `votes_present`: `result <> 'advisory_vote' OR (votes_for IS NOT NULL AND votes_against IS NOT NULL)`
 - Database check `votes_not_negative`: `coalesce(votes_for, 0) >= 0 AND coalesce(votes_against, 0) >= 0`
 
+## `sample_check`
+
+The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0041). A stronger model reads each source and says whether it states the published values; plain code turns its answers into the verdict and writes this row. A record is checked once per week's draw, prompt version, and model.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `catalyst_id` | link to `catalyst` | yes | The catalyst checked. |
+| `week_of` | date | yes | Monday (New York time) of the week whose random draw picked it. |
+| `verdict` | one of: `agrees`, `disagrees` | yes | Agrees only when every checked point agrees. |
+| `points` | structured value (JSON) | yes | Each checked point: its source claim and link, the published value, the answer, and why. |
+| `prompt_id` | text, up to 100 characters | yes | Prompt used. |
+| `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
+| `model` | text, up to 100 characters | yes | Model that answered. |
+| `checked_at` | date and time (with time zone) | yes | When the record was checked. |
+
+Rules:
+
+- Unique: `catalyst_id`, `week_of`, `prompt_id`, `prompt_version`, `model`
+- Database check `points_is_list`: `jsonb_typeof(points) = 'array'`
+
 ## `model_call`
 
 One model call and what it cost (spec: every model call logged with its cost). Daily spend caps are summed from this table, so every job shares one total per role.

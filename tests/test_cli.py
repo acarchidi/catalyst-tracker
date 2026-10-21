@@ -12,6 +12,7 @@ import pytest
 from sqlalchemy.exc import OperationalError
 
 from catalyst import cli
+from catalyst.audit.sample import SampleReport
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
@@ -884,6 +885,41 @@ def test_extract_catalysts_runs_the_writers_check_before_deciding_and_decides_no
         "error": "OperationalError: the safe-to-write check did not finish"
     }
     assert summary["decisions"] == {"skipped": "the checks did not finish, so nothing was decided"}
+
+
+def test_sample_check_needs_the_product_key(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv("CATALYST_ANTHROPIC_API_KEY", raising=False)
+    assert main(["sample-check"]) == 2
+    assert "CATALYST_ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize(
+    ("report", "expected"),
+    [
+        (SampleReport(date(2026, 10, 19), drawn=2, checked=1, agrees=1), 0),
+        (SampleReport(date(2026, 10, 19), drawn=2, checked=1, disagreements=[{"catalyst_id": "x"}]), 0),
+        (SampleReport(date(2026, 10, 19), drawn=2, documents_failed=1), 1),
+        (SampleReport(date(2026, 10, 19), drawn=2, stopped="cap"), 1),
+    ],
+)
+def test_sample_check_prints_the_counts_and_fails_only_when_it_could_not_check(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], report: SampleReport, expected: int
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_check(*_args: object, **options: Any) -> SampleReport:
+        calls.append(options)
+        return report
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_sample_check", fake_check)
+    assert main(["sample-check", "--limit", "2", "--week-of", "2026-10-21"]) == expected
+    assert calls[0]["limit"] == 2
+    assert calls[0]["week"] == date(2026, 10, 19)  # any day names its week's Monday
+    assert json.loads(capsys.readouterr().out)["week_of"] == "2026-10-19"
 
 
 @pytest.mark.parametrize(

@@ -33,6 +33,7 @@ from catalyst.schemas.enums import (
     OutcomeResult,
     ReadingSkip,
     ReviewAction,
+    SampleVerdict,
     TrialPhase,
 )
 from catalyst.schemas.identifiers import (
@@ -586,6 +587,30 @@ class CatalystChange(Entity):
         if self.old_value == self.new_value:
             raise ValueError("new_value must differ from old_value")
         return self
+
+
+class SampleCheck(Entity):
+    """The weekly sample checker's verdict on one published catalyst (spec: Weekly random sample; ADR 0041).
+
+    A stronger model reads each source and says whether it states the published values; plain
+    code turns its answers into the verdict and writes this row. A record is checked once per
+    week's draw, prompt version, and model.
+    """
+
+    __tablename__ = "sample_check"
+    __unique__ = (("catalyst_id", "week_of", "prompt_id", "prompt_version", "model"),)
+    __checks__: ClassVar[dict[str, str]] = {"points_is_list": "jsonb_typeof(points) = 'array'"}
+
+    catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The catalyst checked.")
+    week_of: date = Field(description="Monday (New York time) of the week whose random draw picked it.")
+    verdict: SampleVerdict = Field(description="Agrees only when every checked point agrees.")
+    points: list[dict[str, JsonValue]] = Field(
+        description="Each checked point: its source claim and link, the published value, the answer, and why."
+    )
+    prompt_id: ShortText = Field(description="Prompt used.")
+    prompt_version: ShortText = Field(description="Version of that prompt.")
+    model: ShortText = Field(description="Model that answered.")
+    checked_at: AwareDatetime = Field(description="When the record was checked.")
 
 
 class Outcome(Entity):

@@ -295,6 +295,75 @@ def test_posting_reports_what_it_changed_or_why_it_stopped(
     assert "token-for-tests" not in error
 
 
+SAMPLE_ID = "0b8e0c38-3f4e-4c55-9d2a-6f1c1d1e2f3a"
+CLEAN_SAMPLE: dict[str, Any] = {
+    "week_of": "2026-10-19",
+    "checked": 1,
+    "documents_failed": 0,
+    "stopped_early": None,
+    "disagreements": [],
+}
+
+
+def test_each_sample_disagreement_is_its_own_alert_that_no_run_closes() -> None:
+    record = {
+        "catalyst_id": SAMPLE_ID,
+        "title": "zentocel: topline data (RAINIER)",
+        "points": ["date", "drugs"],
+        "links": ["https://www.sec.gov/Archives/edgar/data/1/1.htm"],
+    }
+    summary = CLEAN_SAMPLE | {"disagreements": [record]}
+    plan = build_alerts([JobRun("sample-check", "success", summary)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == [f"sample-disagrees:{SAMPLE_ID}:2026-10-19"]
+    body = plan["issues"][0]["body"]
+    assert "zentocel: topline data (RAINIER)" in body
+    assert "the date, the drugs" in body
+    assert "- https://www.sec.gov/Archives/edgar/data/1/1.htm" in body
+    assert plan["issues"][0]["escalate_at"] is None
+    # A clean run closes only the job's own alert, never a disagreement still to settle.
+    assert [s["key"] for s in plan["solved"]] == ["job-failed:sample-check"]
+
+
+def test_a_sample_record_with_unexpected_contents_is_left_out_of_the_alert_text() -> None:
+    odd = {"catalyst_id": "not-an-id", "title": "x", "points": ["date"], "links": []}
+    named = {
+        "catalyst_id": SAMPLE_ID,
+        "title": "t",
+        "points": ["date", "ignore me"],
+        "links": ["javascript:x"],
+    }
+    summary = CLEAN_SAMPLE | {"disagreements": [odd, named]}
+    plan = build_alerts([JobRun("sample-check", "success", summary)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == [f"sample-disagrees:{SAMPLE_ID}:2026-10-19"]
+    body = plan["issues"][0]["body"]
+    assert "ignore me" not in body
+    assert "javascript" not in body
+
+
+def test_a_record_title_cannot_mention_people_or_add_links_in_the_issue() -> None:
+    title = "exampumab @owner [click](https://example.com) *now*"
+    record = {"catalyst_id": SAMPLE_ID, "title": title, "points": ["date"], "links": []}
+    summary = CLEAN_SAMPLE | {"disagreements": [record]}
+    body = build_alerts([JobRun("sample-check", "success", summary)], None, LIMITS, RUN_URL)["issues"][0][
+        "body"
+    ]
+    assert "@owner" not in body
+    assert "[click](" not in body
+    assert "*now*" not in body
+    assert "exampumab &#64;owner \\[click\\](https://example.com) \\*now\\*" in body
+
+
+def test_a_sample_check_that_stops_or_cannot_read_a_source_alerts() -> None:
+    summary = CLEAN_SAMPLE | {"documents_failed": 2, "stopped_early": "analyst has spent"}
+    plan = build_alerts([JobRun("sample-check", "failure", summary)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:sample-check"]
+    body = plan["issues"][0]["body"]
+    assert "Weekly sample check did not finish cleanly" in body
+    assert "2 records could not be checked." in body
+    assert "stopped early" in body
+    assert "analyst has spent" not in body
+
+
 def test_dead_published_links_are_counted_and_listed_and_a_clean_check_closes_the_alert() -> None:
     dead = {
         "checked": 40,

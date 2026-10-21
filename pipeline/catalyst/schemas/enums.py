@@ -214,6 +214,13 @@ class GateDecision(StrEnum):
     REVIEW = "review"
 
 
+class SampleVerdict(StrEnum):
+    """What the weekly sample checker concluded about one published catalyst (ADR 0041)."""
+
+    AGREES = "agrees"
+    DISAGREES = "disagrees"
+
+
 class ReviewAction(StrEnum):
     """What a person decided about a held claim in the review queue (ADR 0042)."""
 
