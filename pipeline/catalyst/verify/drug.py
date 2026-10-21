@@ -125,7 +125,8 @@ class _Text:
         keys: list[str] = []
         self.where: list[int] = []
         for at, char in enumerate(text):
-            for key in _MARKS.sub("", unicodedata.normalize("NFKC", char)).casefold():
+            # The sign goes first, as in `name_key`: Unicode spells "™" as the letters "TM".
+            for key in _MARKS.sub("", unicodedata.normalize("NFKC", _MARKS.sub("", char))).casefold():
                 if key.isalnum():
                     keys.append(key)
                     self.where.append(at)

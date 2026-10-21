@@ -14,6 +14,7 @@ import pytest
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "merge_gate.py"
 SHA = "a" * 40
+REPO = "acarchidi/catalyst-tracker"
 REQUIRED = ["Lint, types, tests, migrations", "Dependency audit", "Secret scan", "Claude review"]
 
 
@@ -37,6 +38,9 @@ def pr(**changes: Any) -> dict[str, Any]:
         "headRefName": "claude/snapshot-store",
         "headRefOid": SHA,
         "isCrossRepository": False,
+        "headRepository": {"name": "catalyst-tracker"},
+        "headRepositoryOwner": {"login": "acarchidi"},
+        "author": {"login": "acarchidi"},
         "labels": [],
     }
     return base | changes
@@ -53,7 +57,7 @@ def green() -> list[dict[str, Any]]:
 
 
 def action(pull: dict[str, Any], checks: list[dict[str, Any]], files: list[str] | None = None) -> str:
-    return gate.decide(SHA, pull, files or ["pipeline/catalyst/snapshots.py"], checks)["action"]
+    return gate.decide(SHA, pull, files or ["pipeline/catalyst/snapshots.py"], checks, repo=REPO)["action"]
 
 
 def test_all_green_merges() -> None:
@@ -71,6 +75,15 @@ def test_all_green_merges() -> None:
         {"isCrossRepository": True},
         {"headRefOid": "b" * 40},
         {"labels": [{"name": "hold"}]},
+        # The repository is public (2026-10-20): anyone can open a pull request from a fork,
+        # and name its branch claude/.
+        {"headRepositoryOwner": {"login": "someone-else"}},
+        {"headRepository": {"name": "other-repo"}},
+        {"headRepository": None},
+        {"headRepositoryOwner": None},
+        {"author": {"login": "someone-else"}},
+        {"author": {"login": "dependabot[bot]"}},
+        {"author": None},
     ],
 )
 def test_ineligible_pull_requests_are_skipped(changes: dict[str, Any]) -> None:
@@ -137,13 +150,37 @@ def test_a_check_with_the_same_name_from_another_app_does_not_count() -> None:
     ],
 )
 def test_changes_to_the_rules_review_or_protected_settings_go_to_the_owner(path: str) -> None:
-    decision = gate.decide(SHA, pr(), ["README.md", path], green())
+    decision = gate.decide(SHA, pr(), ["README.md", path], green(), repo=REPO)
     assert decision["action"] == "owner"
     assert path in decision["reason"]
 
 
 def test_owner_paths_still_wait_for_checks_first() -> None:
     assert action(pr(), green()[:3], [".github/workflows/ci.yml"]) == "wait"
+
+
+@pytest.mark.parametrize("missing", ["headRepository", "headRepositoryOwner", "author"])
+def test_a_pull_request_without_its_origin_or_author_is_skipped(missing: str) -> None:
+    pull = pr()
+    del pull[missing]
+    assert action(pull, green()) == "skip"
+
+
+@pytest.mark.parametrize("repo", ["", "acarchidi", "/catalyst-tracker", "acarchidi/"])
+def test_without_a_known_repository_nothing_merges(repo: str) -> None:
+    decision = gate.decide(SHA, pr(), ["README.md"], green(), repo=repo)
+    assert decision["action"] == "skip"
+
+
+def test_the_skip_reason_names_a_fork() -> None:
+    pull = pr(headRepositoryOwner={"login": "someone-else"})
+    decision = gate.decide(SHA, pull, ["README.md"], green(), repo=REPO)
+    assert decision == {"action": "skip", "reason": "the pull request comes from another repository"}
+
+
+def test_the_skip_reason_names_an_untrusted_author() -> None:
+    decision = gate.decide(SHA, pr(author={"login": "someone-else"}), ["README.md"], green(), repo=REPO)
+    assert decision == {"action": "skip", "reason": "the pull request was not opened by the repository owner"}
 
 
 def test_command_line_prints_the_decision(tmp_path: Path) -> None:
@@ -154,9 +191,26 @@ def test_command_line_prints_the_decision(tmp_path: Path) -> None:
         path.write_text(json.dumps(value), encoding="utf-8")
         paths.append(str(path))
     done = subprocess.run(  # noqa: S603 - fixed interpreter and script path
-        [sys.executable, "-I", str(SCRIPT), SHA, *paths], capture_output=True, check=True, text=True
+        [sys.executable, "-I", str(SCRIPT), SHA, *paths],
+        capture_output=True,
+        check=True,
+        text=True,
+        env={"GITHUB_REPOSITORY": REPO},
     )
     assert json.loads(done.stdout) == {"action": "merge", "reason": "every required check passed"}
+
+
+def test_command_line_without_the_repository_skips(tmp_path: Path) -> None:
+    paths: list[str] = []
+    inputs: list[tuple[str, object]] = [("pr", pr()), ("files", ["README.md"]), ("checks", green())]
+    for name, value in inputs:
+        path = tmp_path / f"{name}.json"
+        path.write_text(json.dumps(value), encoding="utf-8")
+        paths.append(str(path))
+    done = subprocess.run(  # noqa: S603 - fixed interpreter and script path
+        [sys.executable, "-I", str(SCRIPT), SHA, *paths], capture_output=True, check=True, text=True, env={}
+    )
+    assert json.loads(done.stdout)["action"] == "skip"
 
 
 @pytest.mark.parametrize(
