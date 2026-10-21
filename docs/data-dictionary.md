@@ -322,7 +322,7 @@ One verification check's outcome for one claim (spec: Verification; ADR 0018). A
 | `check_name` | text, up to 100 characters | yes | Which check, for example 'window_not_past'. |
 | `outcome` | one of: `pass`, `fail`, `not_applicable` | yes | Pass, fail, or not applicable. |
 | `reason` | text, up to 300 characters | no | Why it failed or did not apply, in plain words. |
-| `checked_at` | date and time (with time zone) | yes | When the check last ran. |
+| `checked_at` | date and time (with time zone) | yes | When the check first found its current outcome; a re-run with the same result keeps it. |
 
 Rules:
 

@@ -16,7 +16,7 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import case, or_, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -182,7 +182,12 @@ def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFact
 
 
 def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datetime) -> None:
-    """Keep one check's latest outcome for one claim, replacing any earlier one."""
+    """Keep one check's latest outcome for one claim, replacing any earlier one.
+
+    `checked_at` moves only when the outcome or its reason changes, so it says since when the
+    claim has had this outcome: a review approval excuses a failure only when it is no newer than
+    the approval (ADR 0042).
+    """
     row = ClaimCheck(
         claim_id=claim_id,
         check_name=result.check,
@@ -190,8 +195,16 @@ def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datet
         reason=result.reason[:300] if result.reason else None,
         checked_at=at,
     ).model_dump()
-    changes = {k: row[k] for k in ("outcome", "reason", "checked_at")}
     statement = insert(_CHECK).values(**row)
+    changed = or_(
+        _CHECK.c.outcome.is_distinct_from(statement.excluded.outcome),
+        _CHECK.c.reason.is_distinct_from(statement.excluded.reason),
+    )
+    changes: dict[str, Any] = {
+        "outcome": statement.excluded.outcome,
+        "reason": statement.excluded.reason,
+        "checked_at": case((changed, statement.excluded.checked_at), else_=_CHECK.c.checked_at),
+    }
     session.execute(statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes))
 
 

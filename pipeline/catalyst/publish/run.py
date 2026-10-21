@@ -8,7 +8,9 @@ decision here is not yet final.
 `window_not_past` does not apply to a claim about a catalyst that is already published: its date
 passing is for the outcome tracker, not a review item.
 
-A person's approval from the review queue excuses the holds they saw (`gate.approve`; ADR 0042).
+A person's latest decision from the review queue counts (ADR 0042): an approval excuses the holds
+they saw (`gate.approve`) while those checks' outcomes are unchanged since; a rejection holds the
+claim (`gate.REVIEW_REJECTED`).
 """
 
 from __future__ import annotations
@@ -29,10 +31,10 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
 from catalyst.logs import log_event
-from catalyst.publish.gate import UnreadableCopy, approve, decide, match_quote, read_copy
+from catalyst.publish.gate import UnreadableCopy, decide, match_quote, read_copy
 from catalyst.publish.live import claim_key, excuse_passed_window, load_live
 from catalyst.publish.sanity import person_may_approve
-from catalyst.review import approvals
+from catalyst.review import apply_review, latest_reviews
 from catalyst.schemas import Claim, ClaimCheck, ClaimDecision, GateDecision, SourceDocument
 from catalyst.snapshots import SnapshotStore
 from catalyst.verify.run import load_matches
@@ -88,7 +90,7 @@ def decide_claims(
     with session_factory() as session:
         rows, checks = _load(session)
         matches, live = load_matches(session), load_live(session)
-        approved = approvals(session)
+        reviews = latest_reviews(session)
     decisions: list[dict[str, Any]] = []
     names = list(TABLES[Claim].c.keys())
     # Claims come grouped by document, so only the current document's text is held (review of PR #52).
@@ -103,8 +105,7 @@ def decide_claims(
             if live.is_live(claim.id, claim_key(claim.value, matches.get(claim.id, []))):
                 stored_checks = excuse_passed_window(claim.id, stored_checks, at)
             decision = decide(claim, stored_checks, match_quote(claim, copy))
-            if claim.id in approved:
-                decision = approve(decision, approved[claim.id], person_may_approve)
+            decision = apply_review(decision, reviews.get(claim.id), stored_checks, person_may_approve)
             report.claims += 1
             if decision.decision is GateDecision.PUBLISH:
                 report.to_publish += 1

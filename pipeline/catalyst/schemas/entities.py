@@ -431,7 +431,9 @@ class ClaimCheck(Entity):
     check_name: ShortText = Field(description="Which check, for example 'window_not_past'.")
     outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
-    checked_at: AwareDatetime = Field(description="When the check last ran.")
+    checked_at: AwareDatetime = Field(
+        description="When the check first found its current outcome; a re-run with the same result keeps it."
+    )
 
 
 class ClaimDecision(Entity):

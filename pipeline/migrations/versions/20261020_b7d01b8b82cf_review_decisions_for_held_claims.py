@@ -4,6 +4,10 @@ Adds `review_decision`, append-only, with row-level security on (ADR 0011). Unli
 own rows, these are a person's decisions and cannot be rebuilt, so the downgrade refuses to run
 while the table holds any.
 
+Also restates what `claim_check.checked_at` means: since this revision it moves only when a
+check's outcome or reason changes, so a review approval can tell a failure that came back since
+it was given (ADR 0042). Only the column comment changes; no data does.
+
 Revision ID: b7d01b8b82cf
 Revises: b3f1c7e2a9d4
 Create Date: 2026-10-20 12:35:26.474949
@@ -19,6 +23,9 @@ revision: str = "b7d01b8b82cf"
 down_revision: str | None = "b3f1c7e2a9d4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
+
+_LAST_RAN = "When the check last ran."
+_SINCE = "When the check first found its current outcome; a re-run with the same result keeps it."
 
 
 def upgrade() -> None:
@@ -64,6 +71,14 @@ def upgrade() -> None:
     )
     # ### end Alembic commands ###
     op.execute('ALTER TABLE "review_decision" ENABLE ROW LEVEL SECURITY')
+    op.alter_column(
+        "claim_check",
+        "checked_at",
+        existing_type=sa.DateTime(timezone=True),
+        existing_nullable=False,
+        comment=_SINCE,
+        existing_comment=_LAST_RAN,
+    )
 
 
 def downgrade() -> None:
@@ -73,4 +88,12 @@ def downgrade() -> None:
             "review_decision holds a person's decisions, which nothing can rebuild; not dropped"
         )
     op.drop_table("review_decision")
+    op.alter_column(
+        "claim_check",
+        "checked_at",
+        existing_type=sa.DateTime(timezone=True),
+        existing_nullable=False,
+        comment=_LAST_RAN,
+        existing_comment=_SINCE,
+    )
     # ### end Alembic commands ###

@@ -214,12 +214,24 @@ def decide(claim: Claim, checks: Iterable[ClaimCheck], quote_ok: CheckResult) ->
     return Decision(GateDecision.REVIEW, tuple(holds)) if holds else Decision(GateDecision.PUBLISH)
 
 
+# A person rejected the claim in the review queue; only a later approval, a newer decision,
+# removes it (ADR 0042, decision 4). The reason names no claim text: it is stored and counted.
+REVIEW_REJECTED = Hold("review_rejected", "rejected in the review queue")
+
 # Holds no person's approval excuses (ADR 0042): no value publishes without its verbatim quote
 # in the stored copy (spec: Provenance), only the extractor's catalyst claims from the current
-# prompt become catalysts, and a new catalyst needs a window that has not passed. A check that
-# has not run is never excused either: nobody can vouch for it (Opus review of PR #84).
+# prompt become catalysts, a new catalyst needs a window that has not passed, and a rejection
+# holds until a later decision replaces it. A check that has not run is never excused either:
+# nobody can vouch for it (Opus review of PR #84).
 PERSON_MAY_NOT_EXCUSE: frozenset[str] = frozenset(
-    {QUOTE_CHECK, "extractor_claim", "extractor_prompt", "has_window", "window_not_past"}
+    {
+        QUOTE_CHECK,
+        "extractor_claim",
+        "extractor_prompt",
+        "has_window",
+        "window_not_past",
+        REVIEW_REJECTED.check,
+    }
 )
 
 

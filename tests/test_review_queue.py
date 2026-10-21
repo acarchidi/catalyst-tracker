@@ -32,6 +32,8 @@ from catalyst.schemas import (
     ReviewDecision,
 )
 from catalyst.snapshots import LocalSnapshotStore
+from catalyst.verify.rules import CheckResult
+from catalyst.verify.run import store_check
 from test_publish_writer import NOW, OCT_16, VERIFIER_MODEL, World
 
 OWNER = "acarchidi"
@@ -96,7 +98,7 @@ def test_a_rejection_never_publishes(world: World) -> None:
     claim, reasons = _held(world)
     _record(world, claim, ReviewAction.REJECT, reasons)
     for hours in (0, 6):
-        assert _decide(world)[claim] == ("review", reasons)
+        assert _decide(world)[claim] == ("review", [*reasons, "rejected in the review queue"])
         assert _publish(world, NOW + timedelta(hours=hours))["claims_marked_publish"] == 0
     assert world.counts() == (0, 0, 0, 0)
     (row,) = world.rows(ReviewDecision)
@@ -107,7 +109,10 @@ def test_a_rejection_after_an_approval_withdraws_it_before_the_writer_runs(world
     claim, reasons = _held(world)
     _record(world, claim, ReviewAction.APPROVE, reasons)
     record_decision(world.factory, claim, ReviewAction.REJECT, OWNER, reasons, lambda: LATER + timedelta(1))
-    assert _decide(world)[claim] == ("review", reasons)  # the latest decision counts
+    assert _decide(world)[claim] == (
+        "review",
+        [*reasons, "rejected in the review queue"],
+    )  # the latest counts
     assert _publish(world)["catalysts_created"] == 0
     assert [row.action for row in world.rows(ReviewDecision)].count("approve") == 1  # nothing is erased
 
@@ -316,3 +321,97 @@ def test_the_record_refuses_an_approval_without_the_reasons_seen() -> None:
         ReviewDecision(
             claim_id=uuid4(), action=ReviewAction.APPROVE, reviewer=OWNER, reasons_seen=[], decided_at=NOW
         )
+
+
+# --- A rejection holds for good, whatever clears later (Opus review of PR #84, round 2, B1) ---
+
+REJECTED = "rejected in the review queue"
+
+
+def _rerun(world: World, claim: UUID, outcome: CheckOutcome, at: datetime) -> None:
+    """Run the second-reading check again for one claim, as its own job stores it."""
+    reason = "stored as failed" if outcome is CheckOutcome.FAIL else None
+    with world.factory.begin() as session:
+        store_check(session, claim, CheckResult("second_reading_agrees", outcome, reason), at)
+
+
+def test_a_rejected_claim_stays_held_when_every_check_passes_later(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.REJECT, reasons)
+    _rerun(world, claim, CheckOutcome.PASS, LATER + timedelta(hours=1))  # say a second source arrives
+    report = decide_claims(world.factory, world.store, lambda: NOW)
+    assert report.reasons == {"review_rejected failed": 1}
+    (row,) = [d for d in world.rows(ClaimDecision) if d.claim_id == claim]
+    assert (row.decision, row.reasons) == ("review", [REJECTED])  # no claim text in the reason
+    assert _publish(world)["claims_marked_publish"] == 0
+    assert world.counts() == (0, 0, 0, 0)
+
+
+def test_the_writer_holds_a_rejected_claim_even_when_its_decision_says_publish(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.REJECT, reasons)
+    _rerun(world, claim, CheckOutcome.PASS, LATER + timedelta(hours=1))
+    decision = TABLES[ClaimDecision]
+    with world.factory.begin() as session:  # a publish decision stored before the rejection counted
+        session.execute(
+            update(decision).where(decision.c.claim_id == claim).values(decision="publish", reasons=[])
+        )
+    summary = _publish(world)
+    assert (summary["claims_marked_publish"], summary["held_on_recheck"]) == (1, 1)
+    assert summary["top_reasons"] == {"review_rejected failed": 1}
+    assert world.counts() == (0, 0, 0, 0)
+
+
+def test_the_rejection_hold_is_one_no_approval_of_it_excuses() -> None:
+    assert "review_rejected" in gate.PERSON_MAY_NOT_EXCUSE
+    rejected = gate.Decision(GateDecision.REVIEW, (gate.REVIEW_REJECTED,))
+    assert gate.approve(rejected, frozenset({REJECTED}), _no_writer_hold).holds == (gate.REVIEW_REJECTED,)
+    assert gate.Hold("review_rejected", REJECTED) == gate.REVIEW_REJECTED
+
+
+def test_a_later_approval_overrides_a_rejection(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.REJECT, reasons)
+    assert _decide(world)[claim] == ("review", [*reasons, REJECTED])
+    approved_at = LATER + timedelta(hours=1)
+    record_decision(
+        world.factory, claim, ReviewAction.APPROVE, OWNER, [*reasons, REJECTED], lambda: approved_at
+    )
+    assert _decide(world)[claim] == ("publish", [])
+    summary = _publish(world)
+    assert (summary["catalysts_created"], summary["published_by_approval"]) == (1, 1)
+
+
+# --- An approval does not excuse a failure that came back after it (round 2, optional 1) ---
+
+
+def test_an_approval_does_not_excuse_a_failure_that_cleared_and_came_back(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.APPROVE, reasons)
+    _rerun(world, claim, CheckOutcome.PASS, LATER + timedelta(hours=1))
+    _rerun(world, claim, CheckOutcome.FAIL, LATER + timedelta(hours=2))  # the same words, a new failure
+    assert _decide(world)[claim] == ("review", reasons)
+    assert _publish(world)["catalysts_created"] == 0
+
+
+def test_an_approval_still_counts_when_its_check_runs_again_and_fails_the_same_way(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.APPROVE, reasons)
+    _rerun(world, claim, CheckOutcome.FAIL, LATER + timedelta(hours=1))  # the scheduled run, unchanged
+    (row,) = [
+        r for r in world.rows(ClaimCheck) if r.claim_id == claim and r.check_name == "second_reading_agrees"
+    ]
+    assert row.checked_at < LATER  # kept: the outcome has not changed since it was first found
+    assert _decide(world)[claim] == ("publish", [])
+    assert _publish(world)["published_by_approval"] == 1
+
+
+def test_the_writer_does_not_excuse_a_failure_that_came_back_after_the_decision_job(world: World) -> None:
+    claim, reasons = _held(world)
+    _record(world, claim, ReviewAction.APPROVE, reasons)
+    assert _decide(world)[claim] == ("publish", [])
+    _rerun(world, claim, CheckOutcome.PASS, LATER + timedelta(hours=1))
+    _rerun(world, claim, CheckOutcome.FAIL, LATER + timedelta(hours=2))
+    summary = _publish(world)
+    assert (summary["held_on_recheck"], summary["catalysts_created"]) == (1, 0)
+    assert world.counts() == (0, 0, 0, 0)

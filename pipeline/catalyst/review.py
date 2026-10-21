@@ -9,7 +9,8 @@ again and writes it, each change row citing the claim and its quoted source.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
@@ -19,7 +20,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
 from catalyst.logs import log_event
-from catalyst.schemas import ClaimDecision, GateDecision, ReviewAction, ReviewDecision
+from catalyst.publish.gate import REVIEW_REJECTED, Decision, approve
+from catalyst.schemas import ClaimCheck, ClaimDecision, GateDecision, ReviewAction, ReviewDecision
 
 _log = logging.getLogger(__name__)
 
@@ -63,17 +65,49 @@ def record_decision(
     return row
 
 
-def approvals(session: Session) -> dict[UUID, frozenset[str]]:
-    """Return, for each claim whose latest decision is an approval, the reasons the person saw."""
+@dataclass(frozen=True)
+class Review:
+    """A claim's latest decision by a person: what they decided, the reasons they saw, and when."""
+
+    action: ReviewAction
+    seen: frozenset[str]
+    decided_at: datetime
+
+
+def latest_reviews(session: Session) -> dict[UUID, Review]:
+    """Return each decided claim's latest decision, rejections included; a newer row wins."""
     review = TABLES[ReviewDecision]
-    latest: dict[UUID, tuple[str, list[str]]] = {}
-    query = select(review.c.claim_id, review.c.action, review.c.reasons_seen).order_by(
+    latest: dict[UUID, Review] = {}
+    query = select(review.c.claim_id, review.c.action, review.c.reasons_seen, review.c.decided_at).order_by(
         review.c.decided_at, review.c.id
     )
     for row in session.execute(query):  # oldest first, so each claim's latest decision wins
-        latest[row.claim_id] = (row.action, row.reasons_seen)
-    return {
-        claim_id: frozenset(seen)
-        for claim_id, (action, seen) in latest.items()
-        if action == ReviewAction.APPROVE
-    }
+        latest[row.claim_id] = Review(ReviewAction(row.action), frozenset(row.reasons_seen), row.decided_at)
+    return latest
+
+
+def apply_review(
+    decision: Decision,
+    review: Review | None,
+    checks: Iterable[ClaimCheck],
+    writer_may_lift: Callable[[str], bool],
+) -> Decision:
+    """Apply a claim's latest decision by a person to the gate's decision on it.
+
+    A rejection adds a hold no approval of it excuses (`REVIEW_REJECTED`), so the claim stays
+    held even when every other reason clears later. An approval goes through `approve`, and
+    excuses a hold only while its check's stored outcome is the one the person saw: a check's
+    `checked_at` moves only when its outcome or reason changes, so a row newer than the approval
+    is a failure that came back, or a new one, since the person looked.
+    """
+    if review is None:
+        return decision
+    if review.action is ReviewAction.REJECT:
+        return Decision(GateDecision.REVIEW, (*decision.holds, REVIEW_REJECTED))
+    since = {row.check_name: row.checked_at for row in checks}
+    seen = frozenset(
+        hold.reason
+        for hold in decision.holds
+        if hold.reason in review.seen and hold.check in since and since[hold.check] <= review.decided_at
+    )
+    return approve(decision, seen, writer_may_lift)
