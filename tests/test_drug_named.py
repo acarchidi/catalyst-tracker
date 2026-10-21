@@ -201,6 +201,15 @@ def test_a_name_inside_a_longer_name_or_split_by_punctuation_does_not_count(writ
     assert _alone(text, text, _names("SPY003")).outcome is Outcome.FAIL
 
 
+@pytest.mark.parametrize(
+    ("claimed", "written"), [("Cemdisiran\u2122", "cemdisiran"), ("cemdisiran", "Cemdisiran\u2122")]
+)
+def test_a_trademark_sign_on_either_side_does_not_hide_the_name(claimed: str, written: str) -> None:
+    """Unicode spells "\u2122" as the letters "TM"; it must not join the name (review of PR #77)."""
+    text = f"Topline data for {written} are expected in 2027."
+    assert _alone(text, text, _names(claimed)).outcome is Outcome.PASS
+
+
 def test_any_name_the_reference_tables_give_the_drug_counts() -> None:
     text = "Topline data for ACP-204 in Alzheimer's disease psychosis are expected in 2027."
     drug = drug_names("remlifanserin", [DrugRef(uuid4(), uuid4(), (("ACP-204", DrugNameKind.CODE),))])

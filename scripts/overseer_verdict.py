@@ -15,9 +15,12 @@ and no action but that message. Standard library only: the workflow runs it with
 
 Commands:
   budget --config TOML --runs RUNS_JSON --run-id ID --run-attempt N --created-at TIME --today DATE
+         [--repo OWNER/NAME]
       Print GitHub step outputs `allowed=true|false` and, when not allowed, `skip=MESSAGE`.
       Every attempt of every run counts, this run's earlier attempts included. A re-run of a run
       created on an earlier day (UTC) never calls the model: today's run list leaves it out.
+      With --repo, a run whose `head_repo` names another repository (a fork's pull request,
+      which gets no key) does not count.
   judge REPORT_PATH
       Write the plain-English report; exit 0 only on a pass.
   act
@@ -397,11 +400,21 @@ def _attempts(run: dict[str, Any]) -> int:
     return value if type(value) is int and value > 1 else 1
 
 
-def runs_used(runs: Sequence[dict[str, Any]], current_run_id: int, current_attempt: int = 1) -> int:
+def _from_a_fork(run: dict[str, Any], repo: str) -> bool:
+    """Whether the run is on a pull request from another repository; unknown counts as not."""
+    head: Any = run.get("head_repo")
+    return bool(repo) and isinstance(head, str) and bool(head) and head != repo
+
+
+def runs_used(
+    runs: Sequence[dict[str, Any]], current_run_id: int, current_attempt: int = 1, *, repo: str = ""
+) -> int:
     """Count today's model calls so far: every attempt of every other run, and this run's earlier ones.
 
-    Runs whose jobs were skipped (drafts) and Dependabot's runs never reach the model, so they do
-    not count. A re-run is a new attempt of the same run, and each attempt may call the model.
+    Runs whose jobs were skipped (drafts), Dependabot's runs, and, given `repo`, runs on a fork's
+    pull request never reach the model (no key reaches a fork), so they do not count. The
+    repository is public (2026-10-20), so anyone could otherwise use up the day's limit. A re-run
+    is a new attempt of the same run, and each attempt may call the model.
     """
     others = sum(
         _attempts(run)
@@ -409,6 +422,7 @@ def runs_used(runs: Sequence[dict[str, Any]], current_run_id: int, current_attem
         if run.get("id") != current_run_id
         and run.get("conclusion") != "skipped"
         and run.get("actor") != DEPENDABOT
+        and not _from_a_fork(run, repo)
     )
     return others + max(current_attempt, 1) - 1
 
@@ -430,6 +444,7 @@ def budget(
     *,
     created_at: Any = "",
     today: str = "",
+    repo: str = "",
 ) -> tuple[bool, str]:
     """Return whether this run may call the model, and a plain one-line message."""
     try:
@@ -442,7 +457,7 @@ def budget(
             "This is a re-run of an overseer run from an earlier day (UTC), so the overseer did not "
             "run: the daily limit cannot count it. Push a commit, or start the workflow by hand."
         )
-    used = runs_used(runs, current_run_id, current_attempt)
+    used = runs_used(runs, current_run_id, current_attempt, repo=repo)
     if used >= limit:
         return False, (
             f"The daily limit of {limit} overseer runs (UTC day) was reached, so the overseer did not "
@@ -794,6 +809,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     b.add_argument("--run-attempt", type=int, required=True)
     b.add_argument("--created-at", required=True)
     b.add_argument("--today", required=True)
+    b.add_argument("--repo", default="", help="This repository, OWNER/NAME; a fork's runs then do not count.")
     j = sub.add_parser("judge")
     j.add_argument("report", type=Path)
     sub.add_parser("act")
@@ -803,7 +819,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         config = args.config.read_text(encoding="utf-8") if args.config.is_file() else None
         runs = json.loads(args.runs.read_text(encoding="utf-8"))
         allowed, message = budget(
-            config, runs, args.run_id, args.run_attempt, created_at=args.created_at, today=args.today
+            config,
+            runs,
+            args.run_id,
+            args.run_attempt,
+            created_at=args.created_at,
+            today=args.today,
+            repo=args.repo,
         )
         print(f"allowed={'true' if allowed else 'false'}")
         print(f"message={message}")

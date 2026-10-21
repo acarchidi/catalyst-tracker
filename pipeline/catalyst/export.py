@@ -243,8 +243,11 @@ def _with_registry(session: Session, items: list[dict[str, Any]]) -> list[dict[s
 def registry_values(session: Session, trial_ids: list[UUID]) -> dict[UUID, dict[str, Any]]:
     """Return each trial's phase and size, with the newest stored registry record, by id.
 
-    The trial row is updated only after its record is stored, so the newest stored record is the
-    one these values were last read from (ADR 0039).
+    The trial row is updated only after its record is stored, so the values never come from a
+    record newer than the one listed (ADR 0039). They can come from an older one: when a record is
+    stored but recording its trial then fails and is skipped (`reference_skipped`, for example a
+    study name too long for the trial table), the trial keeps its earlier values while the newer
+    record is listed. Only the private export shows this (Claude review of PR #80).
     """
     trial, document = TABLES[Trial], TABLES[SourceDocument]
     rows = session.execute(select(trial).where(trial.c.id.in_(trial_ids))).all()
