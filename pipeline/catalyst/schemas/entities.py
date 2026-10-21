@@ -21,6 +21,7 @@ from catalyst.schemas.enums import (
     DatePrecision,
     DocumentMatch,
     DrugNameKind,
+    DrugNameSource,
     DrugRole,
     EnrollmentType,
     GateDecision,
@@ -31,6 +32,7 @@ from catalyst.schemas.enums import (
     ModelCallStatus,
     OutcomeResult,
     ReadingSkip,
+    ReviewAction,
     SampleVerdict,
     TrialPhase,
 )
@@ -150,10 +152,43 @@ class DrugName(Entity):
 
     __tablename__ = "drug_name"
     __unique__ = (("drug_id", "name"),)
+    __checks__: ClassVar[dict[str, str]] = {"source_refs_is_list": "jsonb_typeof(source_refs) = 'array'"}
 
     drug_id: Annotated[UUID, References("drug")] = Field(description="The drug.")
     name: Name = Field(description="The name as written by its source.")
     kind: DrugNameKind = Field(description="Code name, generic (INN) name, or brand name.")
+    source: DrugNameSource = Field(
+        default=DrugNameSource.CLAIM,
+        description="Where the name was first found: a claim's document, Drugs@FDA, or ClinicalTrials.gov.",
+    )
+    source_refs: list[str] = Field(
+        default_factory=list[str],
+        description="The records that give this name, as a list: FDA application or registry numbers.",
+    )
+
+
+class WithheldDrugName(Entity):
+    """A drug name the drug list did not record because several companies' records give it (ADR 0035).
+
+    Such a name would match the wrong company's drug, so it waits for a person. Each run of the
+    drug list replaces these rows.
+    """
+
+    __tablename__ = "withheld_drug_name"
+    __unique__ = (("name",),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "lists": "jsonb_typeof(company_ids) = 'array' AND jsonb_typeof(source_refs) = 'array'"
+    }
+
+    name: Name = Field(description="The name as one of its sources wrote it.")
+    reason: ShortText = Field(description="Why it was not recorded, for example 'shared'.")
+    company_ids: list[str] = Field(
+        description="Covered companies whose records give the name, as a list; other sponsors are not listed."
+    )
+    source_refs: list[str] = Field(
+        description="The records that give the name, as a list: FDA application or registry numbers."
+    )
+    recorded_at: AwareDatetime = Field(description="When the drug list last found it shared.")
 
 
 class Target(Entity):
@@ -431,7 +466,9 @@ class ClaimCheck(Entity):
     check_name: ShortText = Field(description="Which check, for example 'window_not_past'.")
     outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
-    checked_at: AwareDatetime = Field(description="When the check last ran.")
+    checked_at: AwareDatetime = Field(
+        description="When the check first found its current outcome; a re-run with the same result keeps it."
+    )
 
 
 class ClaimDecision(Entity):
@@ -462,6 +499,34 @@ class ClaimDecision(Entity):
         if (self.decision is GateDecision.REVIEW) != bool(self.reasons):
             raise ValueError("a review decision lists its reasons, and only a review decision does")
         return self
+
+
+class ReviewDecision(Entity):
+    """A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042).
+
+    Append-only: a later decision is a new row, and the claim's latest row counts. An approval
+    lets the gate excuse only the reasons it lists; the plain-code writer still writes the
+    catalyst. Only the review command writes this table.
+    """
+
+    __tablename__ = "review_decision"
+    __checks__: ClassVar[dict[str, str]] = {
+        "lists_reasons_seen": (
+            "CASE WHEN jsonb_typeof(reasons_seen) = 'array' "
+            "THEN jsonb_array_length(reasons_seen) > 0 ELSE false END"
+        ),
+    }
+
+    claim_id: Annotated[UUID, References("claim")] = Field(description="The held claim decided.")
+    action: ReviewAction = Field(description="Approve (let the gate publish it) or reject (keep it out).")
+    reviewer: ShortText = Field(
+        description="Who decided: the person's GitHub account, for example 'acarchidi'."
+    )
+    reasons_seen: list[Annotated[str, Field(min_length=1)]] = Field(
+        min_length=1,
+        description="The gate's reasons the person saw, word for word; an approval excuses only these.",
+    )
+    decided_at: AwareDatetime = Field(description="When the person decided.")
 
 
 class DocumentReading(Entity):

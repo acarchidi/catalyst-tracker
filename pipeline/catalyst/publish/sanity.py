@@ -11,6 +11,12 @@ when a person must decide:
 - a source of the same rank gives other dates for the same event: another claim not yet
   published (both wait), or the published one's source (CP4 review, O2). A tie decides nothing.
 
+Against a published catalyst, every failing reason is given, in order, joined by "; ". When one
+of them is a date move or a window that does not overlap, both windows follow ("(from
+2027-01-01..2027-12-31 to 2026-10-01..2026-12-31)"). A person's approval names that whole text,
+so it lifts nothing once the published window or any other reason changes (Opus review of PR
+#84, B1 and B2).
+
 Anything else passes, including a claim that loses to the published source: it writes nothing.
 
 Its job runs before the decisions, so `decide-claims` sees every hold. The writer computes it
@@ -58,6 +64,19 @@ NOT_OVERLAPPING = "the window does not overlap the published one"
 PASSED = "the new window has already passed"
 TOO_FAR = "the date would move more than 6 months"
 TIED = "a source of the same rank gives other dates for this event"
+# Holds a person's approval may lift: each asks only yes or no about the claim's own dates
+# (ADR 0042). The others need a choice the writer would otherwise guess (which catalyst, which
+# drug role, which of two tied sources), or are never right (a passed window), so an approval
+# leaves them held.
+PERSON_MAY_APPROVE: frozenset[str] = frozenset({NOT_OVERLAPPING, TOO_FAR})
+_WINDOWS = " (from "
+
+
+def person_may_approve(reason: str) -> bool:
+    """Say whether a person may lift this `safe_to_write` reason: each part is a yes-or-no date hold."""
+    parts = reason.split(_WINDOWS, 1)[0].split("; ")
+    return all(part in PERSON_MAY_APPROVE for part in parts)
+
 
 _JOIN = (
     r"(?:in\s+combination\s+with|combined\s+with|plus|\+|together\s+with|added\s+to|co-?administered\s+with)"
@@ -183,26 +202,32 @@ def safe_to_write(candidate: Candidate, where: Place, today: date) -> CheckResul
 
 
 def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> CheckResult:
-    """Decide a claim about a published catalyst: a sane date change from a better source, or nothing."""
+    """Decide a claim about a published catalyst: a sane date change from a better source, or nothing.
+
+    Gives every failing reason, so lifting one never skips the others (Opus review of PR #84, B1).
+    """
     window = window_of(candidate.value)
-    if window is None:  # `has_window` fails it; nothing here to compare
+    if window is None or same_dates(live, candidate.value):  # `has_window` fails a missing one
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
-    if not overlap(window, live.window):
-        return _fail(NOT_OVERLAPPING)
-    if same_dates(live, candidate.value):
-        return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
-    if candidate.rank == live.source:  # neither outranks the other, so a person decides (O2)
-        return _fail(TIED)
+    reasons = [] if overlap(window, live.window) else [NOT_OVERLAPPING]
     outranks = ranks_above(
         (candidate.rank.tier, candidate.rank.published_at), (live.source.tier, live.source.published_at)
     )
-    if not outranks:
+    if candidate.rank == live.source:  # neither outranks the other, so a person decides (O2)
+        reasons.append(TIED)
+    elif outranks:
+        if window[1] < today <= live.window[1]:
+            reasons.append(PASSED)
+        if too_far(live.window, window):
+            reasons.append(TOO_FAR)
+    if not reasons:
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
-    if window[1] < today <= live.window[1]:
-        return _fail(PASSED)
-    if too_far(live.window, window):
-        return _fail(TOO_FAR)
-    return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
+    moved = f"{_WINDOWS}{_span(live.window)} to {_span(window)})" if PERSON_MAY_APPROVE & set(reasons) else ""
+    return _fail("; ".join(reasons) + moved)
+
+
+def _span(window: tuple[date, date]) -> str:
+    return f"{window[0].isoformat()}..{window[1].isoformat()}"
 
 
 @dataclass(frozen=True)

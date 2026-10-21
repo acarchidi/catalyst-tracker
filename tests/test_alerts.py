@@ -362,3 +362,40 @@ def test_a_sample_check_that_stops_or_cannot_read_a_source_alerts() -> None:
     assert "2 records could not be checked." in body
     assert "stopped early" in body
     assert "analyst has spent" not in body
+
+
+def test_dead_published_links_are_counted_and_listed_and_a_clean_check_closes_the_alert() -> None:
+    dead = {
+        "checked": 40,
+        "working": 37,
+        "dead": 2,
+        "dead_percent": "5.0",
+        "not_answered": 1,
+        "dead_links": [
+            {"url": "https://www.sec.gov/a.htm", "verdict": "missing"},
+            {"url": "javascript:alert(1)", "verdict": "moved"},
+        ],
+    }
+    plan = build_alerts([JobRun("check-links", "failure", dead)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:check-links"]
+    body = plan["issues"][0]["body"]
+    assert "2 of 40 published source links no longer work (5.0%; the target is under 1%)." in body
+    assert "- https://www.sec.gov/a.htm (missing)" in body
+    assert "javascript" not in body
+    clean = dead | {"working": 39, "dead": 0, "dead_percent": "0.0", "dead_links": []}
+    plan = build_alerts([JobRun("check-links", "success", clean)], None, LIMITS, RUN_URL)
+    assert plan["issues"] == []
+    assert [s["key"] for s in plan["solved"]] == ["job-failed:check-links"]
+
+
+def test_site_errors_alone_in_the_link_check_are_not_an_alert() -> None:
+    quiet: dict[str, Any] = {
+        "checked": 3,
+        "working": 2,
+        "dead": 0,
+        "dead_percent": "0.0",
+        "not_answered": 1,
+        "dead_links": [],
+    }
+    plan = build_alerts([JobRun("check-links", "success", quiet)], None, LIMITS, RUN_URL)
+    assert plan["issues"] == []

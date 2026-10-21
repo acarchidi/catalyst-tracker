@@ -95,6 +95,8 @@ class DrugRef:
     id: UUID
     company_id: UUID | None
     names: tuple[tuple[str, DrugNameKind], ...]
+    # Named only by registry words: no code name, no Drugs@FDA name (ADR 0035, fifth review).
+    unconfirmed: bool = False
 
 
 @dataclass(frozen=True)
@@ -186,8 +188,11 @@ class ReferenceData:
                     self._by_name[key].append(company.id)
         self._drug_names: defaultdict[str, list[tuple[DrugRef, DrugNameKind]]] = defaultdict(list)
         self._drug_owner: dict[UUID, UUID | None] = {}
+        self._unconfirmed: set[UUID] = set()
         for drug in drugs:
             self._drug_owner[drug.id] = drug.company_id
+            if drug.unconfirmed:
+                self._unconfirmed.add(drug.id)
             for name, kind in drug.names:
                 if key := name_key(name):
                     self._drug_names[key].append((drug, kind))
@@ -240,6 +245,10 @@ class ReferenceData:
     def drug_company(self, drug_id: UUID) -> UUID | None:
         """Return the company that develops the drug, if one is known."""
         return self._drug_owner.get(drug_id)
+
+    def drug_unconfirmed(self, drug_id: UUID) -> bool:
+        """Say whether the drug is named only by registry words, with no code or Drugs@FDA name."""
+        return drug_id in self._unconfirmed
 
     def add_drug(self, drug: DrugRef) -> None:
         """Index a drug created after loading, so later lookups in the same run find it."""

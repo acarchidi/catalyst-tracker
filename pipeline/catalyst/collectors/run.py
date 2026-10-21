@@ -25,6 +25,7 @@ from catalyst.collectors.sec.edgar import SEC_LIMITER, SUBMISSIONS_URL, EdgarCli
 from catalyst.collectors.sec.filings import DEFAULT_FORMS, collect_filings
 from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
 from catalyst.db.repository import known_source_keys, upsert_company
+from catalyst.drug_list_store import load_drugs
 from catalyst.logs import log_alert, log_event
 from catalyst.references import company_identity, record_company_identity, recording_trials
 from catalyst.schemas import DocumentMatch
@@ -34,8 +35,10 @@ _log = logging.getLogger(__name__)
 # Every source a run collects, by the name that starts its counts: "sec:VRTX", "fedreg", "wire:...".
 SOURCES = ("sec", "ctgov", "openfda", "fedreg", "wire")
 # Run only when named: "ctgov-linked" refreshes just the trials our claims and catalysts name, by
-# registry number, in minutes instead of the sponsor-wide run's hours (ADR 0040).
-ON_REQUEST = (linked_trials.SOURCE,)
+# registry number, in minutes instead of the sponsor-wide run's hours (ADR 0040); "drugs" fills
+# the drug list from Drugs@FDA and ClinicalTrials.gov (ADR 0035) for companies already
+# collected, in about 13 minutes of polite requests.
+ON_REQUEST = (linked_trials.SOURCE, "drugs")
 _PER_COMPANY = frozenset({"sec", "ctgov", "openfda"})
 
 
@@ -223,6 +226,22 @@ def collect_all(
                 )
             )
     results += _feeds(collector, clients.web, since, sources)
+    return results + _on_request(
+        collector, session_factory, clients, companies, now, sources, linked_batch_size
+    )
+
+
+def _on_request(
+    collector: Collector,
+    session_factory: sessionmaker[Session],
+    clients: Clients,
+    companies: list[PilotCompany],
+    now: Callable[[], datetime],
+    sources: frozenset[str],
+    linked_batch_size: int,
+) -> list[CollectionStats]:
+    """Run the sources that run only when named: linked trials (ADR 0040), then the drug list (ADR 0035)."""
+    results: list[CollectionStats] = []
     if linked_trials.SOURCE in sources:
         sponsors = {name: pilot.cik for pilot in companies for name in pilot.ctgov_sponsors}
         results.append(
@@ -232,7 +251,25 @@ def collect_all(
                 company_of=linked_trials.sponsor_links(session_factory, sponsors),
             )
         )
+    if "drugs" in sources:
+        results.append(_drug_list(session_factory, clients.web, companies, now))
     return results
+
+
+def _drug_list(
+    session_factory: sessionmaker[Session],
+    web: PoliteHttpClient,
+    companies: list[PilotCompany],
+    now: Callable[[], datetime],
+) -> CollectionStats:
+    """Fill the drug list; on failure, alert and store nothing (ADR 0035)."""
+    try:
+        report = load_drugs(session_factory, web, companies, now)
+    except Exception as error:
+        stats = CollectionStats("drugs", error=f"{type(error).__name__}: {error}")
+        log_alert(_log, "collector_failed", source=stats.source, error=stats.error)
+        return stats
+    return CollectionStats("drugs", created=report.names_added, existing=report.names_on_file)
 
 
 def _feeds(

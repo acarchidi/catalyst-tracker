@@ -5,7 +5,7 @@ answers on one published catalyst, turned into a verdict by plain code. The down
 the rows: they are a measurement, and the next weekly draw measures again.
 
 Revision ID: 3798b407da9a
-Revises: b3f1c7e2a9d4
+Revises: 6ddac72f9906
 Create Date: 2026-10-20 12:32:51.508156
 """
 
@@ -16,7 +16,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "3798b407da9a"
-down_revision: str | None = "b3f1c7e2a9d4"
+down_revision: str | None = "6ddac72f9906"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

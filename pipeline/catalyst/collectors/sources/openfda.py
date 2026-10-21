@@ -84,3 +84,27 @@ def collect_applications(
         skip += page_size
         if skip >= page["meta"]["results"]["total"]:
             break
+
+
+# The drug list (ADR 0035) reads every new-drug and biologics application: about 6,400 records,
+# seven pages. openFDA lets a search page through its first 25,000 results only.
+DRUG_LIST_SEARCH = "application_number:NDA* application_number:BLA*"
+DRUG_LIST_PAGE_SIZE = 1000
+_MOST_RESULTS = 25000
+
+
+def collect_drug_list(
+    client: PoliteHttpClient, page_size: int = DRUG_LIST_PAGE_SIZE, search: str = DRUG_LIST_SEARCH
+) -> Iterator[dict[str, Any]]:
+    """Yield every NDA and BLA application in Drugs@FDA, or those `search` finds; never stop short."""
+    skip = 0
+    while True:
+        params: dict[str, str | int] = {"search": search, "limit": page_size, "skip": skip}
+        page = client.get(API_URL, params=params).json()
+        total = int(page["meta"]["results"]["total"])
+        if total > _MOST_RESULTS:
+            raise ValueError(f"Drugs@FDA lists {total} applications, more than one search can page through")
+        yield from page.get("results", [])
+        skip += page_size
+        if skip >= total:
+            return

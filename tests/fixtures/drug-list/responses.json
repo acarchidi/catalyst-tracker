@@ -1,0 +1,17 @@
+{
+  "https://api.fda.gov/drug/drugsfda.json?search=application_number%3ANDA207356+application_number%3ANDA217673+application_number%3ANDA050710+application_number%3ANDA220305+application_number%3ABLA761174+application_number%3ANDA218730+application_number%3ANDA202192+application_number%3ANDA215309+application_number%3ANDA050495&limit=100&skip=0": {
+    "file": "00_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.lead=%22Insmed+Incorporated%22&pageSize=1000&fields=protocolSection.identificationModule.nctId%2CprotocolSection.sponsorCollaboratorsModule.leadSponsor%2CprotocolSection.armsInterventionsModule": {
+    "file": "01_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?query.lead=%22Kura+Oncology+Inc%22&pageSize=1000&fields=protocolSection.identificationModule.nctId%2CprotocolSection.sponsorCollaboratorsModule.leadSponsor%2CprotocolSection.armsInterventionsModule": {
+    "file": "02_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

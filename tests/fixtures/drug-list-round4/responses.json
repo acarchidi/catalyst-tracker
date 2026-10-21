@@ -1,0 +1,12 @@
+{
+  "https://api.fda.gov/drug/drugsfda.json?search=application_number%3ABLA761097&limit=100&skip=0": {
+    "file": "00_api.fda.gov_drug_drugsfda.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://clinicaltrials.gov/api/v2/studies?filter.ids=NCT00099879%2CNCT00207025%2CNCT00359450%2CNCT00103831%2CNCT01212107%2CNCT00311090%2CNCT01488890%2CNCT05192200%2CNCT03181893%2CNCT06919965%2CNCT02218073%2CNCT00151944%2CNCT00151892&pageSize=100&fields=protocolSection.identificationModule.nctId%2CprotocolSection.sponsorCollaboratorsModule.leadSponsor%2CprotocolSection.armsInterventionsModule": {
+    "file": "01_clinicaltrials.gov_api_v2_studies",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

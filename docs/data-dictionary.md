@@ -118,10 +118,31 @@ One name for a drug: code name, generic (INN), or brand.
 | `drug_id` | link to `drug` | yes | The drug. |
 | `name` | text, up to 300 characters | yes | The name as written by its source. |
 | `kind` | one of: `code`, `inn`, `brand` | yes | Code name, generic (INN) name, or brand name. |
+| `source` | one of: `claim`, `openfda`, `ctgov` | yes | Where the name was first found: a claim's document, Drugs@FDA, or ClinicalTrials.gov. |
+| `source_refs` | structured value (JSON) | yes | The records that give this name, as a list: FDA application or registry numbers. |
 
 Rules:
 
 - Unique: `drug_id`, `name`
+- Database check `source_refs_is_list`: `jsonb_typeof(source_refs) = 'array'`
+
+## `withheld_drug_name`
+
+A drug name the drug list did not record because several companies' records give it (ADR 0035). Such a name would match the wrong company's drug, so it waits for a person. Each run of the drug list replaces these rows.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `name` | text, up to 300 characters | yes | The name as one of its sources wrote it. |
+| `reason` | text, up to 100 characters | yes | Why it was not recorded, for example 'shared'. |
+| `company_ids` | structured value (JSON) | yes | Covered companies whose records give the name, as a list; other sponsors are not listed. |
+| `source_refs` | structured value (JSON) | yes | The records that give the name, as a list: FDA application or registry numbers. |
+| `recorded_at` | date and time (with time zone) | yes | When the drug list last found it shared. |
+
+Rules:
+
+- Unique: `name`
+- Database check `lists`: `jsonb_typeof(company_ids) = 'array' AND jsonb_typeof(source_refs) = 'array'`
 
 ## `target`
 
@@ -322,7 +343,7 @@ One verification check's outcome for one claim (spec: Verification; ADR 0018). A
 | `check_name` | text, up to 100 characters | yes | Which check, for example 'window_not_past'. |
 | `outcome` | one of: `pass`, `fail`, `not_applicable` | yes | Pass, fail, or not applicable. |
 | `reason` | text, up to 300 characters | no | Why it failed or did not apply, in plain words. |
-| `checked_at` | date and time (with time zone) | yes | When the check last ran. |
+| `checked_at` | date and time (with time zone) | yes | When the check first found its current outcome; a re-run with the same result keeps it. |
 
 Rules:
 
@@ -345,6 +366,23 @@ Rules:
 
 - Unique: `claim_id`
 - Database check `review_has_reasons`: `CASE WHEN jsonb_typeof(reasons) = 'array' THEN (decision = 'review') = (jsonb_array_length(reasons) > 0) ELSE false END`
+
+## `review_decision`
+
+A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042). Append-only: a later decision is a new row, and the claim's latest row counts. An approval lets the gate excuse only the reasons it lists; the plain-code writer still writes the catalyst. Only the review command writes this table.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `claim_id` | link to `claim` | yes | The held claim decided. |
+| `action` | one of: `approve`, `reject` | yes | Approve (let the gate publish it) or reject (keep it out). |
+| `reviewer` | text, up to 100 characters | yes | Who decided: the person's GitHub account, for example 'acarchidi'. |
+| `reasons_seen` | structured value (JSON) | yes | The gate's reasons the person saw, word for word; an approval excuses only these. |
+| `decided_at` | date and time (with time zone) | yes | When the person decided. |
+
+Rules:
+
+- Database check `lists_reasons_seen`: `CASE WHEN jsonb_typeof(reasons_seen) = 'array' THEN jsonb_array_length(reasons_seen) > 0 ELSE false END`
 
 ## `document_reading`
 
