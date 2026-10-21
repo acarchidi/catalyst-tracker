@@ -7,6 +7,10 @@ publish gate's stored decisions; they never enter the published list. Each lists
 its names resolved to exactly one of. Only here, each trial also carries its registry phase and
 size, labelled as registry data with the record they come from, since no quote states them; the
 read API never returns them (ADR 0039). Prices and returns are never read (spec: data license).
+
+Each held claim also carries the paragraph its quote sits in, read from the stored copy, so the
+owner's review queue can judge it without the database (ADR 0034, amended 2026-10-20), and a
+`review_decision` slot that the review queue (PR #84) fills; until then it is always null.
 """
 
 import json
@@ -26,6 +30,7 @@ from catalyst.api.read import company_views, published, trial_views
 from catalyst.api.views import CatalystDetail, CompanyView, TrialView
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT
+from catalyst.publish.gate import UnreadableCopy, read_copy
 from catalyst.publish.live import claim_value
 from catalyst.schemas import (
     Claim,
@@ -38,6 +43,7 @@ from catalyst.schemas import (
     SourceTier,
     Trial,
 )
+from catalyst.snapshots import SnapshotStore
 from catalyst.verify.second import VERIFIER_PROMPT
 
 HELD_STATUS = "held for review"
@@ -45,18 +51,24 @@ REGISTRY_NOTE = (
     "Registry data from ClinicalTrials.gov, not a quoted claim: shown as the registry reports it, "
     "not checked by the publish gate."
 )
+# How much of a long paragraph to keep on each side of the quote; "…" marks a cut.
+PARAGRAPH_CONTEXT = 600
+NO_STORE = "no snapshot store was given"
 
 
-def build_export(session: Session, now: datetime, *, include_held: bool) -> dict[str, Any]:
+def build_export(
+    session: Session, now: datetime, *, include_held: bool, store: SnapshotStore | None = None
+) -> dict[str, Any]:
     """Return the export: the notice, counts, published catalysts, and, if asked, the held claims.
 
     `counts.held` is None when held claims were not asked for. `companies` counts the companies
-    with at least one published catalyst.
+    with at least one published catalyst. `store` holds the source copies the held claims'
+    paragraphs are read from; without it, each paragraph is null with the reason.
     """
     # One snapshot, so the counts and both lists agree even while a job writes.
     session.execute(text("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ"))
     details = sorted(published(session), key=_catalyst_order)
-    held = held_claims(session) if include_held else None
+    held = held_claims(session, store) if include_held else None
     export: dict[str, Any] = {
         "notice": NOTICE,
         "generated_at": now.astimezone(UTC).isoformat(),
@@ -78,14 +90,16 @@ def _catalyst_order(detail: CatalystDetail) -> tuple[Any, ...]:
     return (detail.window.start, detail.company.name, str(detail.id))
 
 
-def held_claims(session: Session) -> list[dict[str, Any]]:
-    """Return every claim the publish gate holds for review, with its source and stored reasons."""
+def held_claims(session: Session, store: SnapshotStore | None = None) -> list[dict[str, Any]]:
+    """Return every claim the publish gate holds for review, with its source, paragraph, and reasons."""
     decision, claim, document = TABLES[ClaimDecision], TABLES[Claim], TABLES[SourceDocument]
     rows = session.execute(
         select(
             claim.c.id,
             claim.c.value,
             claim.c.quote,
+            claim.c.quote_start,
+            claim.c.quote_end,
             claim.c.prompt_id,
             claim.c.prompt_version,
             decision.c.reasons,
@@ -95,6 +109,9 @@ def held_claims(session: Session) -> list[dict[str, Any]]:
             document.c.document_type,
             document.c.published_at,
             document.c.retrieved_at,
+            document.c.snapshot_key,
+            document.c.sha256,
+            document.c.content_type,
         )
         .join(claim, claim.c.id == decision.c.claim_id)
         .join(document, document.c.id == claim.c.source_document_id)
@@ -102,6 +119,16 @@ def held_claims(session: Session) -> list[dict[str, Any]]:
     ).all()
     companies = _held_companies(session, [row.id for row in rows])
     trials = _held_trials(session, [row.id for row in rows])
+    reviews = review_decisions(session, [row.id for row in rows])
+    copies: dict[str, str | UnreadableCopy] = {}
+
+    def copy_of(row: Any) -> str | UnreadableCopy:
+        if store is None:
+            return UnreadableCopy(NO_STORE)
+        if row.snapshot_key not in copies:  # one read per document, however many claims
+            copies[row.snapshot_key] = read_copy(store, row.snapshot_key, row.sha256, row.content_type)
+        return copies[row.snapshot_key]
+
     held = [
         {
             "claim_id": str(row.id),
@@ -110,6 +137,7 @@ def held_claims(session: Session) -> list[dict[str, Any]]:
             "values": row.value,
             "trials": [trial.model_dump(mode="json") for trial in trials.get(row.id, [])],
             "quote": row.quote,
+            **_paragraph_fields(copy_of(row), row.quote, row.quote_start, row.quote_end),
             "source": {
                 "url": row.url,
                 "publisher": row.publisher,
@@ -120,10 +148,49 @@ def held_claims(session: Session) -> list[dict[str, Any]]:
             "reasons": list(row.reasons),
             "decided_at": row.decided_at.isoformat(),
             "prompt": f"{row.prompt_id}/{row.prompt_version}",
+            "review_decision": reviews.get(row.id),
         }
         for row in rows
     ]
     return _with_registry(session, sorted(held, key=_held_order))
+
+
+def paragraph(text: str, quote: str, start: int, end: int) -> str | None:
+    """Return the line of the copy's text that holds the quote (one line per block element, ADR 0012).
+
+    None when the quote is not at its stored place. A long paragraph keeps PARAGRAPH_CONTEXT
+    characters on each side of the quote, and "…" marks each cut.
+    """
+    if start < 0 or text[start:end] != quote:
+        return None
+    first = text.rfind("\n", 0, start) + 1
+    last = text.find("\n", end)
+    last = len(text) if last == -1 else last
+    begin, finish = max(first, start - PARAGRAPH_CONTEXT), min(last, end + PARAGRAPH_CONTEXT)
+    lead = "…" if begin > first else ""
+    tail = "…" if finish < last else ""
+    return f"{lead}{text[begin:finish]}{tail}"
+
+
+def _paragraph_fields(copy: str | UnreadableCopy, quote: str, start: int, end: int) -> dict[str, Any]:
+    """Return `paragraph` and, when it is null, `paragraph_missing` with the plain reason."""
+    if isinstance(copy, UnreadableCopy):
+        return {"paragraph": None, "paragraph_missing": copy.reason}
+    found = paragraph(copy, quote, start, end)
+    if found is None:
+        return {"paragraph": None, "paragraph_missing": "the quote is not at its stored place in the copy"}
+    return {"paragraph": found, "paragraph_missing": None}
+
+
+def review_decisions(session: Session, claim_ids: list[UUID]) -> dict[UUID, dict[str, Any]]:
+    """Return each held claim's latest review decision: action, who, when, and reasons code.
+
+    Hook for the review queue (PR #84), which adds the `review_decision` table. Until it is
+    merged there is no such table, so every held claim's `review_decision` is null. #84 fills
+    this in, reading the newest row per claim, and the export's shape does not change.
+    """
+    del session, claim_ids
+    return {}
 
 
 def _company(view: CompanyView | None) -> dict[str, Any] | None:
