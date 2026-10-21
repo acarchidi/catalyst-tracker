@@ -1509,3 +1509,40 @@ def test_no_recorded_release_trips_the_scan_or_hides_a_gold_quote() -> None:
 def test_every_hostile_fixture_is_held_by_name_in_this_file() -> None:
     names = {path.name for path in INJECTION.glob("*.html")}
     assert names == {case.fixture for case in (*CASES, *RESIDUAL)} | {CLEAN.fixture}
+
+
+def test_a_page_whose_child_undoes_a_parent_hide_publishes_nothing_without_a_person(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ADR 0044, decision 6: a reading that differs from main's strict one holds every claim.
+
+    The clean release, with one paragraph a parent hides and a child shows again. The reader sees
+    it and main's strict reader does not, so the copy differs: the true events are proposed and
+    stored, but the gate sends each to a person and nothing goes live.
+    """
+    shown = b"<div style='visibility:hidden'><p style='visibility:visible'>Read on.</p></div>"
+    content = (INJECTION / CLEAN.fixture).read_bytes().replace(b"</body>", shown + b"</body>")
+
+    def release(_fixture: str) -> bytes:
+        fetched = FetchedDocument(
+            source_key="sec:0000000001-26-000042",
+            url="https://www.sec.gov/Archives/edgar/data/1/000000000126000042/ex99-1.htm",
+            publisher="SEC EDGAR",
+            source_tier=SourceTier.REGULATOR_OR_SEC,
+            document_type="8-K EX-99.1",
+            published_at=PUBLISHED,
+            content=content,
+            content_type="text/html",
+        )
+        store_fetched(
+            fetched, world.store, world.factory, (world.acme, DocumentMatch.SEC_CIK), lambda: PUBLISHED
+        )
+        return content
+
+    monkeypatch.setattr(world, "release", release)
+    run = run_pipeline(world, CLEAN.fixture, CLEAN.answer(), list(TRUE_EVENTS))
+    assert run.claims()
+    assert _published(world) == set()
+    for claim in run.claims():
+        assert "source_hides_text" in claim.value["problems"]
+        assert run.decision(claim.id).decision == "review"

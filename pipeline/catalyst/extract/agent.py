@@ -108,7 +108,8 @@ def check_proposal(
 ) -> ExtractedCatalyst:
     """Check one proposal as the model gave it: find its quote, its date words, and its window.
 
-    `visible` is the copy's visible text (`visible_text`); when given, the quote must be in it too.
+    `visible` is the text the model read (`visible_text`: the copy without what it hides from a
+    reader, as a browser builds it); when given, the quote must be in it too.
     """
     catalyst_type = CatalystType(item["catalyst_type"])
     date_text = str(item["date_text"])
@@ -158,6 +159,7 @@ def extract_catalysts(
     published: date,
     *,
     visible: str | None = None,
+    differs: bool = False,
     role: str = ROLE,
     prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
 ) -> Extraction:
@@ -165,18 +167,24 @@ def extract_catalysts(
 
     `text` is the copy's `document_text`, where quotes are placed. `visible` is its
     `visible_text`: the reader sees only that, and every quote must be in it. None means the
-    whole text is visible (plain text). The extractor is the default; the verifier's second
-    reading uses its own role and prompt. When the text addresses models, or the page hides words
-    from readers, every proposal is flagged, since no code can tell which of them the text changed.
+    whole text is visible (plain text). `differs` says the visible text is not what main's
+    strict reader gives (ADR 0044, decision 6): text that reader hides reached the model.
+    The extractor is the default; the verifier's second reading uses its own role and prompt.
+    When the text addresses models, or the page hides words from readers, every proposal is
+    flagged, since no code can tell which of them the text changed.
     """
     prompt = load_prompt(*prompt_ref)
     shown = text if visible is None else visible
     result = client.run(role, prompt, model_input(shown, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
     catalysts = tuple(check_proposal(item, text, published, visible) for item in items)
+    # Both texts are scanned: what the reader saw could differ from the stored text (ADR 0044).
     instructions = instruction_markers(text)
+    if visible is not None:
+        instructions = tuple(dict.fromkeys((*instructions, *instruction_markers(visible))))
     flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
-    if visible is not None and hidden_letters(text, visible):
+    # The page hides words; or the reader saw letters the stored text lacks, which no honest page does.
+    if differs or (visible is not None and (hidden_letters(text, visible) or hidden_letters(visible, text))):
         flags.append(Problem.SOURCE_HIDES_TEXT)
     if flags:
         catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)
