@@ -32,7 +32,7 @@ from catalyst.collectors.documents import new_york_midnight
 from catalyst.db.tables import TABLES
 from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import find_quote, visible_text
-from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
+from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import log_event
 from catalyst.schemas import Claim, DatePrecision, DrugName, SampleCheck, SampleVerdict, SourceDocument
@@ -118,6 +118,8 @@ def evidence_for(detail: CatalystDetail, names: Mapping[UUID, Sequence[str]]) ->
     date_ways: list[tuple[str, ...]] = [(window.raw_text,)]
     if window.precision in (DatePrecision.DAY, DatePrecision.MONTH):
         date_ways.append((window.start.strftime("%B"), str(window.start.year)))
+    if not name_key(window.raw_text):
+        date_ways = []  # no date words to find: the date point can never agree
     return {
         "date": [tuple(date_ways)],
         "drugs": [
@@ -130,7 +132,8 @@ def evidence_for(detail: CatalystDetail, names: Mapping[UUID, Sequence[str]]) ->
 def _names(quote: str, evidence: Evidence) -> bool:
     key = name_key(quote)
     return all(
-        any(all(name_key(part) in key for part in way) for way in requirement) for requirement in evidence
+        any(all(name_key(part) and name_key(part) in key for part in way) for way in requirement)
+        for requirement in evidence
     )
 
 
@@ -197,6 +200,7 @@ class SampleReport:
     checked: int = 0
     agrees: int = 0
     documents_failed: int = 0
+    too_large: int = 0
     stopped: str | None = None
     disagreements: list[dict[str, Any]] = field(default_factory=list[dict[str, Any]])
 
@@ -210,6 +214,7 @@ class SampleReport:
             "agrees": self.agrees,
             "disagrees": len(self.disagreements),
             "documents_failed": self.documents_failed,
+            "records_too_large": self.too_large,
             "stopped_early": self.stopped,
             "left_this_week": self.drawn - self.already_checked - self.checked,
             "disagreements": self.disagreements,
@@ -218,6 +223,19 @@ class SampleReport:
 
 class _Failed(Exception):
     """A source could not be read or checked; the record waits for the next run."""
+
+
+class _TooLarge(Exception):
+    """A source is over the analyst's input limit; nothing was sent, and the run goes on."""
+
+
+# Stored when no source backs a point the checker can check: nothing checked never agrees.
+_NOTHING_CHECKED = "no source of this record states a value the checker can check"
+
+
+def _agrees(points: Sequence[Mapping[str, Any]]) -> bool:
+    """Return True only when the record has checked points and every one agrees."""
+    return bool(points) and all(p["agrees"] for p in points)
 
 
 def _done(session: Session, week: date, model: str) -> set[UUID]:
@@ -259,28 +277,50 @@ def _check_record(
 ) -> list[dict[str, JsonValue]]:
     prompt = load_prompt(*PROMPT)
     evidence = evidence_for(detail, names)
-    verdicts: list[dict[str, JsonValue]] = []
-    for source in detail.sources:
-        points = points_for(detail, source)
-        if not points:
-            continue
-        row = documents[source.claim_id]
+    asks: list[tuple[SourceView, dict[str, str], str]] = []
+    try:
+        for source in detail.sources:
+            if points := points_for(detail, source):
+                row = documents[source.claim_id]
+                text = visible_text(store.get(row.snapshot_key), row.content_type)
+                asks.append((source, points, text))
+    except (SnapshotStoreError, httpx.HTTPError) as error:
+        log_event(_log, "sample_check_failed", catalyst_id=str(detail.id), error=type(error).__name__)
+        raise _Failed from error
+    if not asks:
+        nothing: dict[str, JsonValue] = {
+            "point": "sources",
+            "stated": None,
+            "agrees": False,
+            "answer": None,
+            "reason": _NOTHING_CHECKED,
+        }
+        return [nothing | {"claim_id": str(s.claim_id), "url": s.url} for s in detail.sources] or [nothing]
+    found: dict[UUID, list[dict[str, JsonValue]]] = {}
+    # The longest source goes first, so a source over the input limit stops the record before any
+    # other source of it is paid for.
+    for source, points, text in sorted(asks, key=lambda ask: -len(ask[2])):
+        day = documents[source.claim_id].published_at.astimezone(NEW_YORK).date()
         try:
-            text = visible_text(store.get(row.snapshot_key), row.content_type)
-            day = row.published_at.astimezone(NEW_YORK).date()
             answer = client.run(ROLE, prompt, checker_input(points, day, text))
-        except (ModelError, SnapshotStoreError, httpx.HTTPError) as error:
+        except InputTooLargeError as error:
+            fields = {"estimated_tokens": error.estimated_tokens, "limit": error.limit}
+            log_event(_log, "sample_check_too_large", catalyst_id=str(detail.id), **fields)
+            raise _TooLarge from error
+        except ModelError as error:
             log_event(_log, "sample_check_failed", catalyst_id=str(detail.id), error=type(error).__name__)
             raise _Failed from error
-        found = judge(points, answer.data["points"], text, evidence)
-        verdicts += [v | {"claim_id": str(source.claim_id), "url": source.url} for v in found]
-    return verdicts
+        found[source.claim_id] = [
+            v | {"claim_id": str(source.claim_id), "url": source.url}
+            for v in judge(points, answer.data["points"], text, evidence)
+        ]
+    return [v for source, _, _ in asks for v in found[source.claim_id]]
 
 
 def _store(
     session: Session, detail: CatalystDetail, week: date, model: str, points: list[Any], at: datetime
 ) -> None:
-    verdict = SampleVerdict.AGREES if all(p["agrees"] for p in points) else SampleVerdict.DISAGREES
+    verdict = SampleVerdict.AGREES if _agrees(points) else SampleVerdict.DISAGREES
     row = SampleCheck(
         catalyst_id=detail.id,
         week_of=week,
@@ -312,19 +352,24 @@ def run_sample_check(
         documents = _documents(session, [s.claim_id for d in sample for s in d.sources])
         names = _drug_names(session, [drug.id for d in sample for drug in d.drugs])
     report = SampleReport(week, drawn=len(sample), already_checked=sum(d.id in done for d in sample))
-    for detail in [d for d in sample if d.id not in done][:limit]:
+    for detail in [d for d in sample if d.id not in done]:
+        if report.checked + report.documents_failed >= limit:
+            break
         try:
             points = _check_record(detail, documents, names, store, client)
         except SpendCapReachedError as error:
             report.stopped = str(error)
             break
+        except _TooLarge:
+            report.too_large += 1  # nothing was sent, so it does not use up the run's limit
+            continue
         except _Failed:
             report.documents_failed += 1
             continue
         with session_factory.begin() as session:
             _store(session, detail, week, model, points, now())
         report.checked += 1
-        if all(p["agrees"] for p in points):
+        if _agrees(points):
             report.agrees += 1
         else:
             report.disagreements.append(
@@ -332,7 +377,7 @@ def run_sample_check(
                     "catalyst_id": str(detail.id),
                     "title": detail.title,
                     "points": sorted({str(p["point"]) for p in points if not p["agrees"]}),
-                    "links": sorted({str(p["url"]) for p in points if not p["agrees"]}),
+                    "links": sorted({str(p["url"]) for p in points if not p["agrees"] and p.get("url")}),
                 }
             )
     log_event(_log, "sample_check_done", **report.summary())

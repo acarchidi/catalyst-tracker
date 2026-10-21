@@ -7,6 +7,7 @@ really in the source.
 """
 
 import json
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -14,15 +15,18 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import pytest
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.api.read import published, read_session
+from catalyst.audit import sample
 from catalyst.audit.sample import (
     PROMPT,
     ROLE,
     checker_input,
     draw,
+    evidence_for,
     judge,
     run_sample_check,
     week_of,
@@ -31,7 +35,7 @@ from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
 from catalyst.extract.text import document_text, find_quote
 from catalyst.llm.client import Completion, ModelClient, ModelError
-from catalyst.llm.config import ModelConfig, RoleConfig
+from catalyst.llm.config import DEFAULT_CONFIG_PATH, ModelConfig, RoleConfig, load_config
 from catalyst.llm.ledger import InMemoryLedger
 from catalyst.llm.pricing import Price, TokenUsage
 from catalyst.llm.prompts import Prompt, load_prompt
@@ -148,6 +152,14 @@ def test_each_drug_and_trial_must_be_named_by_any_of_its_names() -> None:
         evidence,
     )
     assert [(v["point"], v["agrees"]) for v in verdicts] == [("drugs", True), ("trials", False)]
+
+
+def test_a_name_with_no_letters_or_digits_is_never_found_in_a_quote() -> None:
+    """An empty name is in every quote, so it must never count as named (review of PR #83)."""
+    for empty in ("", "  ", "--"):
+        (verdict,) = judge({"date": "x"}, [_answer("date")], SENTENCE, {"date": [((empty,),)]})
+        assert verdict["agrees"] is False
+        assert verdict["reason"] == "the checker's quote does not name the record's value"
 
 
 def test_the_model_reads_the_date_the_points_and_the_document() -> None:
@@ -313,6 +325,7 @@ def test_a_record_whose_source_states_every_point_agrees(
         "agrees": 1,
         "disagrees": 0,
         "documents_failed": 0,
+        "records_too_large": 0,
         "stopped_early": None,
         "left_this_week": 0,
         "disagreements": [],
@@ -451,3 +464,93 @@ def test_a_failed_call_stores_nothing_and_is_counted(
     assert (summary["documents_failed"], summary["checked"], summary["left_this_week"]) == (1, 0, 1)
     with session_factory() as session:
         assert session.execute(select(func.count()).select_from(TABLES[SampleCheck])).scalar_one() == 0
+
+
+def test_a_record_with_no_point_to_check_is_a_disagreement_not_an_agreement(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Nothing checked is not "agrees": it must never count toward Gate 2 (review of PR #83)."""
+    store = LocalSnapshotStore(tmp_path)
+    catalyst = _seed(session_factory, store, 1, PUBLISHED)
+
+    def nothing(detail: object, source: object) -> dict[str, str]:
+        return {}
+
+    monkeypatch.setattr(sample, "points_for", nothing)
+    fake = _Fake()
+    summary = _run(session_factory, store, fake)
+    assert fake.documents == []  # nothing to ask, so nothing is spent
+    assert (summary["checked"], summary["agrees"], summary["disagrees"]) == (1, 0, 1)
+    assert summary["disagreements"] == [
+        {
+            "catalyst_id": str(catalyst),
+            "title": "zentocel: topline data (RAINIER)",
+            "points": ["sources"],
+            "links": ["https://www.sec.gov/Archives/edgar/data/1/1.htm"],
+        }
+    ]
+    (row,) = _rows(session_factory)
+    assert row.verdict == "disagrees"
+    assert [(p["point"], p["agrees"]) for p in row.points] == [("sources", False)]
+
+
+def test_empty_date_words_never_pass_the_date_point(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _seed(session_factory, store, 1, PUBLISHED)
+    with read_session(session_factory) as session:
+        (detail,) = published(session)
+    sentence = "The FDA has set a target action date in July of 2027 for the application."
+    for precision in (DatePrecision.HALF, DatePrecision.MONTH):
+        for words in ("", " "):
+            window = detail.window.model_copy(update={"raw_text": words, "precision": precision})
+            evidence = evidence_for(detail.model_copy(update={"window": window}), {})
+            for quote in (SENTENCE, sentence):
+                (verdict,) = judge({"date": "x"}, [_answer("date", quote=quote)], quote, evidence)
+                assert verdict["agrees"] is False, (precision, words, quote)
+
+
+def _big_release(words: int) -> bytes:
+    filler = "<p>" + "More background about the company and its programs. " * words + "</p>"
+    return f"<html><body><p>Acme Bio news</p><p>{SENTENCE}</p>{filler}</body></html>".encode()
+
+
+def test_a_record_too_long_to_check_is_skipped_by_id_and_the_run_goes_on(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A long source must not hold the cap or the limit for the week (review of PR #83)."""
+    store = LocalSnapshotStore(tmp_path)
+    big = _seed(session_factory, store, 1, PUBLISHED, content=_big_release(3000))  # about 40,000 tokens
+    small = _seed(session_factory, store, 2, PUBLISHED)
+
+    def big_first(week: date, catalyst: UUID) -> str:
+        return "0" if catalyst == big else "1"
+
+    monkeypatch.setattr(sample, "_rank", big_first)
+    fake = _Fake()
+    with caplog.at_level(logging.INFO, logger="catalyst"):
+        summary = _run(session_factory, store, fake, limit=1, cap="0.50")
+    assert (summary["records_too_large"], summary["checked"], summary["stopped_early"]) == (1, 1, None)
+    assert summary["left_this_week"] == 1
+    assert all("More background" not in shown for shown in fake.documents)  # never sent, never billed
+    assert [row.catalyst_id for row in _rows(session_factory)] == [small]
+    (logged,) = [r for r in caplog.records if r.getMessage() == "sample_check_too_large"]
+    fields = logged.__dict__["catalyst_fields"]
+    assert fields["catalyst_id"] == str(big)
+    assert "More background" not in json.dumps(fields)
+    assert "zentocel" not in json.dumps(fields)
+
+
+def test_a_document_at_the_analysts_input_limit_fits_its_daily_cap() -> None:
+    """Below the limit, a fresh day's cap always has room, so the cap cannot block one record."""
+    config = load_config(DEFAULT_CONFIG_PATH)
+    limit = config.max_input_tokens(ROLE)
+    assert limit is not None
+    head = "1. type: topline readout\n"
+    document = head + "x" * (limit * 4 - len(head))
+    client = ModelClient(config, {"anthropic": _Fake(name="anthropic")}, InMemoryLedger(), now=lambda: NOW)
+    client.run(ROLE, load_prompt(*PROMPT), document)  # raises SpendCapReachedError if it would not fit

@@ -857,7 +857,7 @@ def _sample_check(args: argparse.Namespace) -> int:
         engine.dispose()
     summary = report.summary()
     print(json.dumps(summary, indent=2))
-    return 1 if summary["documents_failed"] or summary["stopped_early"] else 0
+    return 1 if summary["documents_failed"] or summary["records_too_large"] or summary["stopped_early"] else 0
 
 
 def _planted_errors(args: argparse.Namespace) -> int:

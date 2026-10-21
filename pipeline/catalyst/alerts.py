@@ -46,6 +46,7 @@ SAMPLE_POINTS = {
     "indication": "the disease",
     "date": "the date",
     "trials": "the trials",
+    "sources": "its sources, none of which states a value the checker can check",
 }
 Plan = dict[str, Any]
 
@@ -189,6 +190,9 @@ def _sample_problems(summary: dict[str, Any]) -> list[str]:
     problems: list[str] = []
     if failed := _count(summary, "documents_failed"):
         problems.append(f"{_plural(failed, 'record')} could not be checked.")
+    if large := _count(summary, "records_too_large"):
+        verb = "has" if large == 1 else "have"
+        problems.append(f"{_plural(large, 'record')} {verb} a source too long for the checker to read.")
     if summary.get("stopped_early"):
         problems.append("It stopped early, before checking every record it could (usually a spending cap).")
     return problems
