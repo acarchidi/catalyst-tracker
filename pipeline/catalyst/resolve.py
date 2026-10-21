@@ -109,13 +109,15 @@ class TrialRef:
     company_ids: frozenset[UUID]
 
 
+# Trademark and copyright signs. They go before Unicode normalization, which spells "™" and "℠" as
+# the letters "TM" and "SM" (review of PR #77), and again after it, for any sign it makes.
 _MARKS = re.compile(r"[®™©℠]")
 _NCT = re.compile(r"\bNCT\d{8}\b", re.IGNORECASE)
 
 
 def name_key(name: str) -> str:
     """Return a drug or study name with case, marks, spacing, and punctuation removed."""
-    text = _MARKS.sub("", unicodedata.normalize("NFKC", name)).casefold()
+    text = _MARKS.sub("", unicodedata.normalize("NFKC", _MARKS.sub("", name))).casefold()
     return "".join(ch for ch in text if ch.isalnum())
 
 

@@ -322,12 +322,16 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
 def _cited_trials(
     catalyst_id: UUID, links: list[Row[Any]], changes: list[Row[Any]], trials: dict[UUID, TrialView]
 ) -> list[tuple[UUID, TrialView]]:
-    """Return each linked trial with its link's claim, when one of the catalyst's changes cites it.
+    """Return each linked trial with its link's claim, when that claim backs a current value.
 
-    Any other link is left out and logged, so a hand-added link never shows a claim the gate did
-    not accept for this catalyst. Ordered by registry number.
+    That is, the latest change of at least one field cites the claim. As with drug links, which
+    must match the latest `drugs` change, a claim whose every value a later release replaced no
+    longer counts, so a trial named only in an outdated release is not shown (Claude review of
+    PR #80). Any other link is left out and logged, so a hand-added link never shows a claim the
+    gate did not accept for this catalyst. Ordered by registry number.
     """
-    cited = {change.claim_id for change in changes}
+    latest = {change.field: change for change in changes}  # oldest first, so the last one wins
+    cited = {change.claim_id for change in latest.values()}
     shown: list[tuple[UUID, TrialView]] = []
     for link in links:
         if link.claim_id in cited:
@@ -364,9 +368,9 @@ def _build(
         fields = backing.setdefault(link.claim_id, (drug_changes[link.claim_id], []))[1]
         if DRUGS not in fields:
             fields.append(DRUGS)
-    first_change = {c.claim_id: c for c in reversed(changes)}
+    current_change = {c.claim_id: c for c in latest.values()}  # each shown trial's claim is one
     for claim_id, _ in trials:
-        fields = backing.setdefault(claim_id, (first_change[claim_id], []))[1]
+        fields = backing.setdefault(claim_id, (current_change[claim_id], []))[1]
         if TRIALS not in fields:
             fields.append(TRIALS)
     history = [_change(c) for c in changes]

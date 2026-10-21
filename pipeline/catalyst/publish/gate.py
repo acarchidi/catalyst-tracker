@@ -212,3 +212,43 @@ def decide(claim: Claim, checks: Iterable[ClaimCheck], quote_ok: CheckResult) ->
         holds.append(Hold(QUOTE_CHECK, quote_ok.reason or f"{QUOTE_CHECK} did not pass"))
     holds += [hold for name in REQUIRED_CHECKS if (hold := _hold(name, stored.get(name)))]
     return Decision(GateDecision.REVIEW, tuple(holds)) if holds else Decision(GateDecision.PUBLISH)
+
+
+# A person rejected the claim in the review queue; only a later approval, a newer decision,
+# removes it (ADR 0042, decision 4). The reason names no claim text: it is stored and counted.
+REVIEW_REJECTED = Hold("review_rejected", "rejected in the review queue")
+
+# Holds no person's approval excuses (ADR 0042): no value publishes without its verbatim quote
+# in the stored copy (spec: Provenance), only the extractor's catalyst claims from the current
+# prompt become catalysts, a new catalyst needs a window that has not passed, and a rejection
+# holds until a later decision replaces it. A check that has not run is never excused either:
+# nobody can vouch for it (Opus review of PR #84).
+PERSON_MAY_NOT_EXCUSE: frozenset[str] = frozenset(
+    {
+        QUOTE_CHECK,
+        "extractor_claim",
+        "extractor_prompt",
+        "has_window",
+        "window_not_past",
+        REVIEW_REJECTED.check,
+    }
+)
+
+
+def approve(decision: Decision, seen: frozenset[str], writer_may_lift: Callable[[str], bool]) -> Decision:
+    """Apply a person's approval from the review queue: excuse only the holds whose reasons they saw.
+
+    `seen` holds the stored reasons, word for word, the person approved; a hold with any other
+    reason still holds the claim. Holds in `PERSON_MAY_NOT_EXCUSE`, and checks that have not run,
+    always hold. A `safe_to_write` hold is excused only when `writer_may_lift` accepts its reason
+    (`catalyst.publish.sanity.person_may_approve`), since the writer must never guess.
+    """
+
+    def excused(hold: Hold) -> bool:
+        if hold.missing or hold.check in PERSON_MAY_NOT_EXCUSE or hold.reason not in seen:
+            return False
+        prefix = f"{WRITER_CHECK}: "
+        return hold.check != WRITER_CHECK or writer_may_lift(hold.reason.removeprefix(prefix))
+
+    holds = tuple(hold for hold in decision.holds if not excused(hold))
+    return Decision(GateDecision.REVIEW, holds) if holds else Decision(GateDecision.PUBLISH)

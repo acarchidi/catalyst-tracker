@@ -173,6 +173,31 @@ def _copy_problems(summary: dict[str, Any]) -> list[str]:
     return found
 
 
+_LINK_LIST_LIMIT = 20  # dead links named in one alert; the run log lists every one
+
+
+def _link_problems(summary: dict[str, Any]) -> list[str]:
+    """Name the published links that no longer lead to their document (ADR 0043).
+
+    Only web addresses and the verdicts code chose are named. A refusal or a site error is not
+    a dead link, so on its own it is never the owner's problem.
+    """
+    dead = _count(summary, "dead")
+    if not dead:
+        return []
+    shown = [
+        f"  - {link['url']} ({link['verdict']})"
+        for link in map(_mapping, _sequence(summary.get("dead_links")))
+        if str(link.get("url", "")).startswith("https://") and link.get("verdict") in {"missing", "moved"}
+    ]
+    head = (
+        f"{dead} of {_count(summary, 'checked')} published source links no longer work "
+        f"({summary.get('dead_percent')}%; the target is under 1%)."
+    )
+    more = len(shown) - _LINK_LIST_LIMIT
+    return [head, *shown[:_LINK_LIST_LIMIT], *([f"  - and {more} more in the run log"] if more > 0 else [])]
+
+
 def _problems(run: JobRun) -> list[str]:
     problems = ["Its report could not be read."] if run.unreadable else []
     if run.name == "extract-catalysts":
@@ -181,6 +206,8 @@ def _problems(run: JobRun) -> list[str]:
         problems += _collect_problems(_sequence(run.summary))
     elif run.name == "snapshots-verify":
         problems += _copy_problems(_mapping(run.summary))
+    elif run.name == "check-links":
+        problems += _link_problems(_mapping(run.summary))
     if run.outcome == "failure" and not problems:
         problems.append("It ended with an error before it could say what went wrong.")
     return problems

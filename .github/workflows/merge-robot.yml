@@ -3,8 +3,9 @@ name: Merge robot
 # Merges a pull request from a claude/ branch into main once CI and the Claude review
 # have both succeeded on its latest commit (ADR 0007). workflow_run always runs this
 # file and scripts/merge_gate.py as they are on main, so a pull request cannot change
-# the rules for its own merge. Pull requests that change the robot or the review are
-# left for the owner. Add the "hold" label to a pull request to stop the robot merging it.
+# the rules for its own merge. Only pull requests from this repository's own branches, opened
+# by the repository's owner, are merged: the repository is public, and a fork can name its
+# branch claude/ too. Pull requests that change the robot or the review are left for the owner. Add the "hold" label to a pull request to stop the robot merging it.
 
 on:
   workflow_run:
@@ -48,13 +49,18 @@ jobs:
           SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           set -euo pipefail
-          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.state == "open")][0].number // empty')
+          # The repository is public, so a fork's pull request can carry the same commit; only a
+          # pull request whose branch is in this repository is considered. merge_gate.py checks
+          # the branch's repository and the author again (GITHUB_REPOSITORY is set by Actions).
+          pr=$(gh api "repos/$REPO/commits/$SHA/pulls" \
+            --jq "[.[] | select(.state == \"open\" and .head.repo.full_name == \"$REPO\")][0].number // empty")
           if [ -z "$pr" ]; then
-            echo "No open pull request has commit $SHA." | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "No open pull request from this repository has commit $SHA." | tee -a "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           gh pr view "$pr" --repo "$REPO" \
-            --json state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,labels > "$RUNNER_TEMP/pr.json"
+            --json state,isDraft,baseRefName,headRefName,headRefOid,isCrossRepository,headRepository,headRepositoryOwner,author,labels \
+            > "$RUNNER_TEMP/pr.json"
           gh api "repos/$REPO/pulls/$pr/files?per_page=100" --paginate \
             --jq '.[] | .filename, (.previous_filename // empty)' | jq -R . | jq -s . > "$RUNNER_TEMP/files.json"
           gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" --paginate \

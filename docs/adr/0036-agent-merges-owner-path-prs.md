@@ -32,4 +32,4 @@ The merge robot (ADR 0007) leaves pull requests that change the rules, the revie
 - A mistaken or manipulated instruction could change the guardrails. The reviewer judges each change against main's AGENTS.md and the spec, and any change can be reverted with a new pull request.
 - `.claude/settings.json` itself is an owner-only path, so changing it also goes through this rule, and widening it needs the owner's written OK (decision 4).
 - The merge permission in `.claude/settings.json` cannot be limited to this repository; the AGENTS.md rule is what limits what the agent merges.
-- The robot's and the review's messages still say "the owner merges it by hand"; a follow-up pull request updates them.
+- The robot's and the review's messages used to say "the owner merges it by hand"; PR #74 updated them to match this decision.

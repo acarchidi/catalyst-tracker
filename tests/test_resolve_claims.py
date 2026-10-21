@@ -278,6 +278,31 @@ def test_another_company_s_generic_or_brand_name_waits_for_review(
     assert drug["matched_by"] == kind.value
 
 
+def test_a_trademarked_name_of_another_company_s_drug_still_waits_for_review(
+    session_factory: sessionmaker[Session], spyre: dict[str, UUID]
+) -> None:
+    """A name with "\u2122" now matches (review of PR #77); the ownership rule (ADR 0037) still holds it."""
+    with session_factory.begin() as session:
+        other = upsert_company(session, 1178670, "ALNYLAM PHARMACEUTICALS, INC.", "2834").id
+        theirs = _owned_drug(session, other, "cemdisiran", DrugNameKind.INN)
+        own = _owned_drug(session, spyre["company"], "brelovitug", DrugNameKind.INN)
+        _claim(
+            session, spyre["release"], "Cemdisiran\u2122 data are expected in 2027.", "Cemdisiran\u2122", 1
+        )
+        _claim(
+            session, spyre["release"], "Brelovitug\u2122 data are expected in 2027.", "Brelovitug\u2122", 2
+        )
+    resolve_claims(session_factory, lambda: NOW)
+    drugs = _by(_matches(session_factory), MatchedEntity.DRUG)
+    theirs_match, own_match = drugs["Cemdisiran\u2122"], drugs["Brelovitug\u2122"]
+    assert (theirs_match["status"], theirs_match["matched_id"], theirs_match["candidates"]) == (
+        "ambiguous",
+        None,
+        [str(theirs)],
+    )
+    assert (own_match["status"], own_match["matched_id"]) == ("resolved", own)
+
+
 def test_the_company_s_own_generic_name_and_one_with_no_owner_still_resolve(
     session_factory: sessionmaker[Session], spyre: dict[str, UUID]
 ) -> None:

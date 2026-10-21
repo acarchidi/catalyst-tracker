@@ -170,10 +170,12 @@ jobs:
           created_at=$(gh api "repos/$REPO/actions/runs/$RUN_ID" --jq .created_at)
           gh api -X GET "repos/$REPO/actions/workflows/overseer.yml/runs" \
             -f created=">=$today" -f per_page=100 --paginate \
-            --jq '.workflow_runs[] | {id, run_attempt, conclusion, actor: .actor.login}' | jq -s . > "$RUNNER_TEMP/runs.json"
+            --jq '.workflow_runs[] | {id, run_attempt, conclusion, actor: .actor.login, head_repo: .head_repository.full_name}' \
+            | jq -s . > "$RUNNER_TEMP/runs.json"
+          # --repo: a fork's pull request gets no key, so its runs do not use up the limit.
           python3 -I "$RUNNER_TEMP/overseer_verdict.py" budget --config "$RUNNER_TEMP/overseer.toml" \
             --runs "$RUNNER_TEMP/runs.json" --run-id "$RUN_ID" --run-attempt "$RUN_ATTEMPT" \
-            --created-at "$created_at" --today "$today" | tee -a "$GITHUB_OUTPUT"
+            --created-at "$created_at" --today "$today" --repo "$REPO" | tee -a "$GITHUB_OUTPUT"
 
       - name: Collect the pull requests for the overseer to read
         id: gather
@@ -199,9 +201,12 @@ jobs:
             mkdir -p "$dir/main/$(dirname "$f")"
             git show "$MAIN_SHA:$f" > "$dir/main/$f"
           done
+          # The repository is public (2026-10-20): pull requests from forks are left out, so a
+          # stranger's text never reaches the model or the Build status issue, and cannot add cost.
           gh pr list --repo "$REPO" --state open --limit 100 \
-            --json number,title,body,author,isDraft,baseRefName,headRefName,headRefOid,createdAt,updatedAt,labels,files,statusCheckRollup \
-            | jq '[.[] | select((.author.login // "") | test("dependabot") | not)]' > "$dir/open-pull-requests.json"
+            --json number,title,body,author,isDraft,isCrossRepository,baseRefName,headRefName,headRefOid,createdAt,updatedAt,labels,files,statusCheckRollup \
+            | jq '[.[] | select(.isCrossRepository == false) | select((.author.login // "") | test("dependabot") | not)]' \
+            > "$dir/open-pull-requests.json"
           since=$(date -u -d '14 days ago' +%F)
           gh pr list --repo "$REPO" --state merged --limit 100 --search "merged:>=$since" \
             --json number,title,mergedAt,headRefName,files > "$dir/merged-pull-requests.json"
