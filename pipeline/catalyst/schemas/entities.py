@@ -31,6 +31,7 @@ from catalyst.schemas.enums import (
     ModelCallStatus,
     OutcomeResult,
     ReadingSkip,
+    ReviewAction,
     TrialPhase,
 )
 from catalyst.schemas.identifiers import (
@@ -430,7 +431,9 @@ class ClaimCheck(Entity):
     check_name: ShortText = Field(description="Which check, for example 'window_not_past'.")
     outcome: CheckOutcome = Field(description="Pass, fail, or not applicable.")
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
-    checked_at: AwareDatetime = Field(description="When the check last ran.")
+    checked_at: AwareDatetime = Field(
+        description="When the check first found its current outcome; a re-run with the same result keeps it."
+    )
 
 
 class ClaimDecision(Entity):
@@ -461,6 +464,34 @@ class ClaimDecision(Entity):
         if (self.decision is GateDecision.REVIEW) != bool(self.reasons):
             raise ValueError("a review decision lists its reasons, and only a review decision does")
         return self
+
+
+class ReviewDecision(Entity):
+    """A person's decision on one claim the publish gate holds (spec: Human review; ADR 0042).
+
+    Append-only: a later decision is a new row, and the claim's latest row counts. An approval
+    lets the gate excuse only the reasons it lists; the plain-code writer still writes the
+    catalyst. Only the review command writes this table.
+    """
+
+    __tablename__ = "review_decision"
+    __checks__: ClassVar[dict[str, str]] = {
+        "lists_reasons_seen": (
+            "CASE WHEN jsonb_typeof(reasons_seen) = 'array' "
+            "THEN jsonb_array_length(reasons_seen) > 0 ELSE false END"
+        ),
+    }
+
+    claim_id: Annotated[UUID, References("claim")] = Field(description="The held claim decided.")
+    action: ReviewAction = Field(description="Approve (let the gate publish it) or reject (keep it out).")
+    reviewer: ShortText = Field(
+        description="Who decided: the person's GitHub account, for example 'acarchidi'."
+    )
+    reasons_seen: list[Annotated[str, Field(min_length=1)]] = Field(
+        min_length=1,
+        description="The gate's reasons the person saw, word for word; an approval excuses only these.",
+    )
+    decided_at: AwareDatetime = Field(description="When the person decided.")
 
 
 class DocumentReading(Entity):

@@ -206,6 +206,13 @@ class GateDecision(StrEnum):
     REVIEW = "review"
 
 
+class ReviewAction(StrEnum):
+    """What a person decided about a held claim in the review queue (ADR 0042)."""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
 class MatchedEntity(StrEnum):
     """Which kind of record a name in a claim was matched to."""
 

@@ -25,7 +25,14 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.publish import gate
 from catalyst.publish.run import decide_claims
-from catalyst.publish.sanity import PASSED, ROLE_UNCLEAR, TIED, check_safe_to_write, drug_role
+from catalyst.publish.sanity import (
+    NOT_OVERLAPPING,
+    PASSED,
+    ROLE_UNCLEAR,
+    TIED,
+    check_safe_to_write,
+    drug_role,
+)
 from catalyst.publish.write import LOCK, publish_claims, ranks_above
 from catalyst.schemas import (
     Catalyst,
@@ -644,9 +651,18 @@ def test_a_window_that_does_not_overlap_the_live_one_waits_for_a_person(world: W
     world.claim("first half of 2028", published=OCT_16)
     summary = _publish(world)
     assert summary["held_by_writer"] == 1
-    assert list(summary["top_reasons"]) == ["the window does not overlap the published one"]
+    assert list(summary["top_reasons"]) == [
+        f"{NOT_OVERLAPPING} (from 2027-07-01..2027-12-31 to 2028-01-01..2028-06-30)"
+    ]
     (row,) = world.rows(Catalyst)
     assert row.window_raw_text == "second half of 2027"
+
+
+# Opus review of PR #84, B2: a date reason names both windows, so an approval of it is void
+# once the published window changes.
+TOO_FAR_MOVE = (
+    "the date would move more than 6 months (from 2027-10-01..2027-10-31 to 2027-07-01..2028-06-30)"
+)
 
 
 def test_a_move_of_more_than_six_months_waits_for_a_person(world: World) -> None:
@@ -656,14 +672,16 @@ def test_a_move_of_more_than_six_months_waits_for_a_person(world: World) -> None
     moved = world.claim("late 2027 or early 2028", published=OCT_16)  # the end moves from October to June
     summary = _publish(world)
     assert summary["held_by_writer"] == 1
-    assert list(summary["top_reasons"]) == ["the date would move more than 6 months"]
+    assert list(summary["top_reasons"]) == [
+        "the date would move more than 6 months (from 2027-10-01..2027-10-31 to 2027-07-01..2028-06-30)"
+    ]
     assert len([c for c in world.rows(CatalystChange) if c.old_value is not None]) == 0
     # Stored as the writer's own check, so the decision job holds it too, and does not flip it back.
-    assert _check(world, moved, "safe_to_write") == ("fail", "the date would move more than 6 months")
+    assert _check(world, moved, "safe_to_write") == ("fail", TOO_FAR_MOVE)
     for _ in range(2):
         decide_claims(world.factory, world.store, lambda: NOW)
         decisions = {row.claim_id: (row.decision, row.reasons) for row in world.rows(ClaimDecision)}
-        assert decisions[moved] == ("review", ["safe_to_write: the date would move more than 6 months"])
+        assert decisions[moved] == ("review", [f"safe_to_write: {TOO_FAR_MOVE}"])
 
 
 def test_a_widening_of_up_to_six_months_is_written(world: World) -> None:
@@ -953,7 +971,10 @@ def test_o3_the_check_job_stores_safe_to_write_for_every_claim(world: World) -> 
     assert report.summary() == {"claims": 3, "outcomes": {"safe_to_write:pass": 2, "safe_to_write:fail": 1}}
     assert _check(world, first, "safe_to_write") == ("pass", None)
     assert _check(world, new, "safe_to_write") == ("pass", None)
-    assert _check(world, later, "safe_to_write") == ("fail", "the window does not overlap the published one")
+    assert _check(world, later, "safe_to_write") == (
+        "fail",
+        f"{NOT_OVERLAPPING} (from 2027-07-01..2027-12-31 to 2028-01-01..2028-06-30)",
+    )
 
 
 def test_o5_a_better_source_with_the_same_dates_updates_the_confidence(world: World) -> None:
@@ -988,7 +1009,7 @@ def test_a_start_moved_more_than_six_months_earlier_waits(world: World) -> None:
     summary = _publish(world)
     assert (summary["held_by_writer"], list(summary["top_reasons"])) == (
         1,
-        ["the date would move more than 6 months"],
+        ["the date would move more than 6 months (from 2027-10-01..2027-10-31 to 2026-10-16..2027-12-31)"],
     )
 
 
@@ -997,7 +1018,9 @@ def test_a_losing_first_seen_claim_whose_window_does_not_overlap_waits(world: Wo
     world.claim("first half of 2028")
     summary = _publish(world)
     assert (summary["catalysts_created"], summary["held_by_writer"]) == (1, 1)
-    assert list(summary["top_reasons"]) == ["the window does not overlap the published one"]
+    assert list(summary["top_reasons"]) == [
+        f"{NOT_OVERLAPPING} (from 2027-07-01..2027-12-31 to 2028-01-01..2028-06-30)"
+    ]
 
 
 def test_one_run_moves_a_catalyst_once_and_compares_the_rest_with_the_move(world: World) -> None:
@@ -1008,7 +1031,9 @@ def test_one_run_moves_a_catalyst_once_and_compares_the_rest_with_the_move(world
     summary = _publish(world)
     assert summary["catalysts_updated"] == 1
     assert _window(world)[2] == "fourth quarter of 2027"
-    assert list(summary["top_reasons"]) == ["the window does not overlap the published one"]
+    assert list(summary["top_reasons"]) == [
+        f"{NOT_OVERLAPPING} (from 2027-10-01..2027-12-31 to 2027-07-01..2027-09-30)"
+    ]
 
 
 def test_two_writers_never_run_at_once(world: World) -> None:

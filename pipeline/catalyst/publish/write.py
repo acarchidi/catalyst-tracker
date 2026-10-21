@@ -28,6 +28,13 @@ review queue see what the writer saw, including every reason it held a claim.
 The title it writes is composed in code from checked fields (`catalyst.publish.title`), never the
 extractor's own words; its change row cites the claim whose checked fields it names (part 5d).
 
+A claim a person approved in the review queue (ADR 0042) is checked again like any other; the
+approval excuses only the holds the person saw (`gate.approve`), and only while each check's
+outcome is unchanged since the approval; never the quote match; and of the writer's own holds
+only a date move or a window that does not overlap, and only when no other date reason fails
+with it (`person_may_approve`). A claim whose latest decision by a person is a rejection is held
+(`gate.REVIEW_REJECTED`), whatever its checks say now.
+
 Safe to re-run: a claim a change row already cites is done, and the job holds a database lock
 while it runs, so two runs never both create one catalyst. Everything is written in one
 transaction, so a failure leaves nothing half written. It never deletes or unpublishes.
@@ -74,10 +81,12 @@ from catalyst.publish.sanity import (
     drug_role,
     load_ties,
     others,
+    person_may_approve,
     safe_to_write,
     same_dates,
 )
 from catalyst.publish.title import TitleNames, load_title_names
+from catalyst.review import Review, apply_review, latest_reviews
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -92,6 +101,7 @@ from catalyst.schemas import (
     DocumentReading,
     DrugRole,
     GateDecision,
+    ReviewAction,
     SourceDocument,
     SourceTier,
 )
@@ -137,6 +147,7 @@ class PublishReport:
     trial_links_written: int = 0
     copies_unreadable: int = 0
     checks_updated: int = 0
+    published_by_approval: int = 0  # claims a person approved that this run wrote
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
@@ -217,11 +228,17 @@ def _checks(
     """Return the fresh outcomes, plus the stored row of each required check this job does not recompute.
 
     `safe_to_write` passes here: the writer decides it as it places the claim. A stored second
-    reading counts only when its document has a current reading.
+    reading counts only when its document has a current reading. A fresh outcome the same as the
+    stored one keeps its stored time, as `store_check` does, so an approval still sees it unchanged.
     """
     recomputed = {*gate.RULE_CHECKS, independent.CHECK, advisory.CHECK, gate.WRITER_CHECK}
     recomputed |= {result.check for result in fresh}  # the drug check, when the copy could be read
+    stored = list(stored)
+    since = {(r.check_name, r.outcome, r.reason): r.checked_at for r in stored}
     rows = [_row(claim_id, result, at) for result in fresh]
+    rows = [
+        r.model_copy(update={"checked_at": since.get((r.check_name, r.outcome, r.reason), at)}) for r in rows
+    ]
     rows.append(_row(claim_id, CheckResult(gate.WRITER_CHECK, CheckOutcome.PASS, _DECIDED_WHILE_WRITING), at))
     kept = [
         r
@@ -239,6 +256,8 @@ class _Run:
 
     at: datetime
     report: PublishReport
+    reviews: dict[UUID, Review] = field(default_factory=dict[UUID, Review])
+    stored: dict[UUID, list[ClaimCheck]] = field(default_factory=dict[UUID, list[ClaimCheck]])
     results: dict[UUID, list[CheckResult]] = field(default_factory=dict[UUID, list[CheckResult]])
 
 
@@ -270,10 +289,12 @@ def _recheck(
             results = [*fresh.get(claim.id, []), *([noticed[claim.id]] if claim.id in noticed else [])]
             results += [*_drug_result(drugs, claim, copy), _type_result(claim, copy)]
             run.results[claim.id] = results
+            run.stored[claim.id] = stored[claim.id]
             checks = _checks(claim.id, results, stored[claim.id], claim.source_document_id in read_now, at)
             if live.is_live(claim.id, key):
                 checks = excuse_passed_window(claim.id, checks, at)
             decision = gate.decide(claim, checks, gate.match_quote(claim, copy))
+            decision = apply_review(decision, run.reviews.get(claim.id), checks, person_may_approve)
             if decision.decision is not GateDecision.PUBLISH:
                 report.held_on_recheck += 1
                 report.reasons.update(hold.label for hold in decision.holds)
@@ -458,11 +479,45 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
             # the run began; an earlier write in this run can make it a new event instead, and a new
             # catalyst whose window has ended is never published (Claude review of PR #59).
             result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, PASSED)
-        if result.outcome is CheckOutcome.PASS:
+        if result.outcome is CheckOutcome.PASS or _approved(run, item, result):
+            written = _written(run.report)
             result = _apply(session, item, where.catalyst, catalysts, run) or result
-        run.results.setdefault(item.claim.id, []).append(result)
-        if result.outcome is CheckOutcome.FAIL:
+            if _approval(run, item.claim.id) and _written(run.report) > written:
+                run.report.published_by_approval += 1
+                log_event(_log, "approved_claim_written", claim_id=str(item.claim.id))
+        run.results.setdefault(item.claim.id, []).append(result)  # an approved hold is stored as found
+        if result.outcome is CheckOutcome.FAIL and not _approved(run, item, result):
             _hold(run, item, result.reason or "")
+
+
+def _written(report: PublishReport) -> int:
+    return report.catalysts_created + report.catalysts_updated
+
+
+def _approved(run: _Run, item: _Ready, result: CheckResult) -> bool:
+    """Say whether a person approved this writer hold word for word, and every part needs only a yes.
+
+    The reason lists every failing date check and both windows, so an approval of an older text,
+    or of one reason among others, lifts nothing (Opus review of PR #84, B1 and B2).
+    """
+    approval = _approval(run, item.claim.id)
+    reason = result.reason or ""
+    if approval is None or not person_may_approve(reason):
+        return False
+    # The hold must be the one stored before the approval, unchanged since (round 2, optional 1).
+    row = _row(item.claim.id, result, run.at)
+    unchanged = any(
+        (s.check_name, s.outcome, s.reason) == (row.check_name, row.outcome, row.reason)
+        and s.checked_at <= approval.decided_at
+        for s in run.stored.get(item.claim.id, [])
+    )
+    return unchanged and f"{gate.WRITER_CHECK}: {reason}" in approval.seen
+
+
+def _approval(run: _Run, claim_id: UUID) -> Review | None:
+    """Return the claim's latest decision by a person when it is an approval."""
+    review = run.reviews.get(claim_id)
+    return review if review is not None and review.action is ReviewAction.APPROVE else None
 
 
 def _ended(item: _Ready, today: date) -> bool:
@@ -530,6 +585,7 @@ def publish_claims(
     report = run.report
     with session_factory.begin() as session:
         session.execute(select(func.pg_advisory_xact_lock(LOCK)))
+        run.reviews = latest_reviews(session)
         rows = _marked(session)
         report.claims_marked_publish = len(rows)
         live = load_live(session)
