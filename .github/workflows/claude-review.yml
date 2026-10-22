@@ -108,6 +108,28 @@ jobs:
             --allowedTools "Read,Grep,Glob,Bash(gh pr view:*),Bash(gh pr diff:*)"
             --json-schema '{"type":"object","additionalProperties":false,"required":["verdict","summary","blocking","optional"],"properties":{"verdict":{"type":"string","enum":["pass","fail"]},"summary":{"type":"string"},"blocking":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","problem"],"properties":{"file":{"type":"string"},"line":{"type":"integer"},"problem":{"type":"string"}}}},"optional":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["file","problem"],"properties":{"file":{"type":"string"},"line":{"type":"integer"},"problem":{"type":"string"}}}}}}'
 
+      - name: Show the API's answer when the reviewer gave no result
+        # Since 2026-10-20 the reviewer stops in under a second with no result, and the log
+        # never shows why (ADR 0045). This prints only the text of the reviewer's own
+        # messages and the result's errors from its execution file, cut to 600 characters
+        # each. Tool results (file contents) are left out, and GitHub masks secrets. Workflow
+        # commands are switched off while it prints, so the text cannot act on the run.
+        if: ${{ !cancelled() && steps.review.outcome == 'failure' }}
+        env:
+          EXECUTION_FILE: ${{ steps.review.outputs.execution_file }}
+        run: |
+          f="${EXECUTION_FILE:-$RUNNER_TEMP/claude-execution-output.json}"
+          if [ ! -s "$f" ]; then echo "No execution file."; exit 0; fi
+          token=$(openssl rand -hex 16)
+          echo "::stop-commands::$token"
+          text=$(jq -r '.[]? | select(.type == "assistant" or .type == "result")
+                 | (.message.content[]?.text // .result // .error
+                    // (.errors? | select(type == "array" and length > 0) | map(tostring) | join("; "))
+                    // empty)
+                 | tostring | .[0:600]' "$f") || text="The execution file could not be read."
+          if [ -n "$text" ]; then echo "$text"; else echo "The reviewer sent no messages."; fi
+          echo "::$token::"
+
       - name: Pass only on an explicit pass with no blocking findings
         id: verdict
         if: ${{ !cancelled() && github.event.pull_request.user.login != 'dependabot[bot]' }}
