@@ -364,6 +364,22 @@ def test_a_sample_check_that_stops_or_cannot_read_a_source_alerts() -> None:
     assert "analyst has spent" not in body
 
 
+def test_a_sample_record_too_long_to_check_alerts() -> None:
+    summary = CLEAN_SAMPLE | {"records_too_large": 1}
+    plan = build_alerts([JobRun("sample-check", "failure", summary)], None, LIMITS, RUN_URL)
+    assert _keys(plan) == ["job-failed:sample-check"]
+    assert "1 record has a source too long for the checker to read." in plan["issues"][0]["body"]
+
+
+def test_a_sample_record_with_nothing_to_check_names_its_sources() -> None:
+    record = {"catalyst_id": SAMPLE_ID, "title": "t", "points": ["sources"], "links": []}
+    summary = CLEAN_SAMPLE | {"disagreements": [record]}
+    body = build_alerts([JobRun("sample-check", "success", summary)], None, LIMITS, RUN_URL)["issues"][0][
+        "body"
+    ]
+    assert "It disagrees on: its sources, none of which states a value the checker can check." in body
+
+
 def test_dead_published_links_are_counted_and_listed_and_a_clean_check_closes_the_alert() -> None:
     dead = {
         "checked": 40,

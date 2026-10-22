@@ -18,7 +18,10 @@ PROVIDERS = frozenset({"anthropic", "fake"})
 # The largest document each role may send, in estimated tokens, when config/models.toml sets no
 # `max_input_tokens` for it (ADR 0038). Kept here so the limit needs no change to the owner's file;
 # a value in the file wins. The largest release that ever gave a catalyst was 19,089 tokens.
-DEFAULT_MAX_INPUT_TOKENS: dict[str, int] = {"extractor": 40_000}
+# The analyst's is lower so a document under it always fits a fresh day of its $0.50 Opus cap
+# (worst case about $0.48 at 30,000; about $0.53 at 40,000), and so cannot stop the sample
+# check at the same record every day (ADR 0041).
+DEFAULT_MAX_INPUT_TOKENS: dict[str, int] = {"extractor": 40_000, "analyst": 30_000}
 
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
