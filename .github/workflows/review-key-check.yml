@@ -24,10 +24,11 @@ jobs:
           set -u
           if [ -z "$KEY" ]; then echo "CATALYST_REVIEW_API_KEY is empty or missing."; exit 1; fi
           for model in claude-opus-5-5 claude-haiku-5-5; do
+            rm -f /tmp/answer.json
             body=$(jq -nc --arg m "$model" '{model:$m,max_tokens:1,messages:[{role:"user",content:"ok"}]}')
             status=$(curl -sS -o /tmp/answer.json -w '%{http_code}' https://api.anthropic.com/v1/messages \
               -H "x-api-key: $KEY" -H "anthropic-version: 2023-06-01" -H "content-type: application/json" \
               -d "$body") || status="no answer"
             echo "$model: HTTP $status"
-            jq -r 'if .error then "  error: \(.error.type): \(.error.message)" else "  worked" end' /tmp/answer.json 2>/dev/null || true
+            jq -r 'if .error then "  error: \(.error.type): \(.error.message)" else "  worked" end' /tmp/answer.json 2>/dev/null || echo "  the answer was not JSON"
           done
