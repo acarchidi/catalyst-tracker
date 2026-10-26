@@ -25,6 +25,6 @@
 | `catalyst.api` | Read-only data API (`catalyst api`, localhost, `/v1`) and MCP server (`catalyst mcp`, stdio) over published data only; free versus paid shaping (ADR 0025) | Published catalysts, their change rows and drug links | JSON with sources and the not-financial-advice notice |
 | `catalyst.cli` | `uv run catalyst ...` commands | Arguments | JSON on standard output |
 
-**Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`). Every collector: `uv run catalyst collect --since 2026-07-01`, then `uv run catalyst report`. Check every stored copy against its hash: `uv run catalyst snapshots-verify` (add `--snapshot-store supabase` for the live bucket; ADR 0008).
+**Run it.** `scripts/demo.sh` (needs Docker, `uv`, and `SEC_CONTACT_EMAIL`). Every collector: `uv run catalyst collect --since 2026-07-01`, then `uv run catalyst report`. Check every stored copy against its hash: `uv run catalyst snapshots-verify` (add `--snapshot-store supabase` for the live bucket; ADR 0008). The live bucket stores copies compressed; `uv run catalyst snapshots-usage --by-source` shows what fills it and `uv run catalyst snapshots-compress --dry-run` what compressing the older plain copies would save (ADR 0046).
 
 **Test it.** `eval "$(scripts/local_db.sh)"` once, then `uv run pytest`. Tests use recorded copies of real responses in `tests/fixtures/`, never live websites; `scripts/record_fixtures.py` records them.

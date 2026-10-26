@@ -4,12 +4,18 @@ Every copy is stored at `sha256/<first two hex digits>/<hash>`, so the key itsel
 the bytes must hash to. Every read re-hashes the bytes and refuses a copy that no longer
 matches. Two stores share the same `put` and `get`: local disk for development and tests,
 and a private Supabase Storage bucket for the live system (ADR 0008).
+
+The Supabase store keeps new copies gzip-compressed at `<key>.gz`; the key is still the hash of
+the original bytes, and reads inflate under a size cap before checking it (ADR 0046).
 """
 
 from __future__ import annotations
 
+import gzip
 import hashlib
 import re
+import zlib
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -25,6 +31,12 @@ from catalyst.schemas import SourceDocument
 KEY_PATTERN = re.compile(r"^sha256/([0-9a-f]{2})/([0-9a-f]{64})$")
 DEFAULT_BUCKET = "source-snapshots"
 TIMEOUT_SECONDS = 60
+COMPRESSED_SUFFIX = ".gz"
+# No source copy comes near this (Storage's free plan refuses uploads over 50 MB); a compressed
+# copy that inflates past it is refused as damaged, so a crafted object cannot exhaust memory.
+# Bytes over it are stored plain, so they stay readable.
+MAX_SNAPSHOT_BYTES = 256 * 1024 * 1024
+LIST_PAGE_SIZE = 100
 
 
 class SnapshotStoreError(RuntimeError):
@@ -83,6 +95,36 @@ def _checked(key: str, content: bytes) -> bytes:
     return content
 
 
+def compress_copy(content: bytes) -> bytes:
+    """Return `content` as one gzip member; the same bytes always give the same result."""
+    return gzip.compress(content, compresslevel=9, mtime=0)
+
+
+def decompress_copy(key: str, data: bytes, limit: int = MAX_SNAPSHOT_BYTES) -> bytes:
+    """Inflate the compressed copy of `key`, refusing one that is malformed or inflates past `limit`.
+
+    The hash is not checked here; `get` checks it on the inflated bytes.
+    """
+    inflater = zlib.decompressobj(wbits=16 + zlib.MAX_WBITS)  # gzip framing only
+    try:
+        content = inflater.decompress(data, limit + 1)
+    except zlib.error as error:
+        raise SnapshotIntegrityError(f"the compressed copy at {key} cannot be read") from error
+    if len(content) > limit:
+        raise SnapshotIntegrityError(f"the compressed copy at {key} inflates to larger than {limit} bytes")
+    if not inflater.eof or inflater.unused_data:
+        raise SnapshotIntegrityError(f"the compressed copy at {key} is cut short or has extra bytes")
+    return content
+
+
+@dataclass(frozen=True)
+class StoredObject:
+    """One object in the bucket, as Storage lists it: its full name and its stored size."""
+
+    name: str
+    size_bytes: int
+
+
 class LocalSnapshotStore:
     """Content-addressed store on local disk. Storing the same bytes twice keeps one copy."""
 
@@ -124,11 +166,13 @@ class SupabaseSnapshotStore:
         *,
         bucket: str = DEFAULT_BUCKET,
         transport: httpx.BaseTransport | None = None,
+        max_snapshot_bytes: int = MAX_SNAPSHOT_BYTES,
     ) -> None:
         """Connect to the project at `project_url` (https only) with its secret key."""
         if urlsplit(project_url).scheme != "https":
             raise ValueError("SUPABASE_URL must start with https://")
         self._bucket = bucket
+        self.max_snapshot_bytes = max_snapshot_bytes
         self._client = httpx.Client(
             base_url=project_url.rstrip("/") + "/storage/v1",
             headers={"apikey": secret_key},
@@ -157,26 +201,159 @@ class SupabaseSnapshotStore:
             raise SnapshotStoreError(f"the {self._bucket} bucket is public; source copies must stay private")
 
     def put(self, content: bytes) -> Snapshot:
-        """Store `content` once; storing bytes that are already there is not an error."""
+        """Store `content` once, compressed; storing bytes that are already there is not an error.
+
+        Bytes over the size cap are stored plain, so reading them never trips the cap.
+        """
         snapshot = _describe(content)
-        response = self._client.post(
-            f"/object/{self._bucket}/{snapshot.key}",
-            content=content,
-            headers={"content-type": "application/octet-stream", "x-upsert": "false"},
-        )
-        if response.status_code != 200 and not _is_duplicate(response):
-            raise _failure("storing a copy", response)
+        if len(content) > self.max_snapshot_bytes:
+            self._upload(snapshot.key, content, "application/octet-stream")
+        else:
+            self._upload(snapshot.key + COMPRESSED_SUFFIX, compress_copy(content), "application/gzip")
         return snapshot
 
     def get(self, key: str) -> bytes:
-        """Return the stored bytes for `key`, refusing a copy that changed."""
+        """Return the original bytes for `key`, refusing a copy that changed.
+
+        The compressed copy is read first; only when there is none is the plain copy read. A
+        compressed copy that fails its check is an error, never a reason to read the plain one.
+        """
         _expected_hash(key)
-        response = self._client.get(f"/object/authenticated/{self._bucket}/{key}")
+        data = self._download(key + COMPRESSED_SUFFIX)
+        if data is not None:
+            return _checked(key, decompress_copy(key, data, self.max_snapshot_bytes))
+        data = self._download(key)
+        if data is not None:
+            return _checked(key, data)
+        raise SnapshotNotFoundError(f"no copy at {key}")
+
+    # Maintenance calls for `catalyst snapshots-compress` (ADR 0046). Each takes a snapshot key,
+    # never a free-form object name, so nothing outside the copies can be touched.
+
+    def read_plain(self, key: str) -> bytes | None:
+        """Return the plain copy of `key` after checking its hash, or None when there is none."""
+        _expected_hash(key)
+        data = self._download(key)
+        return None if data is None else _checked(key, data)
+
+    def store_compressed(self, key: str, content: bytes) -> None:
+        """Store the compressed copy of `content` under `key`; refuse bytes that do not match it."""
+        _checked(key, content)
+        self._upload(key + COMPRESSED_SUFFIX, compress_copy(content), "application/gzip")
+
+    def _compressed_is_good(self, key: str) -> bool:
+        data = self._download(key + COMPRESSED_SUFFIX)
+        if data is None:
+            raise SnapshotNotFoundError(f"no compressed copy at {key}")
+        try:
+            _checked(key, decompress_copy(key, data, self.max_snapshot_bytes))
+        except SnapshotIntegrityError:
+            return False
+        return True
+
+    def delete_plain(self, key: str) -> None:
+        """Delete the plain copy of `key`, but only after reading back and checking the compressed one.
+
+        Raises, deleting nothing, when the compressed copy is missing or does not inflate to bytes
+        that match `key`. A plain copy that is already gone is not an error.
+        """
+        _expected_hash(key)
+        if not self._compressed_is_good(key):
+            raise SnapshotIntegrityError(f"the compressed copy at {key} does not match its hash")
+        self._delete(key)
+
+    def discard_damaged_compressed(self, key: str) -> bool:
+        """Delete a compressed copy that fails its check, when the plain copy is there and good.
+
+        Returns whether it deleted it. A good compressed copy, or one with no good plain copy to
+        fall back on, is kept: this only ever removes bytes that `get` would refuse.
+        """
+        _expected_hash(key)
+        try:
+            if self._compressed_is_good(key):
+                return False
+        except SnapshotNotFoundError:
+            return False
+        try:
+            plain = self.read_plain(key)
+        except SnapshotIntegrityError:
+            return False
+        if plain is None:
+            return False
+        self._delete(key + COMPRESSED_SUFFIX)
+        return True
+
+    def list_objects(self, prefix: str = "", page_size: int = LIST_PAGE_SIZE) -> Iterator[StoredObject]:
+        """Yield every object under `prefix`, walking sub-folders, `page_size` entries per request."""
+        offset = 0
+        while True:
+            body = {
+                "prefix": prefix,
+                "limit": page_size,
+                "offset": offset,
+                "sortBy": {"column": "name", "order": "asc"},
+            }
+            response = self._client.post(f"/object/list/{self._bucket}", json=body)
+            if response.status_code != 200:
+                raise _failure("listing copies", response)
+            entries = _entries(response)
+            for name, size in entries:
+                path = f"{prefix}/{name}" if prefix else name
+                if size is None:
+                    yield from self.list_objects(path, page_size)
+                else:
+                    yield StoredObject(path, size)
+            if len(entries) < page_size:
+                return
+            offset += page_size
+
+    def _upload(self, name: str, data: bytes, content_type: str) -> None:
+        response = self._client.post(
+            f"/object/{self._bucket}/{name}",
+            content=data,
+            headers={"content-type": content_type, "x-upsert": "false"},
+        )
+        if response.status_code != 200 and not _is_duplicate(response):
+            raise _failure("storing a copy", response)
+
+    def _download(self, name: str) -> bytes | None:
+        response = self._client.get(f"/object/authenticated/{self._bucket}/{name}")
         if response.status_code == 200:
-            return _checked(key, response.content)
+            return response.content
         if _storage_status(response) == "404":
-            raise SnapshotNotFoundError(f"no copy at {key}")
+            return None
         raise _failure("reading a copy", response)
+
+    def _delete(self, name: str) -> None:
+        response = self._client.delete(f"/object/{self._bucket}/{name}")
+        if response.status_code != 200 and _storage_status(response) != "404":
+            raise _failure("deleting a copy", response)
+
+
+def _entries(response: httpx.Response) -> list[tuple[str, int | None]]:
+    """Read a listing page: each entry's name, and its size, or None for a sub-folder."""
+    try:
+        body: object = response.json()
+    except ValueError as error:
+        raise SnapshotStoreError("Supabase Storage answered a listing with unreadable data") from error
+    if not isinstance(body, list):
+        raise SnapshotStoreError("Supabase Storage answered a listing with unreadable data")
+    entries: list[tuple[str, int | None]] = []
+    for item in body:  # pyright: ignore[reportUnknownVariableType]
+        if not isinstance(item, dict):
+            raise SnapshotStoreError("Supabase Storage answered a listing with unreadable data")
+        fields: dict[str, object] = item  # pyright: ignore[reportUnknownVariableType]
+        name, metadata = fields.get("name"), fields.get("metadata")
+        if not isinstance(name, str) or not name:
+            raise SnapshotStoreError("Supabase Storage answered a listing with unreadable data")
+        if fields.get("id") is None:
+            entries.append((name, None))
+            continue
+        size: object = metadata.get("size") if isinstance(metadata, dict) else None  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        if not isinstance(size, int):
+            raise SnapshotStoreError("Supabase Storage listed a copy without its size")
+        entries.append((name, size))
+    return entries
 
 
 def _storage_status(response: httpx.Response) -> str:

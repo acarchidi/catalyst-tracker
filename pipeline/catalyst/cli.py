@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict
@@ -51,6 +52,7 @@ from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.sealed import SealError, generate_keypair, seal, unseal
+from catalyst.snapshot_space import DEFAULT_WORKERS, compress_snapshots, snapshot_sources, snapshot_usage
 from catalyst.snapshots import (
     LocalSnapshotStore,
     SnapshotStore,
@@ -138,6 +140,7 @@ def _parser() -> argparse.ArgumentParser:
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
     _store_arguments(verify)
+    _snapshot_space_arguments(commands)
     extract = commands.add_parser(
         "extract-catalysts",
         help="Ask the extractor for the catalysts in stored press releases (costs money).",
@@ -296,6 +299,29 @@ def _issue_arguments(commands: Any) -> None:
     issues.add_argument("--from", dest="plan", type=Path, required=True, help="The plan (JSON).")
 
 
+def _snapshot_space_arguments(commands: Any) -> None:
+    compress = commands.add_parser(
+        "snapshots-compress",
+        help="Replace each plain copy in the Supabase bucket with its checked compressed copy (ADR 0046).",
+    )
+    compress.add_argument(
+        "--dry-run", action="store_true", help="Only count the copies and the bytes before and after."
+    )
+    compress.add_argument(
+        "--workers", type=int, default=DEFAULT_WORKERS, help="Copies handled at the same time."
+    )
+    compress.add_argument(
+        "--max-minutes",
+        type=float,
+        default=None,
+        help="Start no new copy after this many minutes; a later run finishes the rest.",
+    )
+    usage = commands.add_parser(
+        "snapshots-usage", help="Print the Supabase bucket's size in total, by format, and by source."
+    )
+    usage.add_argument("--by-source", action="store_true", help="Also total by source (reads the database).")
+
+
 def _store_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--snapshot-store",
@@ -345,6 +371,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "planted-errors": _planted_errors,
         "sample-check": _sample_check,
         "prospects-check": _prospects_check,
+        "snapshots-compress": _snapshots_space,
+        "snapshots-usage": _snapshots_space,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -894,6 +922,41 @@ def _prospects_check(args: argparse.Namespace) -> int:
     }
     print(json.dumps(counts, indent=2))
     return 1 if dropped else 0
+
+
+def _snapshots_space(args: argparse.Namespace) -> int:
+    """Compress the bucket's plain copies, or report its size; both only on the Supabase bucket."""
+    try:
+        store = SupabaseSnapshotStore(settings.supabase_url(), settings.supabase_secret_key())
+        if args.command == "snapshots-usage":
+            return _usage(store, by_source=args.by_source)
+        deadline = None if args.max_minutes is None else time.monotonic() + args.max_minutes * 60
+        report = compress_snapshots(store, dry_run=args.dry_run, workers=args.workers, deadline=deadline)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    except (SnapshotStoreError, httpx.HTTPError) as error:
+        print(f"The snapshot bucket could not be read ({error}).", file=sys.stderr)
+        return 1
+    print(json.dumps(report.summary(), indent=2))
+    return 0 if report.ok else 1
+
+
+def _usage(store: SupabaseSnapshotStore, *, by_source: bool) -> int:
+    sources: dict[str, str] | None = None
+    if by_source:
+        engine = create_engine(settings.database_url())
+        try:
+            with sessionmaker(engine)() as session:
+                sources = snapshot_sources(session)
+        finally:
+            engine.dispose()
+    usage = snapshot_usage(store, sources)
+    summary: dict[str, Any] = {"objects": usage.objects, "bytes": usage.bytes, "by_format": usage.by_format}
+    if by_source:
+        summary["by_source"] = usage.by_source
+    print(json.dumps(summary, indent=2))
+    return 0
 
 
 def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
