@@ -139,7 +139,8 @@ def compress_snapshots(
     cleanly before its job's time limit; the next run picks up the rest.
     """
     report = CompressReport(dry_run=dry_run)
-    listed = list(store.list_objects())
+    # A listing can return a name twice when the bucket changes between pages; count it once.
+    listed = list({o.name: o for o in store.list_objects()}.values())
     names = {o.name for o in listed}
     plain: list[StoredObject] = []
     for item in listed:

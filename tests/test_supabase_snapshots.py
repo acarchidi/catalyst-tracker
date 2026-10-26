@@ -56,6 +56,27 @@ def test_get_refuses_a_plain_copy_that_changed() -> None:
         store_for(fake).get(key)
 
 
+def test_get_finds_a_copy_compressed_while_it_was_reading() -> None:
+    # The read misses the compressed copy, then `snapshots-compress` stores it and deletes the
+    # plain copy before the read reaches the plain one (ADR 0046).
+    fake = FakeStorage()
+    content = b"a press release"
+    key = snapshot_key(hashlib.sha256(content).hexdigest())
+    fake.objects[f"{BUCKET}/{key}"] = content
+    misses = 0
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal misses
+        response = fake(request)
+        if request.url.path.endswith(f"{key}.gz") and misses == 0:
+            misses += 1
+            fake.objects[f"{BUCKET}/{key}.gz"] = gzip.compress(fake.objects.pop(f"{BUCKET}/{key}"))
+        return response
+
+    store = SupabaseSnapshotStore(URL, KEY, transport=httpx.MockTransport(handler))
+    assert store.get(key) == content
+
+
 def test_get_of_a_missing_copy_says_so() -> None:
     with pytest.raises(SnapshotNotFoundError):
         store_for(FakeStorage()).get(snapshot_key("a" * 64))

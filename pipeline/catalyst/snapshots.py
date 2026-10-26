@@ -217,6 +217,8 @@ class SupabaseSnapshotStore:
 
         The compressed copy is read first; only when there is none is the plain copy read. A
         compressed copy that fails its check is an error, never a reason to read the plain one.
+        When neither is found, the compressed copy is tried once more: `snapshots-compress` may
+        have stored it and deleted the plain copy between the two reads.
         """
         _expected_hash(key)
         data = self._download(key + COMPRESSED_SUFFIX)
@@ -225,6 +227,9 @@ class SupabaseSnapshotStore:
         data = self._download(key)
         if data is not None:
             return _checked(key, data)
+        data = self._download(key + COMPRESSED_SUFFIX)
+        if data is not None:
+            return _checked(key, decompress_copy(key, data, self.max_snapshot_bytes))
         raise SnapshotNotFoundError(f"no copy at {key}")
 
     # Maintenance calls for `catalyst snapshots-compress` (ADR 0046). Each takes a snapshot key,

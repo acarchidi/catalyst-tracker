@@ -99,6 +99,16 @@ def test_each_plain_copy_is_deleted_only_after_its_compressed_copy_was_read_back
     ]
 
 
+def test_a_copy_listed_twice_is_counted_once() -> None:
+    fake = _plain_fake()
+    store = store_for(fake)
+    listed = list(store.list_objects())
+    store.list_objects = lambda *_args, **_kwargs: iter(listed + listed)  # type: ignore[method-assign]
+    report = compress_snapshots(store, dry_run=True)
+    assert (report.objects, report.plain, report.compressed) == (3, 3, 3)
+    assert report.bytes_before == sum(map(len, CONTENTS))
+
+
 def test_running_it_again_changes_nothing() -> None:
     fake = _plain_fake()
     store = store_for(fake)
