@@ -5,22 +5,33 @@ name: Collect (live)
 # exist. Started by hand from the Actions tab or by the coding session. No model calls, so no
 # spend; SEC EDGAR stays under 10 requests a second inside the collector. Safe to re-run:
 # every collector skips what it already stored.
+# The other modes work on the private bucket of source copies (ADR 0046), with no collection:
+# snapshots-usage prints its size by format and by source; snapshots-compress-dry-run counts
+# what compressing the older plain copies would save and changes nothing; snapshots-compress
+# replaces each plain copy with its checked compressed copy, then prints the size again. It is
+# safe to stop and re-run; a run that reaches its time limit leaves the rest for the next run.
+# They print counts and sizes only, never content.
 
 on:
   workflow_dispatch:
     inputs:
+      mode:
+        description: "collect, or work on the stored copies: snapshots-usage, snapshots-compress-dry-run, snapshots-compress"
+        type: choice
+        options: [collect, snapshots-usage, snapshots-compress-dry-run, snapshots-compress]
+        default: collect
       companies:
-        description: "gate1 (50 companies) or coverage (all 466 companies)"
+        description: "collect only: gate1 (50 companies) or coverage (all 466 companies)"
         type: choice
         options: [gate1, coverage]
         default: coverage
       since:
-        description: "Earliest filing date, YYYY-MM-DD"
+        description: "collect only: earliest filing date, YYYY-MM-DD"
         type: string
         required: true
         default: "2026-07-01"
       sources:
-        description: "Comma-separated collectors to run (for example sec), or all"
+        description: "collect only: comma-separated collectors to run (for example sec), or all"
         type: string
         required: true
         default: sec
@@ -38,7 +49,7 @@ jobs:
     runs-on: ubuntu-latest
     # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
     # each step has its own limit (10 + 160 + 5 = 175, under 190 with setup): a step that times
-    # out fails, and the alert says so (ADR 0023).
+    # out fails, and the alert says so (ADR 0023). The snapshot step runs alone, within 160.
     timeout-minutes: 190
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -52,6 +63,7 @@ jobs:
 
       - name: Bring the live database up to date
         id: migrate
+        if: ${{ inputs.mode == 'collect' }}
         timeout-minutes: 10
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -60,6 +72,7 @@ jobs:
 
       - name: Collect
         id: collect
+        if: ${{ inputs.mode == 'collect' }}
         timeout-minutes: 160
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -89,10 +102,40 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
+      # Free: no model call. Reads the bucket and, for the totals by source, the database.
+      # Compression starts no new copy after 140 minutes, so it ends before the step's limit.
+      - name: Measure or compress the stored copies
+        if: ${{ inputs.mode != 'collect' }}
+        timeout-minutes: 160
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          MODE: ${{ inputs.mode }}
+        run: |
+          set +e
+          case "$MODE" in
+            snapshots-usage) uv run catalyst snapshots-usage --by-source > "$RUNNER_TEMP/snapshots.json" ;;
+            snapshots-compress-dry-run)
+              uv run catalyst snapshots-compress --dry-run --max-minutes 140 > "$RUNNER_TEMP/snapshots.json" ;;
+            snapshots-compress)
+              uv run catalyst snapshots-compress --max-minutes 140 > "$RUNNER_TEMP/snapshots.json" ;;
+            *) echo "unknown mode: $MODE"; exit 2 ;;
+          esac
+          status=$?
+          { echo "## $MODE"; echo '```json'; cat "$RUNNER_TEMP/snapshots.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$MODE" = "snapshots-compress" ]; then
+            { echo "## Bucket after compressing"; echo '```json'; uv run catalyst snapshots-usage --by-source; echo '```'; } \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          exit "$status"
+
       # Free: no model call. Runs even when a step failed, so the failure is reported.
       - name: Build alerts from this run
         id: alerts
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && inputs.mode == 'collect' }}
         timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
