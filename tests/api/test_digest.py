@@ -29,9 +29,11 @@ from catalyst.api.views import (
 from catalyst.outreach.digest import (
     MoveKind,
     build_digest,
+    details_from_export,
     latest_issue_date,
     move_kind,
     render_html,
+    render_page,
     week_of,
 )
 from catalyst.schemas import CatalystStatus, CatalystType, DateConfidence, DatePrecision, SourceTier
@@ -356,7 +358,9 @@ class _Tags(HTMLParser):
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         self.tags.append(tag)
         self.links += [value or "" for name, value in attrs if name == "href"]
-        assert all(name == "href" for name, _ in attrs)  # no styles, scripts, or handlers
+        # No styles, scripts, or handlers: a link has its address; the page says its language and encoding.
+        allowed = {"a": {"href"}, "html": {"lang"}, "meta": {"charset"}}.get(tag, set[str]())
+        assert {name for name, _ in attrs} <= allowed
 
     def handle_data(self, data: str) -> None:
         self.text.append(data)
@@ -484,6 +488,7 @@ def test_the_command_writes_the_digest_and_prints_only_counts(
     printed = json.loads(capsys.readouterr().out)
     assert printed == {
         "issue_date": "2026-10-05",
+        "access": "free",
         "moved": 1,
         "new": 0,
         "upcoming": 0,
@@ -549,3 +554,195 @@ def test_the_command_says_plainly_when_the_database_is_unreachable(
     assert "cannot reach the database" in captured.err
     assert "Traceback" not in captured.err
     assert list(tmp_path.iterdir()) == []
+
+
+# --- The paid issue and the page the owner copies into Substack (ADR 0049) ---
+
+
+def _text(html: str) -> str:
+    return " ".join(" ".join(_parsed(html).text).split())
+
+
+def test_the_paid_issue_names_what_the_free_issue_only_counts() -> None:
+    near = _slipped()
+    far_move = _slipped(start=date(2027, 4, 1), end=date(2027, 6, 30), raw="2Q27", name="Far Bio")
+    far_new = _detail(start=date(2027, 3, 15), first_learned=IN_WEEK, name="Later Bio")
+    far_old = _detail(start=date(2027, 9, 1), name="Much Later Bio")
+    records = [near, far_move, far_new, far_old]
+    free = build_digest(records, ISSUE)
+    paid = build_digest(records, ISSUE, access=Access.PAID)
+    assert (free.access, paid.access) == ("free", "paid")
+    assert [m.catalyst.id for m in free.moved] == [near.id]
+    assert [m.catalyst.id for m in paid.moved] == [near.id, far_move.id]
+    assert [c.id for c in paid.new] == [far_new.id]
+    assert [c.id for c in paid.upcoming] == [far_old.id]
+    assert paid.calendar_to is None  # the full calendar has no last day
+    assert (paid.counts.moved_outside_free_calendar, paid.counts.new_outside_free_calendar) == (0, 0)
+    assert (free.counts.moved_outside_free_calendar, free.counts.new_outside_free_calendar) == (1, 1)
+
+
+def test_only_the_paid_issue_carries_the_paid_shape() -> None:
+    records = [_slipped(), _detail(first_learned=IN_WEEK), _detail()]
+    paid = build_digest(records, ISSUE, access=Access.PAID)
+    free = build_digest(records, ISSUE)
+    for shown in [*paid.new, *paid.upcoming, *(m.catalyst for m in paid.moved)]:
+        assert type(shown) is CatalystDetail
+    assert '"history"' in json.dumps(paid.model_dump(mode="json"))
+    for shown in [*free.new, *free.upcoming, *(m.catalyst for m in free.moved)]:
+        assert type(shown) is CatalystSummary
+    assert '"history"' not in json.dumps(free.model_dump(mode="json"))
+
+
+def test_the_paid_issue_leaves_out_what_is_not_on_any_calendar() -> None:
+    resolved = _slipped(status=CatalystStatus.RESOLVED)
+    past = _detail(start=ISSUE - timedelta(days=1))
+    paid = build_digest([resolved, past], ISSUE, access=Access.PAID)
+    assert (paid.moved, paid.new, paid.upcoming) == ([], [], [])
+
+
+def test_the_paid_page_says_who_it_is_for_and_shows_each_date_history() -> None:
+    source = _source("topline data in the first half of 2027")
+    twice = _slipped(start=date(2027, 1, 1), end=date(2027, 6, 30), raw="1H27")
+    earlier = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
+    first_move = [
+        _change("window_start", "2026-04-01", "2026-07-01", earlier, source),
+        _change("window_end", "2026-06-30", "2026-09-30", earlier, source),
+        _change("window_raw_text", "2Q26", "3Q26", earlier, source),
+    ]
+    start = [
+        _change("window_start", None, "2026-04-01", BEFORE_WEEK, source),
+        _change("window_end", None, "2026-06-30", BEFORE_WEEK, source),
+        _change("window_raw_text", None, "2Q26", BEFORE_WEEK, source),
+    ]
+    latest = [
+        _change("window_start", "2026-07-01", "2027-01-01", IN_WEEK, twice.sources[0]),
+        _change("window_end", "2026-09-30", "2027-06-30", IN_WEEK, twice.sources[0]),
+        _change("window_raw_text", "3Q26", "1H27", IN_WEEK, twice.sources[0]),
+    ]
+    twice = twice.model_copy(update={"latest_date_change": latest, "history": [*start, *first_move, *latest]})
+    text = _text(render_html(build_digest([twice], ISSUE, access=Access.PAID)))
+    assert "Full issue for paid subscribers." in text
+    assert "Date history:" in text
+    assert (
+        "15 August 2026: 2Q26 (1 April 2026 to 30 June 2026) to 3Q26 (1 July 2026 to 30 September 2026)"
+        in text
+    )
+    assert (
+        "30 September 2026: 3Q26 (1 July 2026 to 30 September 2026) to 1H27 (1 January 2027 to 30 June 2027)"
+        in text
+    )
+    assert "Outside the next 30 days" not in text
+    free = _text(render_html(build_digest([twice], ISSUE)))
+    assert "Full issue for paid subscribers." not in free
+    assert "Date history:" not in free
+    # Outside the free calendar: counted, never named.
+    assert "2Q26" not in free
+    assert "1H27" not in free
+
+
+def test_the_page_is_a_whole_document_around_the_same_issue() -> None:
+    digest = build_digest([_slipped(), _detail(first_learned=IN_WEEK)], ISSUE)
+    page = render_page(digest)
+    assert page.startswith('<!doctype html>\n<html lang="en">')
+    assert render_html(digest) in page
+    parsed = _parsed(page)
+    assert set(parsed.tags) <= ALLOWED_TAGS | {"html", "head", "meta", "title", "body"}
+    assert parsed.links == [SEC_URL, SEC_URL]
+    assert "<title>Catalyst digest: week of 28 September to 4 October 2026 (free issue)</title>" in page
+    paid = render_page(build_digest([_slipped()], ISSUE, access=Access.PAID))
+    assert "(paid issue)</title>" in paid
+
+
+@given(hostile=st.text(min_size=1, max_size=200))
+def test_source_text_cannot_add_markup_to_the_paid_page_either(hostile: str) -> None:
+    record = _slipped(quote=hostile, raw=hostile, title=hostile, name=hostile)
+    parsed = _parsed(render_page(build_digest([record], ISSUE, access=Access.PAID)))
+    assert parsed.links == [SEC_URL]
+    assert set(parsed.tags) <= ALLOWED_TAGS | {"html", "head", "meta", "title", "body"}
+
+
+def test_the_command_writes_the_paid_page_only_when_asked(
+    seed: Seed,
+    database_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    out, page = tmp_path / "paid.json", tmp_path / "paid.html"
+    arguments = ["digest", "--issue-date", "2026-10-05", "--out", str(out), "--page", str(page)]
+    assert cli.main([*arguments, "--access", "paid"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert printed["access"] == "paid"
+    assert (printed["moved"], printed["upcoming"]) == (1, 2)  # the full calendar: the two later catalysts too
+    written = json.loads(out.read_text(encoding="utf-8"))
+    assert written["access"] == "paid"
+    assert {UUID(c["id"]) for c in written["upcoming"]} == {seed.adcom, seed.pdufa}
+    assert page.read_text(encoding="utf-8").startswith("<!doctype html>")
+    assert cli.main(arguments) == 0
+    assert json.loads(capsys.readouterr().out)["access"] == "free"
+    assert str(seed.pdufa) not in out.read_text(encoding="utf-8")
+
+
+# --- An issue built from the private export, where the database cannot be reached (ADR 0049) ---
+
+
+def test_an_issue_built_from_the_export_equals_one_built_from_the_database(
+    session_factory: sessionmaker[Session],
+    seed: Seed,
+    database_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    export, live, offline = tmp_path / "export.json", tmp_path / "live.json", tmp_path / "offline.json"
+    assert cli.main(["export-catalysts", "--out", str(export)]) == 0
+    arguments = ["digest", "--issue-date", "2026-10-12", "--access", "paid"]
+    assert cli.main([*arguments, "--out", str(live)]) == 0
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:1/nothing_test")
+    capsys.readouterr()
+    assert cli.main([*arguments, "--out", str(offline), "--from-export", str(export)]) == 0
+    assert json.loads(capsys.readouterr().out)["upcoming"] == 3
+    assert offline.read_text(encoding="utf-8") == live.read_text(encoding="utf-8")
+    # The export's registry extras on trials are not part of an issue (ADR 0039).
+    assert '"registry"' not in offline.read_text(encoding="utf-8")
+
+
+def test_details_from_an_export_drop_only_the_registry_extras() -> None:
+    detail = _slipped()
+    item = detail.model_dump(mode="json")
+    item["trials"] = [
+        {"id": str(uuid4()), "nct_id": "NCT00000001", "study_name": None, "registry": {"phase": "3"}}
+    ]
+    loaded = details_from_export({"catalysts": [item]})
+    assert loaded[0].trials[0].nct_id == "NCT00000001"
+    assert loaded[0].model_copy(update={"trials": []}) == detail
+
+
+@pytest.mark.parametrize(
+    "export",
+    [
+        {},
+        {"catalysts": "none"},
+        {"catalysts": [{"id": "not-a-catalyst"}]},
+        {"catalysts": [{**_slipped().model_dump(mode="json"), "price": 12.5}]},
+    ],
+)
+def test_a_file_that_is_not_an_export_is_refused(export: dict[str, object]) -> None:
+    with pytest.raises(ValueError, match="not an export"):
+        details_from_export(export)
+
+
+def test_the_command_refuses_a_file_that_is_not_an_export(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"catalysts": [{"id": 1}]}', encoding="utf-8")
+    out = tmp_path / "d.json"
+    arguments = ["digest", "--issue-date", "2026-10-12", "--out", str(out)]
+    assert cli.main([*arguments, "--from-export", str(bad)]) == 1
+    assert "not an export" in capsys.readouterr().err
+    assert cli.main([*arguments, "--from-export", str(tmp_path / "missing.json")]) == 1
+    assert "cannot read" in capsys.readouterr().err
+    assert not out.exists()

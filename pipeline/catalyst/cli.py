@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import asdict
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -22,9 +22,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst import settings
 from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
+from catalyst.api.access import Access
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
 from catalyst.api.read import published, read_session
+from catalyst.api.views import CatalystDetail
 from catalyst.audit.sample import SAMPLE_SIZE, run_sample_check, week_of
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
@@ -47,7 +49,15 @@ from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
 from catalyst.outreach import prospects
-from catalyst.outreach.digest import DEFAULT_CALENDAR_LIMIT, build_digest, latest_issue_date, render_html
+from catalyst.outreach.digest import (
+    DEFAULT_CALENDAR_LIMIT,
+    PAID_CALENDAR_LIMIT,
+    build_digest,
+    details_from_export,
+    latest_issue_date,
+    render_html,
+    render_page,
+)
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
@@ -212,12 +222,26 @@ def _parser() -> argparse.ArgumentParser:
         help="The Monday the issue is dated, YYYY-MM-DD (default: the latest Monday in New York).",
     )
     digest.add_argument("--out", type=Path, required=True, help="Write the digest (JSON) here.")
+    digest.add_argument(
+        "--from-export",
+        type=Path,
+        help="Build from this file written by export-catalysts, not from the database (ADR 0049).",
+    )
     digest.add_argument("--html", type=Path, help="Also write the digest as an HTML fragment here.")
+    digest.add_argument(
+        "--page", type=Path, help="Also write the digest as a complete web page, to copy from a browser."
+    )
+    digest.add_argument(
+        "--access",
+        choices=[access.value for access in Access],
+        default=Access.FREE.value,
+        help="free: the next 30 days, the rest counted. paid: the full calendar and date histories; "
+        "for paid subscribers only, so never publish it openly (ADR 0049).",
+    )
     digest.add_argument(
         "--calendar-limit",
         type=int,
-        default=DEFAULT_CALENDAR_LIMIT,
-        help=f"List at most this many other catalysts from the next 30 days ({DEFAULT_CALENDAR_LIMIT}).",
+        help=f"Most other catalysts to list (free {DEFAULT_CALENDAR_LIMIT}, paid {PAID_CALENDAR_LIMIT}).",
     )
     keygen = commands.add_parser(
         "seal-keygen",
@@ -769,33 +793,51 @@ def _digest(args: argparse.Namespace) -> int:
     latest = latest_issue_date(_utc_now())
     issue_date: date = args.issue_date or latest
     try:
+        access = Access(args.access)
         build_digest([], issue_date, calendar_limit=args.calendar_limit)  # refuse a bad date before any read
         if issue_date > latest:
             # A later issue would list days past today's free 30-day calendar (ADR 0025, decision 6).
             raise ValueError(
                 f"the latest issue is dated {latest.isoformat()}; a later one cannot be built yet"
             )
-        database = settings.database_url()
+        details = _export_details(args.from_export) if args.from_export else None
+        database = "" if details is not None else settings.database_url()
     except ValueError as error:
         print(f"Nothing written: {error}.", file=sys.stderr)
         return 1
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
-    engine = create_engine(database)
-    try:
-        with read_session(sessionmaker(engine)) as session:
-            issue = build_digest(published(session), issue_date, calendar_limit=args.calendar_limit)
-    except OperationalError:
-        print("Nothing written: cannot reach the database. Is it running? See README.", file=sys.stderr)
-        return 1
-    finally:
-        engine.dispose()
+    if details is None:
+        engine = create_engine(database)
+        try:
+            with read_session(sessionmaker(engine)) as session:
+                details = published(session)
+        except OperationalError:
+            print("Nothing written: cannot reach the database. Is it running? See README.", file=sys.stderr)
+            return 1
+        finally:
+            engine.dispose()
+    issue = build_digest(details, issue_date, access=access, calendar_limit=args.calendar_limit)
     write_export(args.out, issue.model_dump(mode="json"))
     if args.html:
         args.html.write_text(render_html(issue), encoding="utf-8")
-    print(json.dumps({"issue_date": issue_date.isoformat(), **issue.counts.model_dump()}))
+    if args.page:
+        args.page.write_text(render_page(issue), encoding="utf-8")
+    counts = {"issue_date": issue_date.isoformat(), "access": issue.access, **issue.counts.model_dump()}
+    print(json.dumps(counts))
     return 0
+
+
+def _export_details(path: Path) -> list[CatalystDetail]:
+    """Read published catalysts from an export file; a ValueError says plainly what is wrong."""
+    try:
+        export = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise ValueError(f"cannot read {path} as an export ({type(error).__name__})") from error
+    if not isinstance(export, dict):
+        raise ValueError("the file is not an export: it is not a JSON object")
+    return details_from_export(cast(dict[str, object], export))
 
 
 def _seal_keygen(args: argparse.Namespace) -> int:
