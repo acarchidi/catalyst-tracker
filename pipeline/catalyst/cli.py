@@ -24,7 +24,7 @@ from catalyst import settings
 from catalyst.alerts import RoleSpend, build_alerts, load_thresholds, parse_run, spend_today
 from catalyst.api.http import create_app
 from catalyst.api.mcp_server import build_server
-from catalyst.api.read import read_session
+from catalyst.api.read import published, read_session
 from catalyst.audit.sample import SAMPLE_SIZE, run_sample_check, week_of
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
@@ -47,6 +47,7 @@ from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
 from catalyst.outreach import prospects
+from catalyst.outreach.digest import DEFAULT_CALENDAR_LIMIT, build_digest, latest_issue_date, render_html
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
@@ -201,6 +202,23 @@ def _parser() -> argparse.ArgumentParser:
         help="Also list, apart, the claims the publish gate holds for review, with its reasons.",
     )
     _store_arguments(export)  # the held claims' paragraphs come from the stored copies
+    digest = commands.add_parser(
+        "digest",
+        help="Build the weekly digest of published changes (read-only; plain code; sends nothing).",
+    )
+    digest.add_argument(
+        "--issue-date",
+        type=date.fromisoformat,
+        help="The Monday the issue is dated, YYYY-MM-DD (default: the latest Monday in New York).",
+    )
+    digest.add_argument("--out", type=Path, required=True, help="Write the digest (JSON) here.")
+    digest.add_argument("--html", type=Path, help="Also write the digest as an HTML fragment here.")
+    digest.add_argument(
+        "--calendar-limit",
+        type=int,
+        default=DEFAULT_CALENDAR_LIMIT,
+        help=f"List at most this many other catalysts from the next 30 days ({DEFAULT_CALENDAR_LIMIT}).",
+    )
     keygen = commands.add_parser(
         "seal-keygen",
         help="Make a one-off key pair for a sealed export: save the private key, print the public line.",
@@ -365,6 +383,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "api": _serve,
         "mcp": _serve,
         "export-catalysts": _export,
+        "digest": _digest,
         "seal-keygen": _seal_keygen,
         "seal": _seal,
         "unseal": _unseal,
@@ -742,6 +761,34 @@ def _export(args: argparse.Namespace) -> int:
         engine.dispose()
     write_export(args.out, export)
     print(json.dumps(export["counts"]))
+    return 0
+
+
+def _digest(args: argparse.Namespace) -> int:
+    """Write the weekly digest; print only its counts (ADR 0047). Nothing is sent or posted."""
+    issue_date: date = args.issue_date or latest_issue_date(_utc_now())
+    try:
+        build_digest([], issue_date, calendar_limit=args.calendar_limit)  # refuse a bad date before any read
+        database = settings.database_url()
+    except ValueError as error:
+        print(f"Nothing written: {error}.", file=sys.stderr)
+        return 1
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        with read_session(sessionmaker(engine)) as session:
+            issue = build_digest(published(session), issue_date, calendar_limit=args.calendar_limit)
+    except OperationalError:
+        print("Nothing written: cannot reach the database. Is it running? See README.", file=sys.stderr)
+        return 1
+    finally:
+        engine.dispose()
+    write_export(args.out, issue.model_dump(mode="json"))
+    if args.html:
+        args.html.write_text(render_html(issue), encoding="utf-8")
+    print(json.dumps({"issue_date": issue_date.isoformat(), **issue.counts.model_dump()}))
     return 0
 
 
