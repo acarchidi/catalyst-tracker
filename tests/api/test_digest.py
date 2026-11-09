@@ -27,6 +27,7 @@ from catalyst.api.views import (
     WindowView,
 )
 from catalyst.outreach.digest import (
+    Digest,
     MoveKind,
     build_digest,
     details_from_export,
@@ -745,4 +746,103 @@ def test_the_command_refuses_a_file_that_is_not_an_export(
     assert "not an export" in capsys.readouterr().err
     assert cli.main([*arguments, "--from-export", str(tmp_path / "missing.json")]) == 1
     assert "cannot read" in capsys.readouterr().err
+    assert not out.exists()
+
+
+# --- Findings of the separate review of fde3ebc ---
+
+
+def _export_of(
+    *details: CatalystDetail, generated_at: str | None = "2026-10-05T09:00:00+00:00"
+) -> dict[str, object]:
+    export: dict[str, object] = {"catalysts": [detail.model_dump(mode="json") for detail in details]}
+    if generated_at is not None:
+        export["generated_at"] = generated_at
+    return export
+
+
+def test_an_export_made_before_the_week_ended_is_refused() -> None:
+    # It would miss the last days' moves and silently give a short issue.
+    fresh = _export_of(_slipped(), generated_at="2026-10-05T04:00:00+00:00")  # Monday 00:00 in New York
+    assert len(details_from_export(fresh, issue_date=ISSUE)) == 1
+    stale = _export_of(_slipped(), generated_at="2026-10-05T03:59:59+00:00")
+    with pytest.raises(ValueError, match="before the week of this issue ended"):
+        details_from_export(stale, issue_date=ISSUE)
+    for bad in (None, "yesterday", "2026-10-05T09:00:00"):  # missing, unreadable, no time zone
+        with pytest.raises(ValueError, match="not an export"):
+            details_from_export(_export_of(_slipped(), generated_at=bad), issue_date=ISSUE)
+
+
+def test_an_export_whose_times_have_no_time_zone_is_refused() -> None:
+    item = _slipped().model_dump(mode="json")
+    for change in item["history"]:
+        change["learned_at"] = change["learned_at"].replace("Z", "").replace("+00:00", "")
+    with pytest.raises(ValueError, match="not an export"):
+        details_from_export({"catalysts": [item]})
+
+
+def test_an_export_item_without_its_trials_or_not_an_object_is_refused() -> None:
+    item = _slipped().model_dump(mode="json")
+    del item["trials"]
+    with pytest.raises(ValueError, match="not an export"):
+        details_from_export({"catalysts": [item]})
+    with pytest.raises(ValueError, match="not an export"):
+        details_from_export({"catalysts": [list(_slipped().model_dump(mode="json").items())]})
+
+
+def test_a_free_issue_cannot_hold_the_paid_shape_even_when_built_by_hand() -> None:
+    free = build_digest([_slipped()], ISSUE)
+    paid = build_digest([_slipped(), _detail(first_learned=IN_WEEK), _detail()], ISSUE, access=Access.PAID)
+    for field in ("moved", "new", "upcoming"):
+        with pytest.raises(ValueError, match="free issue"):
+            Digest.model_validate({**free.model_dump(), field: getattr(paid, field)})
+    assert Digest.model_validate(paid.model_dump()).access == "paid"
+    assert Digest.model_validate(free.model_dump()) == free
+
+
+def test_a_date_history_line_is_dated_in_new_york() -> None:
+    late = datetime(2026, 8, 16, 2, 0, tzinfo=UTC)  # still 15 August in New York
+    source = _source()
+    record = _slipped().model_copy(
+        update={
+            "history": [
+                _change("window_raw_text", None, "2Q26", BEFORE_WEEK, source),
+                _change("window_raw_text", "2Q26", "3Q26", late, _source("a later release")),
+            ]
+        }
+    )
+    text = _text(render_html(build_digest([record], ISSUE, access=Access.PAID)))
+    assert "15 August 2026: 2Q26 to 3Q26" in text
+
+
+def test_the_page_has_each_document_tag_exactly_once_whatever_the_records_say() -> None:
+    hostile = "</title><title>x</title><meta charset='x'><body><html>"
+    record = _slipped(quote=hostile, raw=hostile, title=hostile, name=hostile)
+    parsed = _parsed(render_page(build_digest([record], ISSUE, access=Access.PAID)))
+    for tag in ("html", "head", "meta", "title", "body"):
+        assert parsed.tags.count(tag) == 1
+
+
+def test_the_command_refuses_to_write_two_outputs_to_one_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:1/nothing_test")
+    out = tmp_path / "d.json"
+    for flag in ("--page", "--html"):
+        assert cli.main(["digest", "--issue-date", "2026-10-05", "--out", str(out), flag, str(out)]) == 1
+        assert "different files" in capsys.readouterr().err
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_the_command_refuses_a_stale_export(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    stale = tmp_path / "export.json"
+    stale.write_text(
+        json.dumps(_export_of(_slipped(), generated_at="2026-10-01T09:00:00+00:00")), encoding="utf-8"
+    )
+    out = tmp_path / "d.json"
+    assert (
+        cli.main(["digest", "--issue-date", "2026-10-05", "--out", str(out), "--from-export", str(stale)])
+        == 1
+    )
+    assert "before the week of this issue ended" in capsys.readouterr().err
     assert not out.exists()

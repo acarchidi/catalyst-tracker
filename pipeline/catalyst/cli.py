@@ -800,7 +800,9 @@ def _digest(args: argparse.Namespace) -> int:
             raise ValueError(
                 f"the latest issue is dated {latest.isoformat()}; a later one cannot be built yet"
             )
-        details = _export_details(args.from_export) if args.from_export else None
+        if len({args.out, args.html, args.page} - {None}) < 1 + bool(args.html) + bool(args.page):
+            raise ValueError("--out, --html, and --page must name different files")
+        details = _export_details(args.from_export, issue_date) if args.from_export else None
         database = "" if details is not None else settings.database_url()
     except ValueError as error:
         print(f"Nothing written: {error}.", file=sys.stderr)
@@ -829,7 +831,7 @@ def _digest(args: argparse.Namespace) -> int:
     return 0
 
 
-def _export_details(path: Path) -> list[CatalystDetail]:
+def _export_details(path: Path, issue_date: date) -> list[CatalystDetail]:
     """Read published catalysts from an export file; a ValueError says plainly what is wrong."""
     try:
         export = json.loads(path.read_text(encoding="utf-8"))
@@ -837,7 +839,7 @@ def _export_details(path: Path) -> list[CatalystDetail]:
         raise ValueError(f"cannot read {path} as an export ({type(error).__name__})") from error
     if not isinstance(export, dict):
         raise ValueError("the file is not an export: it is not a JSON object")
-    return details_from_export(cast(dict[str, object], export))
+    return details_from_export(cast(dict[str, object], export), issue_date=issue_date)
 
 
 def _seal_keygen(args: argparse.Namespace) -> int:

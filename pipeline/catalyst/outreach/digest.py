@@ -24,11 +24,11 @@ from enum import StrEnum
 from html import escape
 from itertools import chain, groupby
 from re import compile as compile_pattern
-from typing import Any, Literal, cast
+from typing import Any, Literal, Self, cast
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 
 from catalyst.api.access import NOTICE, Access, calendar_window, shape
 from catalyst.api.read import DATE_FIELDS, OPEN_STATUSES
@@ -93,10 +93,10 @@ class DigestCounts(View):
 
     moved: int = Field(description="Date moves listed.")
     new: int = Field(description="Newly published catalysts listed.")
-    upcoming: int = Field(description="Other catalysts listed from the next 30 days.")
-    upcoming_not_listed: int = Field(description="Catalysts in the next 30 days past the list limit.")
-    moved_outside_free_calendar: int = Field(description="Date moves outside the next 30 days.")
-    new_outside_free_calendar: int = Field(description="Newly published catalysts outside the next 30 days.")
+    upcoming: int = Field(description="Other catalysts listed from the issue's calendar.")
+    upcoming_not_listed: int = Field(description="Catalysts on the issue's calendar past the list limit.")
+    moved_outside_free_calendar: int = Field(description="Free issue: date moves past the next 30 days.")
+    new_outside_free_calendar: int = Field(description="Free issue: new catalysts past the next 30 days.")
 
 
 class Digest(View):
@@ -113,32 +113,69 @@ class Digest(View):
     upcoming: list[Shaped] = Field(description="The rest of the calendar, earliest first.")
     counts: DigestCounts = Field(description="Totals, including what the free calendar leaves out.")
 
+    @model_validator(mode="after")
+    def _free_issue_holds_only_the_free_shape(self) -> Self:
+        """Refuse a free issue that holds the paid shape, however it was put together (ADR 0025)."""
+        shown = [*self.new, *self.upcoming, *(move.catalyst for move in self.moved)]
+        if self.access == Access.FREE.value and any(
+            type(catalyst) is not CatalystSummary for catalyst in shown
+        ):
+            raise ValueError("a free issue may hold only the free shape of a catalyst")
+        return self
 
-def details_from_export(export: Mapping[str, object]) -> list[CatalystDetail]:
+
+def details_from_export(
+    export: Mapping[str, object], *, issue_date: date | None = None
+) -> list[CatalystDetail]:
     """Read the published catalysts out of the private export (`catalyst export-catalysts`; ADR 0034).
 
     The export lists them exactly as the read API shows a paid caller, plus registry values on
     each trial that no quote states (ADR 0039). Those extras are dropped; anything else that is
-    not a published catalyst's shape refuses the whole file.
+    not a published catalyst's shape refuses the whole file. Its held claims are never read.
+
+    With `issue_date`, the export must have been made after that issue's week ended. An older
+    one lacks the last days' changes and would give a short issue without saying so.
     """
+    if issue_date is not None:
+        _check_export_time(export.get("generated_at"), week_of(issue_date)[1])
     items = export.get("catalysts")
     if not isinstance(items, list):
         raise ValueError("the file is not an export: it has no list of catalysts")
     details: list[CatalystDetail] = []
     for item in cast(list[object], items):
         try:
+            if not isinstance(item, Mapping):
+                raise TypeError("a catalyst is not an object")
             record = dict(cast(Mapping[str, Any], item))
-            trials = cast(list[Mapping[str, Any]], record.get("trials", []))
+            trials = cast(list[Mapping[str, Any]], record["trials"])
             record["trials"] = [
                 {key: value for key, value in trial.items() if key != "registry"} for trial in trials
             ]
-            details.append(CatalystDetail.model_validate(record))
-        except (TypeError, ValueError, AttributeError) as error:
+            detail = CatalystDetail.model_validate(record)
+            if any(change.learned_at.tzinfo is None for change in detail.history):
+                raise ValueError("a time has no time zone")
+            details.append(detail)
+        except (TypeError, ValueError, AttributeError, KeyError) as error:
             kind = type(error).__name__
             raise ValueError(
                 f"the file is not an export: a catalyst lacks the published shape ({kind})"
             ) from error
     return details
+
+
+def _check_export_time(generated_at: object, week_end: datetime) -> None:
+    """Refuse an export with no readable time, or one made before the issue's week ended."""
+    try:
+        made = datetime.fromisoformat(generated_at) if isinstance(generated_at, str) else None
+    except ValueError:
+        made = None
+    if made is None or made.tzinfo is None:
+        raise ValueError("the file is not an export: it does not say when it was made")
+    if made < week_end:
+        raise ValueError(
+            f"the export was made {made.astimezone(UTC).isoformat()}, before the week of this issue ended "
+            f"({week_end.isoformat()}); make a new export"
+        )
 
 
 def week_of(issue_date: date) -> tuple[datetime, datetime]:
