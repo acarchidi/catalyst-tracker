@@ -158,7 +158,8 @@ def build_digest(
         listed = detail.window.start <= last and detail.window.end >= first
         kind = _news(detail, week)
         if not listed:
-            if kind in outside:
+            # Only what lies past the calendar's last day is "outside"; a window already past is neither.
+            if kind in outside and detail.window.start > last:
                 outside[kind] += 1
         elif kind == "moved":
             moved.append(_move(detail))
@@ -285,12 +286,27 @@ def _label(catalyst: CatalystSummary) -> str:
     return f"Date label: {_CONFIDENCE_LABELS[catalyst.date_confidence]}."
 
 
+def _is_plain_https(url: str) -> bool:
+    """Say whether an address may become a link: plain https, a host, and nothing that could mislead.
+
+    A sign-in part ("https://sec.gov@other.example/") and characters that do not print, such as
+    ones that reverse the reading order, are refused; so is anything `urlsplit` cannot read.
+    """
+    if not _PLAIN_HTTPS.fullmatch(url) or not url.isprintable():
+        return False
+    try:
+        parts = urlsplit(url)
+        host = parts.hostname
+    except ValueError:
+        return False
+    return parts.scheme == "https" and bool(host) and "@" not in parts.netloc
+
+
 def _source_lines(source: SourceView) -> list[str]:
     label = escape(
         f"{source.publisher}, {source.document_type}, published {_day(source.published_at.date())}"
     )
-    parts = urlsplit(source.url) if _PLAIN_HTTPS.fullmatch(source.url) else None
-    if parts is not None and parts.scheme == "https" and parts.netloc:
+    if _is_plain_https(source.url):
         cited = f'<a href="{escape(source.url, quote=True)}">{label}</a>'
     else:
         cited = f"{label}, {escape(source.url)}"

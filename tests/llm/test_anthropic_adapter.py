@@ -131,6 +131,8 @@ def test_the_key_goes_only_to_anthropic_whatever_the_environment_says(
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "someone-elses-token")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "someone-elses-key")
+    monkeypatch.setenv("ANTHROPIC_PROFILE", "someone-elses-profile")
+    monkeypatch.setenv("ANTHROPIC_IDENTITY_TOKEN", "someone-elses-identity-token")
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:

@@ -34,15 +34,16 @@ Two more facts shape the decision:
    - **Schedule:** an issue is dated on a Monday and reports the seven days before it, in New York time. Any other date is refused. An issue is never built early because of a market event (ADR 0020, decision 2).
    - **Three lists.** A catalyst is listed once, under the first that fits:
      - *Dates that moved:* the latest date move was learned in the week. Each shows the window now, the window before, and how it changed.
-     - *New on the calendar:* the catalyst was first published in the week.
+     - *New on the calendar:* the catalyst's first value was learned in the week. A record that waited in review across a week's end is therefore listed on the calendar, not as new.
      - *Also on the calendar:* everything else in the next 30 days, earliest first, up to a limit (25 by default); the rest are counted.
    - **How a window changed** is one of five words, decided by the days alone: *later* (both ends moved later), *earlier* (both ends moved earlier), *narrowed* (the new window lies inside the old), *widened* (the old lies inside the new), or *restated* (the same days, written another way). A window that grew at one end only is *widened*, never *later*.
    - **Every entry carries** the company, the title, the date as the source wrote it, the date label, the verbatim quote, and the deep link.
-   - **Same records, same issue.** Building an issue again changes nothing.
-3. **The digest holds only what a free caller may see** (spec: Offering; ADR 0025, decision 6). It lists only open catalysts whose window overlaps the next 30 days, in the free shape (`CatalystSummary`), with only the latest date change. A date move or a new catalyst outside the next 30 days is counted, and the issue states the two counts. It never names those records.
+   - **Same records, same issue.** Building an issue again from the same data changes nothing. An issue is built from the data as it stands, so building an old week later can differ: a date that moved again since then shows only its latest move.
+   - **No issue ahead of time.** The command refuses a Monday later than the latest one. A later issue would list days past today's free calendar.
+3. **The digest holds only what a free caller may see** (spec: Offering; ADR 0025, decision 6). It lists only open catalysts whose window overlaps the next 30 days, in the free shape (`CatalystSummary`), with only the latest date change. A date move or a new catalyst outside the next 30 days is counted, and the issue states the two counts. It never names those records. Only a record whose window starts after the 30 days is counted; an open record whose window has already passed is neither listed nor counted.
 4. **Output is JSON and an HTML fragment.** The website, the newsletter sender, and any feed read the JSON. The HTML has no styles, scripts, or attributes except link addresses.
    - Every word that comes from a record is escaped. Quotes are verbatim source text, so they are untrusted.
-   - A source address becomes a link only when it is a plain https address. Any other address is shown as text.
+   - A source address becomes a link only when it is a plain https address with a host, no sign-in part, and no characters that do not print. Any other address is shown as text.
    - Markdown was rejected as the output: many Markdown readers turn a bare address inside a quote into a link, and escaping cannot stop that reliably.
 5. **The digest sends nothing.** `catalyst digest` writes files and prints counts. The sender (ADR 0020), the sign-up form, and the schedule are separate roadmap items. The sender stays off until business setup gives a postal address, a sending service, and a sending domain.
 6. **Waiting on the owner.** Nothing below is built or changed until the owner decides:

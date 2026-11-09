@@ -63,4 +63,4 @@ To check that no `do_not_contact` row was deleted, compare against an earlier co
 
 ## The weekly digest (ADR 0047)
 
-`uv run catalyst digest --out var/digest.json --html var/digest.html` builds one issue from the published catalysts: dates that moved in the week, new catalysts, and the next 30 days. Plain code builds it; no AI writes any of it. It only writes the two files. **Nothing is sent to anyone.** Add `--issue-date 2026-11-09` (a Monday) to build a past issue again.
+`uv run catalyst digest --out var/digest.json --html var/digest.html` builds one issue from the published catalysts: dates that moved in the week, new catalysts, and the next 30 days. Plain code builds it; no AI writes any of it. It only writes the two files. **Nothing is sent to anyone.** Add `--issue-date 2026-11-09` (a Monday, not in the future) to build the issue for that week from the data as it stands now.

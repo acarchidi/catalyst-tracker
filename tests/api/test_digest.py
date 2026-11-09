@@ -301,6 +301,14 @@ def test_what_lies_outside_the_free_calendar_is_counted_never_listed() -> None:
         assert str(hidden.id) not in dumped
 
 
+def test_an_open_catalyst_whose_window_has_passed_is_not_counted_as_outside_the_next_30_days() -> None:
+    overdue = _slipped(start=date(2026, 9, 1), end=date(2026, 9, 20), raw="September 2026")
+    digest = build_digest([overdue], ISSUE)
+    assert (digest.moved, digest.new, digest.upcoming) == ([], [], [])
+    assert digest.counts.moved_outside_free_calendar == 0
+    assert "Outside the next 30 days" not in render_html(digest)
+
+
 def test_a_long_calendar_is_cut_to_the_limit_and_the_rest_counted() -> None:
     many = [_detail(start=ISSUE + timedelta(days=n)) for n in range(1, 8)]
     digest = build_digest(many, ISSUE, calendar_limit=5)
@@ -438,6 +446,11 @@ def test_markup_in_a_quote_is_shown_as_the_words_it_is(hostile: str) -> None:
         "data:text/html,<script>alert(1)</script>",
         'https://www.sec.gov/a" onclick="x',
         "https://www.sec.gov/a b",
+        "https://[",
+        "https://a]b/c",
+        "https://[::1/x",
+        "https://www.sec.gov@evil.example/x",
+        "https://www.sec.gov/\u202egnp.exe",
     ],
 )
 def test_an_address_that_is_not_a_plain_https_link_is_shown_as_text_never_as_a_link(url: str) -> None:
@@ -508,6 +521,23 @@ def test_the_command_refuses_a_day_that_is_not_a_monday(
     assert cli.main(["digest", "--issue-date", "2026-10-06", "--out", str(tmp_path / "d.json")]) == 1
     assert "Monday" in capsys.readouterr().err
     assert list(tmp_path.iterdir()) == []
+
+
+def test_the_command_refuses_an_issue_dated_after_the_latest_monday(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # A later issue would name catalysts past today's free 30-day calendar (ADR 0025, decision 6).
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://postgres@127.0.0.1:1/nothing_test")
+    monkeypatch.setattr(cli, "_utc_now", lambda: datetime(2026, 10, 7, 12, 0, tzinfo=UTC))
+    out = tmp_path / "d.json"
+    assert cli.main(["digest", "--issue-date", "2026-10-12", "--out", str(out)]) == 1
+    captured = capsys.readouterr()
+    assert "the latest issue is dated 2026-10-05" in captured.err
+    assert captured.out == ""
+    assert list(tmp_path.iterdir()) == []
+    # The latest Monday itself is allowed: it gets as far as the database.
+    assert cli.main(["digest", "--issue-date", "2026-10-05", "--out", str(out)]) == 1
+    assert "cannot reach the database" in capsys.readouterr().err
 
 
 def test_the_command_says_plainly_when_the_database_is_unreachable(

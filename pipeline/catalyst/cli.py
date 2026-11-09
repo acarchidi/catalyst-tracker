@@ -766,9 +766,15 @@ def _export(args: argparse.Namespace) -> int:
 
 def _digest(args: argparse.Namespace) -> int:
     """Write the weekly digest; print only its counts (ADR 0047). Nothing is sent or posted."""
-    issue_date: date = args.issue_date or latest_issue_date(_utc_now())
+    latest = latest_issue_date(_utc_now())
+    issue_date: date = args.issue_date or latest
     try:
         build_digest([], issue_date, calendar_limit=args.calendar_limit)  # refuse a bad date before any read
+        if issue_date > latest:
+            # A later issue would list days past today's free 30-day calendar (ADR 0025, decision 6).
+            raise ValueError(
+                f"the latest issue is dated {latest.isoformat()}; a later one cannot be built yet"
+            )
         database = settings.database_url()
     except ValueError as error:
         print(f"Nothing written: {error}.", file=sys.stderr)
