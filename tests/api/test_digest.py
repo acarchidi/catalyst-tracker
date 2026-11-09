@@ -781,6 +781,14 @@ def test_an_export_whose_times_have_no_time_zone_is_refused() -> None:
         details_from_export({"catalysts": [item]})
 
 
+def test_an_export_whose_latest_date_change_has_no_time_zone_is_refused() -> None:
+    item = _slipped().model_dump(mode="json")
+    for change in item["latest_date_change"]:
+        change["learned_at"] = change["learned_at"].replace("Z", "").replace("+00:00", "")
+    with pytest.raises(ValueError, match="not an export"):
+        details_from_export({"catalysts": [item]})
+
+
 def test_an_export_item_without_its_trials_or_not_an_object_is_refused() -> None:
     item = _slipped().model_dump(mode="json")
     del item["trials"]
@@ -831,6 +839,12 @@ def test_the_command_refuses_to_write_two_outputs_to_one_file(
     for flag in ("--page", "--html"):
         assert cli.main(["digest", "--issue-date", "2026-10-05", "--out", str(out), flag, str(out)]) == 1
         assert "different files" in capsys.readouterr().err
+    # The same file named another way is still the same file.
+    (tmp_path / "sub").mkdir()
+    again = str(tmp_path / "sub" / ".." / "d.json")
+    assert cli.main(["digest", "--issue-date", "2026-10-05", "--out", str(out), "--page", again]) == 1
+    assert "different files" in capsys.readouterr().err
+    (tmp_path / "sub").rmdir()
     assert list(tmp_path.iterdir()) == []
 
 

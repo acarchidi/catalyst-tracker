@@ -152,7 +152,9 @@ def details_from_export(
                 {key: value for key, value in trial.items() if key != "registry"} for trial in trials
             ]
             detail = CatalystDetail.model_validate(record)
-            if any(change.learned_at.tzinfo is None for change in detail.history):
+            if any(
+                change.learned_at.tzinfo is None for change in (*detail.history, *detail.latest_date_change)
+            ):
                 raise ValueError("a time has no time zone")
             details.append(detail)
         except (TypeError, ValueError, AttributeError, KeyError) as error:
