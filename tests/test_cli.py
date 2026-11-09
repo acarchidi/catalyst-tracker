@@ -792,6 +792,14 @@ def test_prospects_check_says_plainly_when_there_is_no_list(
     assert captured.out == ""
     assert "kept outside the repository" in captured.err
     assert "Traceback" not in captured.err
+    # A missing earlier copy is a different mistake and says so.
+    missing = str(tmp_path / "earlier.csv")
+    assert main(["prospects-check", "--file", str(_PROSPECT_SAMPLE), "--previous", missing]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "No earlier copy" in captured.err
+    assert "--previous" in captured.err
+    assert "kept outside the repository" not in captured.err
 
 
 _PROSPECT_HEADER = (

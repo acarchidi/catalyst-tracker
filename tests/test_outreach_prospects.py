@@ -74,10 +74,13 @@ def test_a_list_is_written_in_its_own_order_and_format(tmp_path: Path) -> None:
 
 
 def test_the_real_list_cannot_be_committed_to_the_public_repository() -> None:
-    # Owner decision 2026-11-09 (ADR 0048): the list is kept privately. Git ignores the place a
-    # local copy goes, so `git add` leaves it out.
+    # Owner decision 2026-11-09 (ADR 0048): the list is kept privately. Git ignores everything in
+    # the folder a local copy goes in, except the README, so a normal `git add` leaves a copy out.
     ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
-    assert "outreach/*.csv" in ignored
+    assert "outreach/*" in ignored
+    exceptions = [line for line in ignored if line.startswith("!") and "outreach" in line]
+    assert exceptions == ["!outreach/README.md"]
+    assert ignored.index("outreach/*") < ignored.index("!outreach/README.md")
     assert DEFAULT_PATH.as_posix() == "outreach/prospects.csv"
 
 

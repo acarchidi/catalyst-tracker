@@ -13,11 +13,11 @@ On 2026-11-09 the owner asked for the list to be taken off GitHub and kept.
 ## Decision
 
 1. **The list is no longer a file in the repository.** `outreach/prospects.csv` is removed. The owner holds the list privately; a copy was handed to the owner on 2026-11-09 (209 rows, 115 with an email, all `new`; SHA-256 `c87ad408…9d0dc9`).
-2. **Git ignores the place a working copy goes.** `.gitignore` lists `outreach/*.csv`, so a copy saved at `outreach/prospects.csv` for a check is left out by `git add`. A test fails if that line is removed.
+2. **Git ignores the place a working copy goes.** `.gitignore` ignores everything in `outreach/` except its README, so a copy saved at `outreach/prospects.csv` for a check, or anywhere under that folder, is left out by a normal `git add`. A test fails if that rule is removed or an exception is added. A forced add (`git add -f`), or a copy saved outside `outreach/`, is not stopped; keep copies there only.
 3. **The checker works on any copy.** `catalyst prospects-check` reads `outreach/prospects.csv` by default, or the file named with `--file`. With no file there, it says the list is kept outside the repository and ends with code 2. The rules for rows, statuses, and `do_not_contact` are unchanged (ADR 0020).
-4. **Tests use four made-up contacts** (`tests/fixtures/outreach/prospects_sample.csv`, all on `example` addresses). Two existing tests read the real list and counted its rows; they now read the sample. They check the same things: the file format loads, and a list is written back in its own order.
+4. **Tests use four made-up contacts** (`tests/fixtures/outreach/prospects_sample.csv`, all on `example` addresses). Three existing tests read the real list and counted its rows (two in `tests/test_outreach_prospects.py`, one in `tests/test_cli.py`); they now read the sample. They check the same things: the file format loads, and a list is written back in its own order.
 5. **No contact's details go into any committed file, pull request, issue, or job log from now on.** Counts are fine. The marketing agent's drafts and the approval record (ADR 0020) will name recipients only in the owner's private page, as the review queue does for held claims (ADR 0042).
-6. **The old copy is still in the repository's history.** Removing a file does not remove it from earlier commits (it was added in commit `d3423e0`). Anyone can still read that version. Taking it out of history means rewriting main's history and asking GitHub to drop its cached copies, or making the repository private. Both are the owner's decision; neither is done here.
+6. **The old copy is still in the repository's history.** Removing a file does not remove it from earlier commits (it was added in commit `d3423e0`). Anyone can still read that version. Taking it out of history means rewriting main's history and asking GitHub to drop its cached copies, or making the repository private. Both are the owner's decision. Asked on 2026-11-09, the owner chose to leave history as it is: every address on the list is already public.
 
 ## Alternatives
 
@@ -28,6 +28,7 @@ On 2026-11-09 the owner asked for the list to be taken off GitHub and kept.
 
 ## Consequences
 
+- `catalyst prospects-check` still names the organization and person of a removed `do_not_contact` row in its error text. No job runs it on the real list now; that text must change to a line number before any job does.
 - CI no longer checks the real list on every pull request. The owner's copy is checked when a session has it: `uv run catalyst prospects-check`.
 - A coding session cannot read the list unless the owner hands it over. Drafting notes to named people (ADR 0020) starts with that step.
 - If the owner's copy is lost, the 2026-10-18 version can be recovered from history, unless history is rewritten (decision 6).

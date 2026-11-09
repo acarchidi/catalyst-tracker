@@ -8,5 +8,6 @@ node_modules/
 .coverage
 var/
 
-# The outreach prospect list is kept outside the repository (ADR 0048). A local copy here is never committed.
-outreach/*.csv
+# The outreach prospect list is kept outside the repository (ADR 0048). A local copy in that folder is left out by a normal `git add`.
+outreach/*
+!outreach/README.md

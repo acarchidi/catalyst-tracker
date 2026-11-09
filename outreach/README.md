@@ -2,7 +2,7 @@
 
 The prospect list names people and organizations the marketing agent may later draft notes for (ADR 0020). It is a research list, not a mailing list. **Nothing is sent to anyone from it.** A note goes out only after the owner approves its exact text, its exact recipients, and its channel.
 
-**The list is not in this repository** (owner decision 2026-11-09; ADR 0048). The repository is public, so the owner keeps the list privately. To check a copy, save it here as `outreach/prospects.csv` and run `uv run catalyst prospects-check`. Git ignores that file, so it cannot be committed by mistake. Never paste a contact's details into a pull request, an issue, or a commit.
+**The list is not in this repository** (owner decision 2026-11-09; ADR 0048). The repository is public, so the owner keeps the list privately. To check a copy, save it here as `outreach/prospects.csv` and run `uv run catalyst prospects-check`. Git ignores everything in this folder except this README, so a normal `git add` leaves the copy out. Never paste a contact's details into a pull request, an issue, or a commit.
 
 The first 209 rows were checked on 2026-10-17. 115 of them have a published email; the other 94 have only a contact page.
 

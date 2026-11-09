@@ -13,7 +13,7 @@ ADR 0047 proposed four features that bring readers or raise revenue per reader. 
 ### 1. Embeddable calendar for newsletter writers (Phase 2, after the public site)
 
 - **What:** a small read-only calendar a writer can place on their own page. It shows the free 30-day calendar, optionally narrowed to a list of tickers or one catalyst type. Each entry shows the company, the date as written, the date label, and a link to our page for that catalyst, where the quote and source are.
-- **Why:** the 26 newsletter writers on the prospect list need a calendar and do not have a sourced one. Each embed is a standing link back to us.
+- **Why:** about 20 rows of the prospect list are newsletters, and a writer who covers catalysts needs a calendar. Whether each already has a sourced one was not checked. Each embed is a standing link back to us.
 - **Forms:** a web frame served from our site, and, for services that do not allow frames, a weekly block of plain HTML the writer pastes. Whether Substack's editor accepts a frame was not confirmed; it is tested before this is offered to Substack writers.
 - **Rules:**
   - free shape only, built from the same code path as the free API, so it cannot carry a paid field;
@@ -27,7 +27,7 @@ ADR 0047 proposed four features that bring readers or raise revenue per reader. 
 - **What:** a form on every public record: "Report an error". The sender gives the record, what is wrong, and a link to a primary document that shows it. Anyone may use it, including the company's investor-relations staff.
 - **How a request is handled:**
   1. Plain code checks it: an https link, a length limit, a rate limit per sender, a spam trap. Emails and phone numbers are removed from the free text.
-  2. Plain-code collectors fetch the linked document and store a copy with its hash, as for every source.
+  2. Plain-code collectors fetch the linked document and store a copy with its hash, as for every source. They fetch only from hosts on a reviewed list of primary sources (SEC EDGAR, ClinicalTrials.gov, FDA, the Federal Register, the wire services, and covered companies' own investor sites), never a private or internal address, and under each host's robots.txt and rate limit. A link to any other host is refused with a plain message.
   3. The document goes through the normal path: extractor, verification, publish gate. The request's own words never reach an agent and are never a source. Only the fetched document can support a value.
   4. A change that results is recorded as a correction, alerts watchers, and appears on the corrections page (spec: Corrections).
   5. The owner sees the request's text only in the private review queue, escaped.
@@ -36,15 +36,15 @@ ADR 0047 proposed four features that bring readers or raise revenue per reader. 
 
 ### 3. Professional tier (Phase 10, with the public REST API)
 
-- **What:** a higher-priced plan for funds, analysts, and business-development teams. It contains what the spec already plans to charge more for: the REST API, the full MCP tools at higher limits, the daily file of changes, webhooks, and CSV export, plus three seats on one bill.
+- **What:** a higher-priced plan for funds, analysts, and business-development teams. It holds everything in the $15 tier, plus what ADR 0030 already places in a separate API tier (the public REST API, API keys, the daily file of changes, and higher metered limits), plus three seats on one bill. The $15 tier loses nothing: webhooks, CSV export, and the full MCP tools stay in it, as the spec's Offering table says.
 - **Price:** the owner decides, together with ADR 0029's possible higher tier and ADR 0030's API tier ("about $50 a month until the owner decides"). These three are one decision: one professional plan, not three.
 - **Rules:** the same data and the same rules as every other tier. No price series, no advice, the notice on every response. Limits and metering by plan, as ADR 0030 says.
-- **Until it ships:** nothing is sold under this name. Substack's optional "founding member" plan may be switched on by the owner as support for the project, described truthfully, with no promise of features that do not exist yet.
+- **Until it ships:** nothing is sold under this name. Substack's optional "founding member" plan is the owner's switch. It takes payment, so it falls under ADR 0049, decision 5, with everything that decision leaves for the owner to settle. If switched on, it is described truthfully as support for the project, with no promise of features that do not exist yet.
 - **Needs:** accounts, billing, API keys, and metering (Phases 3 and 10). **Checkpoint:** CP6 (billing).
 
 ### 4. Referral credit (now on Substack; later with accounts)
 
-- **Now:** Substack has its own referral program, which gives a subscriber free paid months for bringing in new subscribers. The owner may switch it on in Substack's settings. No code is needed. Its current terms are read on Substack's own page before it is switched on; they were not confirmed in this research.
+- **Now:** Substack has its own referral program, which gives a subscriber free paid months for bringing in new subscribers. It is the owner's switch in Substack's settings, and it rests on paid plans, so it falls under ADR 0049, decision 5. No code is needed. Its current terms are read on Substack's own page before it is switched on; they were not confirmed in this research.
 - **Later, with our own accounts (Phase 3):** a paid subscriber gets a personal link. When someone new subscribes through it and stays paid for 30 days, the referrer gets one free month.
   - Credit is free months only, never cash, at most 12 months a year per subscriber.
   - No credit for referring oneself: the same card, email, or account never counts.

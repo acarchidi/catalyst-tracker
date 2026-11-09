@@ -48,7 +48,7 @@ Two more facts shape the decision:
 5. **The digest sends nothing.** `catalyst digest` writes files and prints counts. The sender (ADR 0020), the sign-up form, and the schedule are separate roadmap items. The sender stays off until business setup gives a postal address, a sending service, and a sending domain.
 6. **The owner's answers (2026-11-09).** This decision first listed three questions as waiting. The owner answered all three the same day:
    - **(a) Each issue needs the owner's approval.** ADR 0020 stands; no template is approved once. ADR 0049 says how: the owner publishes each issue on Substack by hand.
-   - **(b) Date moves outside the next 30 days are counted in the free issue, never named.** This is what decision 3 already does. They are named only in the paid issue (ADR 0049).
+   - **(b) Date moves outside the next 30 days are counted in the free issue, never named.** This is what decision 3 already does. They would be named only in a paid issue, which is the coding agent's proposal, not part of the owner's answer (ADR 0049, decision 5).
    - **(c) All four proposed features join the roadmap:** an embeddable calendar for newsletter writers, correction requests, a professional tier, and referral credit. ADR 0050 specifies them.
 
 ## Alternatives
