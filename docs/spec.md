@@ -22,7 +22,7 @@ The product rests on five openings found in the [competitor matrix](https://clau
 | Advice | Never personalized investment advice |
 | Verification | Independent cross-checks; any model provider can be plugged in |
 | Human role | You settle the records the weekly sample checker disagrees on, and the flagged queue (owner decision 2026-10-17) |
-| Deferred | Business setup (entity, terms, billing). Distribution starts on Substack (owner decision 2026-11-09; ADR 0049) |
+| Deferred | Business setup (entity, terms, billing for our own checkout). Distribution starts on Substack (owner decision 2026-11-09; ADR 0049) |
 
 **Not in v1:** seconds-level latency, institutional features (SSO, security audits, bulk feeds), and a native mobile app.
 
@@ -51,10 +51,12 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Research reports (Phase 11) | Summary page with one headline figure and every source | Full reports (or sold one at a time; owner decides; ADR 0032) |
 | Export | Calendar (.ics) | Calendar and CSV |
 | MCP access for AI agents | Calendar tools, rate-limited | All tools, higher limits |
-| Weekly digest, on Substack for now (ADR 0047, ADR 0049) | Each Monday: the next 30 days, the dates in them that moved, and counts for everything outside | Each Monday: the full calendar, every date that moved, and each catalyst's date history |
+| Weekly digest, on Substack for now (ADR 0047, ADR 0049) | Each Monday: the next 30 days, the dates in them that moved this week, and counts for everything outside | Each Monday: the calendar from the issue date on (the first 200 entries listed, the rest counted), every date that moved this week, and each listed catalyst's date history. The paid issue was proposed by the coding agent; the owner may change or drop it |
 | Embeddable calendar for other sites (ADR 0050) | The free calendar, with a link back | The same |
 | Correction requests (ADR 0050) | Anyone may send one, with a link to a primary document | The same |
-| Referral credit (ADR 0050) | No | Free months for bringing in paid subscribers |
+| Referral credit (ADR 0050) | No | On Substack for now: Substack's own referral program, on its terms, switched on by the owner. With our own accounts: free months for bringing in paid subscribers |
+
+For now, a paid subscription on Substack carries only the paid weekly digest. The rest of the paid column (watchlists, alerts, the research assistant, exports, and the other rows) comes with our own accounts in Phase 3, and nothing on Substack promises it earlier (ADR 0049, ADR 0050).
 
 A professional tier for funds, analysts, and business-development teams is planned with the public REST API (ADR 0050): it holds everything in the $15 tier plus the API tier and three seats, and the $15 tier loses nothing. Its price is the owner's to set.
 
@@ -421,7 +423,7 @@ Launch running costs should be roughly $270 to $1,080 a month, so about 19 to 76
 | Email and push | Alerts and newsletters | $0 to $30 |
 | Domain, monitoring, other |  | $20 to $50 |
 
-**Per subscriber:** Stripe's standard US card fee of 2.9% plus $0.30 takes about $0.74 of each $15 charge, leaving about $14.26. An annual plan cuts that fee share.
+**Per subscriber:** Stripe's standard US card fee of 2.9% plus $0.30 takes about $0.74 of each $15 charge, leaving about $14.26. An annual plan cuts that fee share. On Substack, its 10% cut comes off as well, which leaves about $12.70 of each $15 monthly charge, so the subscriber counts in this section rise by about an eighth while subscriptions are sold there (ADR 0049; an estimate).
 
 **Revenue targets at $15:** $200,000 a year needs about 1,170 subscribers after card fees; $500,000 needs about 2,920.
 
