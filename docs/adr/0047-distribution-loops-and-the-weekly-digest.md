@@ -1,6 +1,6 @@
 # 0047 — Distribution loops, and a weekly digest built by plain code
 
-- **Status:** accepted (decisions 1 to 5); decision 6 lists what waits for the owner
+- **Status:** accepted; the owner answered decision 6 on 2026-11-09
 - **Date:** 2026-11-09
 - **Roadmap item:** Phase 2, "Marketing and outreach agent" (owner request 2026-11-09)
 
@@ -46,15 +46,15 @@ Two more facts shape the decision:
    - A source address becomes a link only when it is a plain https address with a host, no sign-in part, and no characters that do not print. Any other address is shown as text.
    - Markdown was rejected as the output: many Markdown readers turn a bare address inside a quote into a link, and escaping cannot stop that reliably.
 5. **The digest sends nothing.** `catalyst digest` writes files and prints counts. The sender (ADR 0020), the sign-up form, and the schedule are separate roadmap items. The sender stays off until business setup gives a postal address, a sending service, and a sending domain.
-6. **Waiting on the owner.** Nothing below is built or changed until the owner decides:
-   - **(a) One approval for the digest's template, or an approval for each issue?** ADR 0020 declined "templates approved once" for the newsletter. That was decided when a model was to write each issue. The digest has no model text, goes only to people who signed up, and keeps a fixed day. The question is whether it may go out on a template approved once, as the X feed does. Until the owner answers, ADR 0020 stands and each issue needs approval.
-   - **(b) Whether date moves outside the next 30 days may be named in the free digest.** They are the most newsworthy records and also what the paid tier sells. Today they are counted only.
-   - **(c) New features proposed, not on the roadmap:** a free calendar that newsletter writers can embed with a link back; a form for a company to request a correction with a source; a higher-priced tier for professional users; a referral credit.
+6. **The owner's answers (2026-11-09).** This decision first listed three questions as waiting. The owner answered all three the same day:
+   - **(a) Each issue needs the owner's approval.** ADR 0020 stands; no template is approved once. ADR 0049 says how: the owner publishes each issue on Substack by hand.
+   - **(b) Date moves outside the next 30 days are counted in the free issue, never named.** This is what decision 3 already does. They would be named only in a paid issue, which is the coding agent's proposal, not part of the owner's answer (ADR 0049, decision 5).
+   - **(c) All four proposed features join the roadmap:** an embeddable calendar for newsletter writers, correction requests, a professional tier, and referral credit. ADR 0050 specifies them.
 
 ## Alternatives
 
 - **A model writes each issue (ADR 0020 as first written).** Better prose, but each issue then needs a full read by the owner, and one invented sentence would damage the product's central claim. Kept for one-off notes only.
-- **List every date move, including those outside the next 30 days.** A stronger free issue, but it gives away the paid date history. Left as owner decision 6(b).
+- **List every date move, including those outside the next 30 days.** A stronger free issue, but it gives away the paid date history. The owner chose counts only (decision 6b).
 - **Markdown output.** Easier to read in a pull request, but unsafe for untrusted quotes (decision 4).
 - **Build the sender first.** The sender needs accounts and a postal address that do not exist yet. The digest needs none.
 
@@ -64,4 +64,4 @@ Two more facts shape the decision:
 - The first issue can be previewed as soon as a live export or a database is at hand. Its preview goes to the owner before any sending is built (CP7 still gates the first send).
 - Adding a section to the digest means deciding whether a free caller may see it. The test that checks the free shape makes that a reviewed choice.
 - A corrections section waits for the first correction writer: no code sets `is_correction` yet.
-- Revisit when the owner answers decision 6, and when accounts make a paid digest possible.
+- Revisit when the public site and accounts ship.

@@ -7,3 +7,7 @@ node_modules/
 .pytest_cache/
 .coverage
 var/
+
+# The outreach prospect list is kept outside the repository (ADR 0048). A local copy in that folder is left out by a normal `git add`.
+outreach/*
+!outreach/README.md

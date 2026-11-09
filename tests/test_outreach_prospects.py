@@ -51,25 +51,37 @@ def _prospect(**changes: str) -> Prospect:
     return Prospect.model_validate(_row(**changes))
 
 
-def test_the_committed_file_loads_with_every_row_new() -> None:
-    rows = load_prospects(DEFAULT_PATH)
-    assert len(rows) == 209
-    assert Counter(row.status for row in rows) == {"new": 209}
-    assert sum(row.email is not None for row in rows) == 115
+SAMPLE = Path(__file__).parent / "fixtures" / "outreach" / "prospects_sample.csv"  # made-up contacts
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def test_a_list_in_the_file_format_loads() -> None:
+    rows = load_prospects(SAMPLE)
+    assert len(rows) == 4
+    assert Counter(row.status for row in rows) == {"new": 2, "contacted": 1, "do_not_contact": 1}
+    assert sum(row.email is not None for row in rows) == 3
     assert Counter(row.category for row in rows) == {
-        "institutional_small": 56,
-        "pharma_investor_group": 30,
-        "individual_investor_analyst": 26,
-        "information_service": 31,
-        "media": 49,
-        "investor_community": 17,
+        "individual_investor_analyst": 1,
+        "institutional_small": 1,
+        "media": 2,
     }
 
 
-def test_the_committed_file_is_written_in_its_own_order_and_format(tmp_path: Path) -> None:
+def test_a_list_is_written_in_its_own_order_and_format(tmp_path: Path) -> None:
     out = tmp_path / "again.csv"
-    write_prospects(out, load_prospects(DEFAULT_PATH))
-    assert out.read_text(encoding="utf-8") == DEFAULT_PATH.read_text(encoding="utf-8")
+    write_prospects(out, load_prospects(SAMPLE))
+    assert out.read_text(encoding="utf-8") == SAMPLE.read_text(encoding="utf-8")
+
+
+def test_the_real_list_cannot_be_committed_to_the_public_repository() -> None:
+    # Owner decision 2026-11-09 (ADR 0048): the list is kept privately. Git ignores everything in
+    # the folder a local copy goes in, except the README, so a normal `git add` leaves a copy out.
+    ignored = (REPO_ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
+    assert "outreach/*" in ignored
+    exceptions = [line for line in ignored if line.startswith("!") and "outreach" in line]
+    assert exceptions == ["!outreach/README.md"]
+    assert ignored.index("outreach/*") < ignored.index("!outreach/README.md")
+    assert DEFAULT_PATH.as_posix() == "outreach/prospects.csv"
 
 
 def test_a_good_row_loads(tmp_path: Path) -> None:
