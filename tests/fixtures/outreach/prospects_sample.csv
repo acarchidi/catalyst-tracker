@@ -1,0 +1,5 @@
+category,name,organization,role,email,contact_page_url,source_url,source_checked_on,notes,status,status_changed_on
+individual_investor_analyst,Sample Catalyst Letter,Sample Letter LLC,Newsletter writer,,https://letter.example.com/about,https://letter.example.com/about,2026-10-17,Made-up row for tests,new,
+institutional_small,Sample Capital,Sample Capital Management,General inquiries,info@samplecapital.example,https://samplecapital.example/contact,https://samplecapital.example/contact,2026-10-17,Made-up row for tests,new,
+media,Alex Sample,Sample Biotech News,Reporter,alex.sample@news.example.org,https://news.example.org/staff/alex-sample,https://news.example.org/staff,2026-10-17,Made-up row for tests,contacted,2026-10-20
+media,Sample Desk,Sample Biotech News,News desk,desk@news.example.org,https://news.example.org/contact,https://news.example.org/contact,2026-10-17,Made-up row for tests,do_not_contact,2026-10-21

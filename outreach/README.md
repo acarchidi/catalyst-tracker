@@ -1,6 +1,8 @@
 # Outreach prospect list
 
-`prospects.csv` lists people and organizations the marketing agent may later draft notes for (ADR 0020). It is a research list, not a mailing list. **Nothing is sent to anyone from this file.** A note goes out only after the owner approves its exact text, its exact recipients, and its channel.
+The prospect list names people and organizations the marketing agent may later draft notes for (ADR 0020). It is a research list, not a mailing list. **Nothing is sent to anyone from it.** A note goes out only after the owner approves its exact text, its exact recipients, and its channel.
+
+**The list is not in this repository** (owner decision 2026-11-09; ADR 0048). The repository is public, so the owner keeps the list privately. To check a copy, save it here as `outreach/prospects.csv` and run `uv run catalyst prospects-check`. Git ignores that file, so it cannot be committed by mistake. Never paste a contact's details into a pull request, an issue, or a commit.
 
 The first 209 rows were checked on 2026-10-17. 115 of them have a published email; the other 94 have only a contact page.
 
@@ -53,13 +55,12 @@ To check that no `do_not_contact` row was deleted, compare against an earlier co
 
 ## Things to know before using the list
 
-- **Weak addresses.** Eight rows have a support mailbox as the only published address: BiotechEdge, FDATracker, Tikr, Biotech Primer, StockBrokers.com, Insider Monkey, Raging Bull and Alpha Vantage. Their `role` says "Support (only address published)".
-- **Parent-company addresses.** BioPharma Dive uses info@industrydive.com and Pharmaceutical Executive uses pharmexec@mjhlifesciences.com. The other MJH Life Sciences brands are contact-page only, so one parent address is not repeated.
-- **US base unconfirmed.** 29 rows say "US base unconfirmed" in `notes`, mostly Substack writers and small data sites whose location is not stated. Mark any that turn out to be outside the US as `do_not_contact`, or remove them before they are ever contacted.
-- **Competitors.** BioPharmCatalyst and FDATracker are direct competitors. Dan Sfera, Merlin Trader, PDUFA Pulse and BiopharmaWatch publish similar catalyst calendars. They may fit better as partnership or listing talks than as customers.
-- **Notes are not verified.** The "why it fits" notes come from general knowledge, not from the page. Fund sizes and strategies were not checked.
-- **Contact-page-only writers.** 16 individual and newsletter rows have only a Substack or site "about" page. Some may be reachable only through Substack itself.
-- **Small fixes on import.** Three emails were lower-cased (Logos Capital, Defiance ETFs, Ausangate Capital) and Gabelli's page address was changed from http to https.
+- **Weak addresses.** Some rows have a support mailbox as the only published address. Their `role` says "Support (only address published)".
+- **Parent-company addresses.** Some outlets publish only their parent company's address. It is listed once, not repeated for each brand.
+- **US base unconfirmed.** 29 rows say "US base unconfirmed" in `notes`. Mark any that turn out to be outside the US as `do_not_contact` before they are ever contacted.
+- **Competitors.** Some rows are direct competitors or publish similar calendars. They may fit better as partnership or listing talks than as customers.
+- **Notes are not verified.** The "why it fits" notes come from general knowledge, not from the page.
+- **Contact-page-only writers.** 16 individual and newsletter rows have only a site "about" page.
 
 ## The weekly digest (ADR 0047)
 

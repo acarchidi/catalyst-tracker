@@ -764,20 +764,34 @@ def test_extract_catalysts_runs_the_type_check_after_the_rule_checks(
     assert summary["decisions"] == {"skipped": "the checks did not finish, so nothing was decided"}
 
 
-def test_prospects_check_prints_the_counts_of_the_committed_list(capsys: pytest.CaptureFixture[str]) -> None:
-    assert main(["prospects-check"]) == 0
+_PROSPECT_SAMPLE = Path(__file__).parent / "fixtures" / "outreach" / "prospects_sample.csv"
+
+
+def test_prospects_check_prints_the_counts_of_a_list(capsys: pytest.CaptureFixture[str]) -> None:
+    assert main(["prospects-check", "--file", str(_PROSPECT_SAMPLE)]) == 0
     counts = json.loads(capsys.readouterr().out)
-    assert counts["rows"] == 209
-    assert counts["with_email"] == 115
-    assert counts["categories"]["media"] == 49
+    assert counts["rows"] == 4
+    assert counts["with_email"] == 3
+    assert counts["categories"]["media"] == 2
     assert counts["statuses"] == {
-        "new": 209,
+        "new": 2,
         "approved": 0,
-        "contacted": 0,
+        "contacted": 1,
         "replied": 0,
         "declined": 0,
-        "do_not_contact": 0,
+        "do_not_contact": 1,
     }
+
+
+def test_prospects_check_says_plainly_when_there_is_no_list(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    # The real list is kept outside the repository (ADR 0048), so a fresh copy has none.
+    assert main(["prospects-check", "--file", str(tmp_path / "prospects.csv")]) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "kept outside the repository" in captured.err
+    assert "Traceback" not in captured.err
 
 
 _PROSPECT_HEADER = (

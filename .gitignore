@@ -7,3 +7,6 @@ node_modules/
 .pytest_cache/
 .coverage
 var/
+
+# The outreach prospect list is kept outside the repository (ADR 0048). A local copy here is never committed.
+outreach/*.csv

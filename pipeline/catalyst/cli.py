@@ -963,6 +963,13 @@ def _prospects_check(args: argparse.Namespace) -> int:
     except prospects.ProspectsError as error:
         print("\n".join(error.problems), file=sys.stderr)
         return 1
+    except FileNotFoundError as error:
+        print(
+            f"No prospect list at {error.filename}. The list is kept outside the repository (ADR 0048); "
+            "save a copy there, or name one with --file.",
+            file=sys.stderr,
+        )
+        return 2
     for row in dropped:
         print(
             f"{row.organization}, {row.name}: a do_not_contact row was removed; put it back.", file=sys.stderr
