@@ -17,12 +17,12 @@ The product rests on five openings found in the [competitor matrix](https://clau
 | Decision | Choice |
 | --- | --- |
 | First customers | Retail investors and small institutions |
-| Pricing at launch | Free tier plus one $15/month tier; API tier (\~$50/month) on the roadmap |
+| Pricing at launch | Free tier plus one $15/month tier; API tier (\~$50/month) on the roadmap, inside a professional tier (ADR 0050) |
 | Ingestion cadence | Twice daily: pre-market and post-close |
 | Advice | Never personalized investment advice |
 | Verification | Independent cross-checks; any model provider can be plugged in |
 | Human role | You settle the records the weekly sample checker disagrees on, and the flagged queue (owner decision 2026-10-17) |
-| Deferred | Business setup (entity, terms, billing) and the distribution plan |
+| Deferred | Business setup (entity, terms, billing). Distribution starts on Substack (owner decision 2026-11-09; ADR 0049) |
 
 **Not in v1:** seconds-level latency, institutional features (SSO, security audits, bulk feeds), and a native mobile app.
 
@@ -51,6 +51,12 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Research reports (Phase 11) | Summary page with one headline figure and every source | Full reports (or sold one at a time; owner decides; ADR 0032) |
 | Export | Calendar (.ics) | Calendar and CSV |
 | MCP access for AI agents | Calendar tools, rate-limited | All tools, higher limits |
+| Weekly digest, on Substack for now (ADR 0047, ADR 0049) | Each Monday: the next 30 days, the dates in them that moved, and counts for everything outside | Each Monday: the full calendar, every date that moved, and each catalyst's date history |
+| Embeddable calendar for other sites (ADR 0050) | The free calendar, with a link back | The same |
+| Correction requests (ADR 0050) | Anyone may send one, with a link to a primary document | The same |
+| Referral credit (ADR 0050) | No | Free months for bringing in paid subscribers |
+
+A professional tier for funds, analysts, and business-development teams is planned with the public REST API (ADR 0050): it holds everything in the $15 tier plus the API tier and three seats, and the $15 tier loses nothing. Its price is the owner's to set.
 
 $15 a month is below every competitor's paid tier, which runs $20 to $99. The low price has a cost: $200,000 a year needs about 1,110 subscribers before card fees, and $500,000 needs about 2,780. The price can rise once benchmarks ship.
 
@@ -149,7 +155,7 @@ Collection and publishing are plain code; AI agents handle reading, judging, and
 | Auditor | Re-checks published records: sources still say the same, links alive, dates passed without an outcome | Live data (read), source fetches via collectors | Publish; findings re-enter verification |
 | Outcome | Finds and records the result after a catalyst date passes | Same as extractor | Publish |
 | Analyst | Drafts benchmarks, market-size estimates, and catalyst-scenario inputs | Published data, published literature | Publish; all drafts go to review in v1 |
-| Marketing and outreach | Drafts the weekly newsletter, notes to named people (journalists, newsletter writers, podcast hosts, investor communities), directory submissions, and public-page text, all from published data; no social posts for now (owner decision 2026-10-17; ADR 0020), apart from the Phase 9 X feed, which plain code fills from a template (ADR 0029) | Published data; contact pages fetched by collectors | Send, post, or submit anything; a plain-code sender acts only on text you approved word for word |
+| Marketing and outreach | Drafts the weekly newsletter, notes to named people (journalists, newsletter writers, podcast hosts, investor communities), directory submissions, and public-page text, all from published data; no social posts for now (owner decision 2026-10-17; ADR 0020), apart from the Phase 9 X feed, which plain code fills from a template (ADR 0029). The weekly digest is not drafted by this agent: plain code computes it from published records (ADR 0047), and the owner publishes each issue on Substack by hand (ADR 0049) | Published data; contact pages fetched by collectors | Send, post, or submit anything; a plain-code sender acts only on text you approved word for word |
 | Developer | Claude Code sessions you start, building features as pull requests; there is no always-on coding agent in v1 | Code repository, staging | Merge to main itself, except its own owner-path pull requests under ADR 0036, or touch production; a merge workflow merges its other pull requests after CI and the reviewer agent pass |
 | Build overseer | A GitHub Actions job on every pull-request event and once a day: checks that each pull request does one of the next roadmap items (ADR 0033) and follows `AGENTS.md`, finds stuck or drifting work, and keeps a pinned "Build status" issue listing what each building agent is doing (owner decision 2026-10-17; ADR 0019) | Repository, pull requests, CI results (read-only; the model answers in JSON and a plain-code script acts) | Push code, approve, or merge; the script may comment, fail the "Overseer" check, add or remove only its own `overseer-hold` label, re-run a failed CI job once, and open an issue for a decision that is yours |
 | Competitor research (after v1) | Weekly report on competitors' changed public pages and new entrants, plus ranked feature ideas for the owner (ADR 0024) | Changed text from dated copies of competitors' public pages, collected by plain code | Browse, call tools, or add roadmap items; ideas wait for the owner |
@@ -401,7 +407,7 @@ The product stays an impersonal publication, which keeps it outside investment-a
 | Privacy | Privacy policy; collect minimal personal data; honor deletion requests. |
 | Marketing automation | Only scheduled original posts; no automated replies or DMs. X requires written approval for AI reply bots and suspended about 42,000 accounts for automated replies in April 2026. Social posts are out of scope for now (owner decision 2026-10-17), except the Phase 9 X feed of the most-watched ranking: template posts from plain code on a fixed schedule, original posts only (ADR 0029). |
 | Email and outreach | CAN-SPAM covers all commercial email, business-to-business included: accurate headers and subjects, a physical postal address, an opt-out that works for at least 30 days, and opt-outs honored within 10 business days ([FTC guide](https://www.ftc.gov/business-guidance/resources/can-spam-act-compliance-guide-business)). Notes say they are promotional; opting out takes only a reply or one page; opted-out addresses are never sold or passed on; the sender stays responsible for its email service. Outreach uses public professional contact details of US contacts only for now, one note plus at most one follow-up per person, and you approve every item: its text, its recipients, and its channel (ADR 0020). |
-| Business setup | Entity, terms of service, Stripe, and sales tax on digital subscriptions: deferred, but required before taking payment. |
+| Business setup | Entity, terms of service, Stripe, and sales tax on digital subscriptions: deferred, but required before our own checkout takes payment (Gate 3). One exception (owner decision 2026-11-09; ADR 0049): paid Substack subscriptions are taken by the owner as an individual, through the owner's own Stripe account, before the entity exists. Until it exists the owner carries personal liability and any sales-tax duty; Substack does not collect or pay sales tax for writers. |
 
 ## Costs
 
@@ -520,9 +526,9 @@ Foreign companies (ADR 0021): a US depositary share's market value needs its rat
 - [ ] Second model provider for verification (the adapter design leaves this open)
 - [ ] How far back to backfill outcomes (2016 or 2010)
 - [ ] Hours per week you can give the review queue; this sets how fast coverage can grow
-- [ ] Business setup: entity, terms of service, privacy policy, Stripe, sales tax (deferred; needed before taking payment)
-- [ ] Distribution plan: public pages, newsletter, direct outreach, and listings chosen; social posts left out for now (owner decision 2026-10-17), except the planned X feed of the most-watched ranking (Phase 9, ADR 0029); your byline still to decide
-- [ ] A physical postal address for commercial email (a registered PO box or private mailbox is enough), set up with the business
+- [ ] Business setup: entity, terms of service, privacy policy, Stripe, sales tax (deferred; needed before our own checkout takes payment; paid Substack subscriptions are taken by the owner as an individual before it, owner decision 2026-11-09, ADR 0049). Still open for those subscriptions: a sales-tax decision, and whether Substack's own terms and privacy policy are enough
+- [ ] Distribution plan: public pages, newsletter, direct outreach, and listings chosen; the newsletter starts as a weekly digest on Substack, each issue published by the owner (owner decisions 2026-11-09; ADR 0047, ADR 0049); social posts left out for now (owner decision 2026-10-17), except the planned X feed of the most-watched ranking (Phase 9, ADR 0029); your byline still to decide
+- [ ] A physical postal address for commercial email (a registered PO box or private mailbox is enough), set up with the business; every Substack email needs one too, so the owner checks a test email before the first issue (ADR 0049)
 - [ ] Whether $15 is the right long-term price once benchmarks ship
 
 Build phases, the tracker, and the decision log: [docs/roadmap.md](roadmap.md)
