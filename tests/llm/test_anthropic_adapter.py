@@ -82,7 +82,9 @@ class TestAnthropicContract(ProviderContract):
         self.adapter([(200, self.success_body("{}", self.model))]).complete(
             model=self.model, prompt=PROMPT, document="d", max_tokens=10, effort=None
         )
-        assert self._headers[0]["x-api-key"] == "test-key"
+        # anthropic 2.x sends an API key as a bearer token, no longer as `x-api-key`.
+        assert self._headers[0]["authorization"] == "Bearer test-key"
+        assert "x-api-key" not in self._headers[0]
 
     def test_the_output_schema_and_cached_system_prompt_are_sent(self) -> None:
         self.adapter([(200, self.success_body("{}", self.model))]).complete(
@@ -129,6 +131,8 @@ def test_the_key_goes_only_to_anthropic_whatever_the_environment_says(
     monkeypatch.setenv("ANTHROPIC_BASE_URL", "https://gateway.example")
     monkeypatch.setenv("ANTHROPIC_AUTH_TOKEN", "someone-elses-token")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "someone-elses-key")
+    monkeypatch.setenv("ANTHROPIC_PROFILE", "someone-elses-profile")
+    monkeypatch.setenv("ANTHROPIC_IDENTITY_TOKEN", "someone-elses-identity-token")
     seen: list[httpx2.Request] = []
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -138,8 +142,11 @@ def test_the_key_goes_only_to_anthropic_whatever_the_environment_says(
     adapter = AnthropicAdapter(api_key="product-key", transport=httpx2.MockTransport(handler))
     adapter.complete(model="claude-sonnet-5-5", prompt=PROMPT, document="d", max_tokens=10, effort=None)
     assert seen[0].url.host == "api.anthropic.com"
-    assert seen[0].headers["x-api-key"] == "product-key"
-    assert "authorization" not in seen[0].headers
+    # anthropic 2.x sends an API key as a bearer token; the product key is the only credential sent.
+    assert seen[0].headers["authorization"] == "Bearer product-key"
+    assert "x-api-key" not in seen[0].headers
+    sent = " ".join(seen[0].headers.values())
+    assert "someone-elses" not in sent
 
 
 def test_custom_headers_from_the_environment_are_refused(monkeypatch: pytest.MonkeyPatch) -> None:
