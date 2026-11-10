@@ -1,0 +1,260 @@
+{
+  "prompts": [
+    {
+      "prompt_id": "indicate_catalysts",
+      "prompt_version": "1.0.0",
+      "prompt_sha256": "bc006db2a288c0bd3367e8d0a9ee8d221be20ee2ade1a210e04aab72f9dc661c"
+    },
+    {
+      "prompt_id": "check_indication",
+      "prompt_version": "1.0.0",
+      "prompt_sha256": "abc6a7686dc0cfc9afd3e8cf7a1998f5de472b2c80c64bd0a7dda02a37b6ee31"
+    }
+  ],
+  "models": [
+    {
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "max_tokens": 16000
+    },
+    {
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "max_tokens": 16000
+    }
+  ],
+  "sets": {
+    "gold.jsonl": "587e943233a7e74b5c8525731b84db2e0e21ae022789d7f7f8b8ff4fae837aa3",
+    "indications.jsonl": "f072a1909b48c83dae721004b4861a83cbafa55617c2c2d0344840f569a3a62e"
+  },
+  "events": 18,
+  "scores": {
+    "events": 18,
+    "found_right": 0.133,
+    "none_right": 1.0,
+    "wrong": 0.0
+  },
+  "answers": [
+    {
+      "sha256": "2e997d3283037ccba17242897e11cf8e108ceb7e943b37d416cf5be7c886f1a0",
+      "drug": "subcutaneous BRIUMVI",
+      "gold": null,
+      "accepted": [],
+      "words": null,
+      "mesh": null,
+      "reason": "the reader found no sentence stating the disease",
+      "verdict": null
+    },
+    {
+      "sha256": "2e997d3283037ccba17242897e11cf8e108ceb7e943b37d416cf5be7c886f1a0",
+      "drug": "azer-cel",
+      "gold": "progressive multiple sclerosis",
+      "accepted": [
+        "Multiple Sclerosis, Chronic Progressive"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "no MeSH disease term in the text",
+      "verdict": null
+    },
+    {
+      "sha256": "a5568df9ab45fc22a78a25f128a1c0b9e6fb45c5a5141a1b7bb854d87e4cca24",
+      "drug": "ABP-450",
+      "gold": null,
+      "accepted": [],
+      "words": null,
+      "mesh": null,
+      "reason": "the reader found no sentence stating the disease",
+      "verdict": null
+    },
+    {
+      "sha256": "eea1cc3d39f555b23a5d28e67a7d18463dfba6963b474af0dda42fa36178ffb3",
+      "drug": "SPY003",
+      "gold": "ulcerative colitis",
+      "accepted": [
+        "Colitis, Ulcerative"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "no MeSH disease term in the text",
+      "verdict": null
+    },
+    {
+      "sha256": "eea1cc3d39f555b23a5d28e67a7d18463dfba6963b474af0dda42fa36178ffb3",
+      "drug": "SPY072",
+      "gold": "rheumatoid arthritis",
+      "accepted": [
+        "Arthritis, Rheumatoid"
+      ],
+      "words": "rheumatoid arthritis",
+      "mesh": "Arthritis, Rheumatoid",
+      "reason": null,
+      "verdict": {
+        "states": true,
+        "reason": "states_target"
+      }
+    },
+    {
+      "sha256": "eea1cc3d39f555b23a5d28e67a7d18463dfba6963b474af0dda42fa36178ffb3",
+      "drug": "SPY072",
+      "gold": "psoriatic arthritis",
+      "accepted": [
+        "Arthritis, Psoriatic"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "no MeSH disease term in the text",
+      "verdict": null
+    },
+    {
+      "sha256": "eea1cc3d39f555b23a5d28e67a7d18463dfba6963b474af0dda42fa36178ffb3",
+      "drug": "SPY072",
+      "gold": "axial spondyloarthritis",
+      "accepted": [
+        "Axial Spondyloarthritis"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "no MeSH disease term in the text",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "volixibat",
+      "gold": "cholestatic pruritus",
+      "accepted": [
+        "Pruritus"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "a word before the disease term narrows it to a disease MeSH may not have",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "Brelovitug",
+      "gold": "chronic hepatitis delta",
+      "accepted": [
+        "Hepatitis D, Chronic",
+        "Hepatitis D"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "a word after the disease term narrows it to a disease MeSH may not have",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "Brelovitug",
+      "gold": "chronic hepatitis delta",
+      "accepted": [
+        "Hepatitis D, Chronic",
+        "Hepatitis D"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "a word after the disease term narrows it to a disease MeSH may not have",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "LIVMARLI",
+      "gold": "cholestatic pruritus",
+      "accepted": [
+        "Pruritus"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "a word before the disease term narrows it to a disease MeSH may not have",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "volixibat",
+      "gold": "cholestatic pruritus",
+      "accepted": [
+        "Pruritus"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "the event's own quote names more than one disease, so it cannot say which",
+      "verdict": null
+    },
+    {
+      "sha256": "24272f6faabdc564770f7d3eac45e2893d7fe25c56a04dd2ca232a5f43f66c80",
+      "drug": "zilurgisertib",
+      "gold": "fibrodysplasia ossificans progressiva",
+      "accepted": [
+        "Myositis Ossificans"
+      ],
+      "words": "Fibrodysplasia Ossificans Progressiva",
+      "mesh": "Myositis Ossificans",
+      "reason": null,
+      "verdict": {
+        "states": true,
+        "reason": "states_target"
+      }
+    },
+    {
+      "sha256": "3fc25dddff7dbad83b6090d69a5128f4146541e9e4b3a7ca06245217afd7559c",
+      "drug": "remlifanserin",
+      "gold": "Alzheimer's disease psychosis",
+      "accepted": [],
+      "words": null,
+      "mesh": null,
+      "reason": "terms of more than one MeSH disease in the text",
+      "verdict": null
+    },
+    {
+      "sha256": "b1c8060030d379c487d6fda3bc3199902418affc1ca18ad3305b7f2618648e65",
+      "drug": "SPY072",
+      "gold": "psoriatic arthritis",
+      "accepted": [
+        "Arthritis, Psoriatic"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "the event's own quote names more than one disease, so it cannot say which",
+      "verdict": null
+    },
+    {
+      "sha256": "b1c8060030d379c487d6fda3bc3199902418affc1ca18ad3305b7f2618648e65",
+      "drug": "SPY072",
+      "gold": "axial spondyloarthritis",
+      "accepted": [
+        "Axial Spondyloarthritis"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "the event's own quote names more than one disease, so it cannot say which",
+      "verdict": null
+    },
+    {
+      "sha256": "b1c8060030d379c487d6fda3bc3199902418affc1ca18ad3305b7f2618648e65",
+      "drug": "SPY072 + IL-17A/F",
+      "gold": "hidradenitis suppurativa",
+      "accepted": [
+        "Hidradenitis Suppurativa"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "the event's own quote names more than one disease, so it cannot say which",
+      "verdict": null
+    },
+    {
+      "sha256": "b1c8060030d379c487d6fda3bc3199902418affc1ca18ad3305b7f2618648e65",
+      "drug": "SPY003",
+      "gold": "ulcerative colitis",
+      "accepted": [
+        "Colitis, Ulcerative"
+      ],
+      "words": null,
+      "mesh": null,
+      "reason": "the second reader did not confirm the sentence states the disease",
+      "verdict": {
+        "states": false,
+        "reason": "unclear"
+      }
+    }
+  ]
+}

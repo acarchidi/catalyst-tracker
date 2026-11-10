@@ -55,40 +55,29 @@ Amended 2026-11-10, after measuring the export of that day (agent's proposal):
   - A text matches when its whole words hold disease terms of exactly one descriptor. Walking back from each term to the start of the text or another term, every word must only grade, stage, name people, or join ("advanced", "relapsed", "patients", "with"). Any other word narrows the term to a disease MeSH may not have ("noncirrhotic MASH with liver fibrosis" is not liver cirrhosis), and "not", "no", or "without" negates it. A cause after the term ("pruritus associated with PBC") narrows it too. All give no match, as do no term or terms of two or more diseases. There are no synonyms beyond MeSH's own.
   - Measured on 371 distinct extracted indications from the 2026-11-10 export: 153 match one disease (41%), 123 are narrower, 15 name several, and 80 name none. Two random samples of 40 matches were all correct. A miss sends only the indication to review. The extractor's indication quote (the next pull request) asks for the disease as the source names it, which should leave fewer narrowing words.
   - **What is printed:** the indication as its own quote words it, with the MeSH identifier attached for search and filters. The MeSH name (for example "Glycogen Storage Disease Type II" for Pompe disease) appears in no quote, so it is never printed as the indication.
-- **Its own quote:** the matched words are in the claim's date quote for only 81 of 395 claims, because releases usually name the disease in another sentence. So the indication gets its own verbatim quote, a sentence naming the drug and the disease. That quote is a new extractor output with a new prompt version, and the gold set is scored again. Plain code checks the quote against the stored copy and the disease words inside it, as for every quote.
+- **Its own sentence, read by one model and checked by a second** (amended again 2026-11-10; the owner chose plain code after two model routes failed, then, after two Opus reviews blocked the plain-code checks, wrote: "feed any ambiguous problems of this type to an LLM. then, have another LLM check its work"):
+  - *Tried first:* the matched words are in the claim's date quote for only 81 of 395 claims. Adding a disease and its own quote to extractor prompt 1.1.0 dropped four gated scores below their floors (recall 0.80 against 0.90, precision 0.889 against 0.90, type 0.938 against 0.944, window 0.875 against 0.889; run 42886179457). It was not merged, and the extractor stays at 1.0.0.
+  - *Tried second:* a separate model reader per drug named the gold disease word for word for 8 of 16 events (run 42889537423). Given only the drug, it could not tell apart two events of the same drug. It was not merged.
+  - *Tried third:* plain code alone (`indication_sentence`), deciding from sentence wording whether a drug is aimed at a disease. It found 17 of 508 held claims (3%), all right by hand check, but two Opus reviews of PR 124 found sentences it got wrong: another drug named by brand or generic name, side effects, excluded patients, and "following earlier results in". Wording rules cannot cover these. It was not merged.
+  - *Chosen:* `catalyst.extract.disease`, in four steps.
+    1. Plain code offers up to 20 visible sentences of the stored source that name the drug as whole words, with no invisible characters.
+    2. The first reader (`indicate_catalysts`, extractor role) reads the drug, the catalyst's own quote, and the numbered sentences. It picks one sentence and copies the disease from it, or answers none.
+    3. Plain code checks the answer: the sentence is one offered, and the disease (less a trailing bracketed abbreviation) is written in it, has no brackets, is not given there as another condition's cause, and names one MeSH disease, with the words after it in the copied words checked too.
+    4. The second reader (`check_indication`, verifier role, its own prompt) reads only the drug, the event, that one sentence, and the disease. It answers whether the sentence states this drug is aimed at this disease for this event, and if not, which of eight reasons applies.
+  - An indication stands only when both readers agree and every plain-code check passes. Every refusal keeps its reason.
+  - Neither reader has tools or database access, and both read only stored, visible source text (spec: Agent architecture).
+  - *Cost:* both run under existing roles and their daily caps ($2 each). No role, cap, or model is added.
+  - *Scores:* the readers together are scored on the 18 gold events that name a drug (`evals/indicate_catalysts/`), and the checker on 37 planted cases (`evals/check_indication/`). Ten cases are real sentences and 27 are written; the false ones are the reviews' failing sentences.
+    - First run (runs 42903067210 and 42903081793): both models confirmed "primary biliary cholangitis" from "pruritus due to primary biliary cholangitis", so 1 of 18 events was wrong. The checker confirmed all 3 planted cases of that kind. So plain code also refuses a disease the sentence writes after "due to", "associated with", "secondary to", and similar words, or before "-associated" and "-related". A trailing abbreviation in brackets is dropped.
+    - Second run (runs 42904400128 and 42904405989, $0.06 for both): 5 of 15 events with a right answer found, 3 of 3 events with none left empty, 0 of 18 wrong. The checker confirmed 12 of 13 true cases and refused 23 of 24 false ones; the one it confirmed is also refused by the plain-code cause check.
+    - The separate Opus review of PR 124 found one more wrong answer hidden by lenient labels. Two SPY072 events share one sentence naming two diseases, and the first reader gave both the same disease. So the labels are now strict, and plain code refuses an indication when the event's own quote names more than one MeSH disease. Model inputs are now quoted fields, so source text cannot imitate the layout.
+    - Third run, current (runs 42906242447 and 42906248003, $0.07 for both): 2 of 15 found, 3 of 3 left empty, 0 of 18 wrong. The checker confirmed 13 of 13 true cases and refused 25 of 26 false ones; the one it confirmed is refused by the plain-code cause check.
+    - Each of the 13 misses is a refusal, not a wrong disease: the MeSH match refusing an abbreviation or a narrowing word (8), an event quote naming more than one disease (4), or the checker answering "unclear" (1).
+    - *Known gap, for the writer's pull request:* plain code checks the words after the disease only within the words the first reader copied, not in the sentence. "Parkinson's disease" copied from "Parkinson's disease agitation" passes plain code; only the second reader refuses it (two planted cases test this).
+    - The scores are recorded, not floored. The writer's pull request sets the floors and refuses to run without matching scores.
+  - *Coverage:* abbreviations ("UC", "PsA") never match MeSH, so a release that writes the disease only that way gives no indication. Company pipeline pages (decision 5) remain the route to nearly every entry.
 - **Its own gate:** a catalyst whose indication fails these checks publishes as it does today, without an indication. Only the indication waits in the review queue with its reason. No existing check is loosened. This touches the publish gate: test first, and Opus review.
-- **Three pull requests:** the MeSH file and matcher first; then the extractor's indication quote with the gold set; then the writer.
-
-### 3. Development stage, preclinical included
-
-- A new published field, `stage`: preclinical, phase 1, 1/2, 2, 2/3, 3, filed, or approved.
-- It comes from the quote's own words ("Phase 2 trial", "IND-enabling", "preclinical"), from a new extractor prompt version, with a whole-word check.
-- When a linked trial's registry phase disagrees, the existing rule check sends it to review (spec: Rule checks).
-- The gold set gains stage labels and both readers are scored again. CI blocks a drop in any field's accuracy.
-
-### 4. Cohort size, and registry phase, from the stored registry record
-
-- **The claim:** a registry-field claim that holds the value and its exact JSON path in the stored ClinicalTrials.gov record. The publish gate checks that the value is at that path in the stored copy, with its hash.
-- **Printed as:** for example "Cohort: 120 participants (registry, estimated)", with the registry record linked in the sources line.
-- **Spec change needed:** this changes how the spec's Provenance rules 4 and 8 apply to registry fields. That is the owner-only spec and an Opus-reviewed pull request of its own, superseding ADR 0039, decision 2, in part.
-- **More trial links:** NCT numbers and study names found in the stored source link a trial. A match by drug and sponsor alone is only a proposal for review, never a link by itself.
-
-### 5. Pipeline and program pages
-
-
-- A collector finds each covered company's website from its SEC data, or from links in its own filings.
-- It reads robots.txt and fetches a few likely pipeline addresses at the usual rate limit. A page counts as the pipeline page only when it is on the company's own domain and names at least one of the company's published drugs.
-- It counts as a program page when its title or main heading names the drug.
-- Both are stored with their hash, linked as "Company pipeline" and "Program page", and checked by the weekly link check (ADR 0043).
-- They back no published value, so the entry lists them on their own line, "Company pages:", apart from "Sources:".
-- A later item may take phase and indication claims from these stored pages, with their quotes. That needs the company website added to the spec's source ranking, an owner-only change.
-
-### 6. Conferences with their dates
-
-- `config/conferences.toml`, reviewable by the owner, lists only which meetings to follow: the names and abbreviations sources use, and the official page's address.
-- A collector stores each official page with its hash. The meeting's dates and city are claims from that stored copy, each with the verbatim sentence that states them, checked by plain code and written by the publish gate like any other claim (spec: Provenance). Nothing typed into the config file is ever printed as a date.
-- When a quote names a followed meeting with published dates, plain code adds "ACG 2026 Annual Scientific Meeting, [first day] to [last day], [city]" with the official page in the sources line.
-- **"A medical conference":** an unnamed meeting cannot be identified from that text. It stays as written until a later release or filing names the meeting, and that document then updates the record.
+- **Three pull requests:** the MeSH file and matcher (merged, PR 123); the two readers and their checks (PR 124); then the writer, with Opus review.
 
 ### Order
 

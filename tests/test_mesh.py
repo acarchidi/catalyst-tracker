@@ -108,7 +108,7 @@ def test_one_disease_term_in_the_text_matches_its_descriptor(text: str, ui: str,
         ("MASH and liver fibrosis", Miss.NARROWER),
         ("agitation in Parkinson's disease", Miss.NARROWER),
         ("no evidence of melanoma", Miss.NARROWER),
-        ("heart failure due to ATTR", Miss.NARROWER),  # a cause after the term narrows it too
+        ("heart failure due to ATTR", Miss.CAUSED),  # a cause after the term narrows it too
         ("liver cirrhosis with portal hypertension", Miss.SEVERAL_DISEASES),
         ("hypertension and heart failure", Miss.SEVERAL_DISEASES),
     ],
@@ -269,3 +269,23 @@ def test_a_timeout_on_next_years_file_still_takes_this_years(
         sources=frozenset({"mesh"}),
     )
     assert [(x.source, x.created, x.error) for x in stats] == [("mesh", 1, None)]
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("Parkinson's disease agitation", Miss.NARROWER_AFTER),  # a different condition in Parkinson's
+        ("melanoma and heart failure", Miss.SEVERAL_DISEASES),
+        ("melanoma or seizures", Miss.SEVERAL_DISEASES),
+        ("heart failure with preserved ejection fraction", Descriptor("D006333", "Heart Failure")),
+        ("hypertension in adults", Descriptor("D006973", "Hypertension")),
+        ("melanoma", Descriptor("D008545", "Melanoma")),
+    ],
+)
+def test_an_indication_phrase_is_checked_after_its_term_too(text: str, expected: Descriptor | Miss) -> None:
+    found = _index().match(text, tail=True)
+    assert (found if isinstance(found, Miss) else found.descriptor) == expected
+
+
+def test_without_the_tail_check_words_after_the_term_are_not_read() -> None:
+    assert _found("Parkinson's disease agitation") == Descriptor("D010300", "Parkinson Disease")

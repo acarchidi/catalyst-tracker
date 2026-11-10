@@ -159,6 +159,8 @@ class Miss(StrEnum):
     SEVERAL_DISEASES = "terms of more than one MeSH disease in the text"
     NARROWER = "a word before the disease term narrows it to a disease MeSH may not have"
     NEGATED = "the disease term follows a word that negates it"
+    CAUSED = "a cause after the disease term narrows it to a disease MeSH may not have"
+    NARROWER_AFTER = "a word after the disease term narrows it to a disease MeSH may not have"
 
 
 def normal_words(text: str) -> tuple[str, ...]:
@@ -224,26 +226,41 @@ class MeshIndex:
                         found.setdefault(words, set()).add(descriptor)
         return cls({words: frozenset(descriptors) for words, descriptors in found.items()})
 
-    def match(self, text: str) -> Match | Miss:
-        """Return the one disease the text names, or why there is none."""
-        words = normal_words(text)
+    def terms_in(self, words: tuple[str, ...]) -> list[tuple[int, int, frozenset[Descriptor]]]:
+        """Return each disease term in `words` as (start, size, descriptors): longest first, no overlaps."""
         taken = [False] * len(words)
-        descriptors: set[Descriptor] = set()
-        named: list[str] = []
-        spans: list[tuple[int, int]] = []
+        found: list[tuple[int, int, frozenset[Descriptor]]] = []
         for size in range(min(MAX_TERM_WORDS, len(words)), 0, -1):
             for start in range(len(words) - size + 1):
                 span = words[start : start + size]
                 if span in self.terms and not any(taken[start : start + size]):
                     taken[start : start + size] = [True] * size
-                    descriptors |= self.terms[span]
-                    named.extend(span)
-                    spans.append((start, size))
+                    found.append((start, size, self.terms[span]))
+        return found
+
+    def match(self, text: str, *, tail: bool = False) -> Match | Miss:
+        """Return the one disease the text names, or why there is none.
+
+        With `tail`, the words after each term are checked too, for an indication written as a
+        phrase ("Alzheimer's disease agitation" is not Alzheimer disease): the next word must be
+        absent, a grading or joining word, or "type" with a short form ("type 1", "type A"), and
+        "and" or "or" after the term means a second condition.
+        """
+        words = normal_words(text)
+        found = self.terms_in(words)
+        taken = [False] * len(words)
+        for start, size, _ in found:
+            taken[start : start + size] = [True] * size
+        descriptors: set[Descriptor] = {d for _, _, ds in found for d in ds}
+        named = [word for start, size, _ in sorted(found) for word in words[start : start + size]]
+        spans = [(start, size) for start, size, _ in found]
         if not descriptors:
             return Miss.NO_DISEASE
         for start, size in spans:
             if miss := _context(words, taken, start, start + size):
                 return miss
+        if tail and (miss := _tail(words, taken, spans)):
+            return miss
         if len(descriptors) > 1:
             return Miss.SEVERAL_DISEASES
         return Match(descriptor=next(iter(descriptors)), words=tuple(named))
@@ -271,8 +288,25 @@ def _context(words: tuple[str, ...], taken: list[bool], start: int, end: int) ->
         rest = after + 1
         while rest < len(words) and not taken[rest]:
             if words[rest] not in QUALIFIERS and words[rest] not in CAUSES:
-                return Miss.NARROWER
+                return Miss.CAUSED
             rest += 1
+    return None
+
+
+def _tail(words: tuple[str, ...], taken: list[bool], spans: list[tuple[int, int]]) -> Miss | None:
+    """Check the words after each term of an indication phrase (see `MeshIndex.match`)."""
+    for start, size in spans:
+        after = start + size
+        rest = [word for at, word in enumerate(words[after:], after) if not taken[at]]
+        if {"and", "or"} & set(rest):
+            return Miss.SEVERAL_DISEASES
+        if not rest or after >= len(words) or taken[after]:
+            continue
+        nxt = words[after]
+        if nxt == "type" and after + 1 < len(words) and len(words[after + 1]) <= 3:
+            continue
+        if nxt not in QUALIFIERS and nxt not in PEOPLE:
+            return Miss.NARROWER_AFTER
     return None
 
 
