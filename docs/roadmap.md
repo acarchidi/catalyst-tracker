@@ -1,6 +1,6 @@
 # Roadmap
 
-The build runs in twelve phases (0 to 11). Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
+The build runs in twelve numbered phases (0 to 11), plus Phase 3b. Each phase ends at a gate, and the next phase does not start until the owner approves the gate. Week counts are estimates; the owner's review time sets the real pace.
 
 Checkpoints inside each phase (where work stops for review) are listed in [quality-gates.md](quality-gates.md).
 
@@ -87,6 +87,23 @@ Claude Code: tick items (`[x]`) in the same pull request that finishes them.
 - [ ] Price-impact statistics; cash runway and dilution flags
 
 **Gate 4:** alerts reliable for 4 straight weeks.
+
+## Phase 3b — Segment newsletters (owner request 2026-11-10; ADR 0052)
+
+The owner asked for four monthly newsletters, each sold on its own or as an add-on: longevity and healthspan; gene editing and synthetic biology; augmentation (improving abilities of healthy people); brain–computer interfaces and neurotechnology. Each issue holds the segment's calendar, the month's trials, 1 to 3 papers of the month, and the month's collaborations and mergers. Every entry is a published record. Segment issues are paid only; a free plan is a waitlist. This phase waits for the Phase 2 Substack items and CP7b, not for Phase 3 or Gate 4. The coding agent proposes: a free waitlist per segment, paid launch at 100 sign-ups, one segment at a time, the first Monday of the month, and peer-reviewed papers chosen by the owner.
+
+- [ ] Segment rules: `config/segments.toml` (owner-reviewed) with the starting rules in ADR 0052, decision 2; plain code places each record in a segment and keeps the rule that placed it; a model may only propose a segment for the owner to confirm
+- [ ] New modalities (CRISPR nuclease, base, prime, epigenetic, and RNA editing; engineered cell circuits; engineered microbes): reversible migration, the spec's data-model list, a new extractor prompt version, and the gold set scored again
+- [ ] Free waitlists on Substack: one free publication per segment with an About page, no issues, and no health claims; the owner creates them (no code); counts read monthly with the main growth numbers
+- [ ] Segment trials from ClinicalTrials.gov: a new collection scope (any sponsor matching a segment's rules), stored and quoted like other registry records; trials newly registered, started, completed, or with posted results in the month, including the registry's "accepts healthy volunteers" field
+- [ ] Papers of the month, collector: PubMed E-utilities after checking NCBI's terms for commercial use; peer-reviewed journal articles only; candidates by segment MeSH terms, title and abstract terms, or a segment trial's number; each paper stored with its hash, its printed facts quoted claims
+- [ ] Papers of the month, shortlist: ranked by checkable facts (publication type, randomization, a linked trial's registry enrollment, a trial on our calendar), never by citations; the owner picks 1 to 3 privately; printed as citation, publication type, one sentence chosen by plain code from the abstract's conclusions, and links, never a model summary or a full abstract
+- [ ] Deals of the month: collaborations, licences, options, asset sales, and mergers in the segments, from the parties' own releases, SEC filings (8-K Items 1.01 and 2.01), or wire copies, as claims through the extractor, verification, and the publish gate, with terms as disclosed or "terms not disclosed"; news is a lead only; a new prompt version and deal entries in the gold set; checkpoint CP13 before any deal publishes
+- [ ] Segment issue builder: `catalyst digest --segment <name> --month YYYY-MM` builds the monthly issue from published records only, in the paid shape (a test proves no free variant exists), with the financial and medical notices above and below the records; a page to copy; the owner approves each issue; CP7b for each publication's first issue and first paid post
+- [ ] Launch gene editing and synthetic biology (agent's proposed first segment), once its waitlist reaches 100 and the main digest's weekly review takes the owner under 30 minutes; price set by the owner (agent's proposal: $10 a month or $100 a year, and a discount code for main subscribers until Substack bundles are confirmed)
+- [ ] Launch longevity and healthspan, on the same conditions
+- [ ] Launch brain–computer interfaces and neurotechnology, after Phase 8 devices, on the same conditions
+- [ ] Launch augmentation, on the same conditions, if its waitlist shows enough interest and its trials enough content
 
 ## Phase 4 — Analysis (weeks 17–24)
 
@@ -178,6 +195,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-10 | ADR 0052 (owner request: four monthly segment newsletters, sold alone or as an add-on, with 1 to 3 papers and the month's collaborations and mergers): longevity and healthspan; gene editing and synthetic biology; augmentation; brain–computer interfaces and neurotechnology; each its own Substack publication, paid only (a free plan is a waitlist); every entry a published record through the publish gate, deals through CP13; financial and medical notices on all four; the coding agent proposes peer-reviewed papers chosen by the owner from a shortlist ranked by checkable facts, never by citations, no model summaries, membership by owner-reviewed rules in `config/segments.toml`, a free waitlist per segment with paid launch at 100 sign-ups, one segment at a time, on the first Monday |
 | 2026-11-10 | ADR 0051 (owner request: stay on free plans until revenue): the live collection runs each weekday at 22:13 UTC (SEC filings of the last 10 days, every covered company) and extraction the following night at 00:43 UTC (at most 20 releases; no Saturday run, times in UTC), keeping the free Supabase project from pausing at no cost beyond the existing model caps; failures become alert issues; Supabase Pro is bought at the first paying subscriber, a bucket near 1 GB, or another pause, with a monthly stop-rule check set once it is bought |
 | 2026-11-09 | The spec and the quality gates brought in line with the owner's decisions of 2026-11-09 (ADR 0047, ADR 0049, ADR 0050): business setup and Gate 3 gate our own checkout, and paid Substack subscriptions are the one exception, taken by the owner as an individual; CP6 is for our own checkout; CP7 now names our own sender and any outreach note, and new checkpoint CP7b covers the first Substack issue and the first paid post (the owner's check of a test email, an Opus review of free against paid, and the owner's check that a free reader and a signed-out visitor see none of a paid post) and CP15 for correction requests; the Offering table gains the weekly digest, the embeddable calendar, correction requests, and referral credit; the professional tier holds everything in the $15 tier plus the API tier |
 | 2026-11-09 | ADR 0049 built: `catalyst digest` gains `--access paid` (the paid issue: the calendar from the issue date on, its first 200 entries listed, every date move, each catalyst's date history, in the paid shape only), `--page` (a complete page the owner copies into Substack), and `--from-export` (the issue built from the private export, equal to one built from the database) |
