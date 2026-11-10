@@ -14,11 +14,14 @@ removed, a hyphen read as a space, and "non" joined to the word after it ("non-s
 "non small cell" both read "nonsmall cell", as MeSH also spells it).
 
 A text matches when its whole words hold disease terms that all belong to one descriptor, and
-each term stands at the start of the text or after a word that only grades or stages a disease
-("advanced", "relapsed", "moderate", "stage III") or joins words ("of", "with", "and"). Longer
+each term stands at the start of the text or another term, or after words that only grade or
+stage a disease ("advanced", "relapsed", "moderate", "stage III"), name people ("patients"), or
+join words ("of", "with", "and"); the check walks back over all of them. Longer
 terms are found first and a term inside a longer one is not counted again. A term after any
-other word is a narrower disease MeSH may not have ("solid tumors", "KCNT1+ epilepsy"), and a
-term after "not", "no", or "without" is its opposite; both mean no match. No term, or terms of
+other word is a narrower disease MeSH may not have ("solid tumors", "KCNT1+ epilepsy",
+"noncirrhotic MASH with liver fibrosis"), and a term after "not", "no", or "without" is its
+opposite; a term followed by a cause ("pruritus associated with PBC") is narrower too. All mean
+no match. No term, or terms of
 two or more diseases, also mean no match, never a guess. There are no synonyms beyond MeSH's own.
 """
 
@@ -50,6 +53,12 @@ BROAD = frozenset(
         "D014947",  # Wounds and Injuries
         "D010335",  # Pathologic Processes
         "D020969",  # Disease Attributes
+        "D012008",  # Recurrence
+        "D018450",  # Disease Progression
+        "D009362",  # Neoplasm Metastasis
+        "D003643",  # Death
+        "D007249",  # Inflammation
+        "D005355",  # Fibrosis
     }
 )
 SHORT_FORM_TAGS = frozenset({"ABB", "ACR"})  # MeSH's tags for abbreviations and acronyms
@@ -108,10 +117,15 @@ QUALIFIERS = frozenset(
         "after",
         "following",
         "including",
-        "associated",
     }
 )
 NEGATIONS = frozenset({"not", "no", "without"})
+# After a term, these words name a cause: "pruritus associated with PBC" is not plain pruritus.
+CAUSES = frozenset({"associated", "due", "secondary", "related", "caused", "induced"})
+PEOPLE = frozenset({"patients", "people", "participants", "subjects", "children", "infants", "volunteers"})
+_LETTERS = str.maketrans(
+    {"\u03b1": "alpha ", "\u03b2": "beta ", "\u03b3": "gamma ", "\u03ba": "kappa ", "\u00df": "ss"}
+)
 _WORD = re.compile(r"[0-9a-z]+(?:'[0-9a-z]+)*")
 _BRACKETS = re.compile(r"\([^()]*\)|\[[^\[\]]*\]")
 _POSSESSIVE = re.compile(r"'s\b|s'(?=\s|$)")
@@ -149,6 +163,7 @@ class Miss(StrEnum):
 
 def normal_words(text: str) -> tuple[str, ...]:
     """Return the text's words for matching (see the module notes)."""
+    text = text.translate(_LETTERS)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.lower().translate(_QUOTES)
@@ -215,7 +230,7 @@ class MeshIndex:
         taken = [False] * len(words)
         descriptors: set[Descriptor] = set()
         named: list[str] = []
-        starts: list[int] = []
+        spans: list[tuple[int, int]] = []
         for size in range(min(MAX_TERM_WORDS, len(words)), 0, -1):
             for start in range(len(words) - size + 1):
                 span = words[start : start + size]
@@ -223,18 +238,42 @@ class MeshIndex:
                     taken[start : start + size] = [True] * size
                     descriptors |= self.terms[span]
                     named.extend(span)
-                    starts.append(start)
+                    spans.append((start, size))
         if not descriptors:
             return Miss.NO_DISEASE
-        for start in starts:
-            before = words[start - 1] if start else None
-            if before in NEGATIONS:
-                return Miss.NEGATED
-            if before is not None and not taken[start - 1] and before not in QUALIFIERS:
-                return Miss.NARROWER
+        for start, size in spans:
+            if miss := _context(words, taken, start, start + size):
+                return miss
         if len(descriptors) > 1:
             return Miss.SEVERAL_DISEASES
         return Match(descriptor=next(iter(descriptors)), words=tuple(named))
+
+
+def _context(words: tuple[str, ...], taken: list[bool], start: int, end: int) -> Miss | None:
+    """Check the words around one term; a narrowing or negating word gives a miss.
+
+    Back from the term, every word up to the start of the text or another term must grade,
+    stage, join, or name people; "not", "no", or "without" on the way negates the term. After the
+    term, a word that names a cause ("associated", "due") must lead only to grading or joining
+    words or another term: "pruritus associated with PBC" is a narrower disease.
+    """
+    at = start - 1
+    while at >= 0 and not taken[at]:
+        if words[at] in NEGATIONS:
+            return Miss.NEGATED
+        if words[at] not in QUALIFIERS and words[at] not in PEOPLE:
+            return Miss.NARROWER
+        at -= 1
+    after = end
+    while after < len(words) and not taken[after] and words[after] in QUALIFIERS - CAUSES:
+        after += 1
+    if after < len(words) and not taken[after] and words[after] in CAUSES:
+        rest = after + 1
+        while rest < len(words) and not taken[rest]:
+            if words[rest] not in QUALIFIERS and words[rest] not in CAUSES:
+                return Miss.NARROWER
+            rest += 1
+    return None
 
 
 def _records(content: bytes) -> Iterator[Element]:

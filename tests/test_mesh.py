@@ -76,6 +76,8 @@ def test_the_index_reads_the_file_compressed_or_not() -> None:
         ("migraine with aura", "D020325", "Migraine with Aura"),  # the longer term wins
         ("Pompe disease", "D006009", "Glycogen Storage Disease Type II"),
         ("multiple sclerosis", "D009103", "Multiple Sclerosis"),
+        ("patients with melanoma", "D008545", "Melanoma"),  # words naming people may come first
+        ("melanoma in adults", "D008545", "Melanoma"),
     ],
 )
 def test_one_disease_term_in_the_text_matches_its_descriptor(text: str, ui: str, name: str) -> None:
@@ -100,6 +102,13 @@ def test_one_disease_term_in_the_text_matches_its_descriptor(text: str, ui: str,
         ("focal onset seizures", Miss.NARROWER),
         ("without heart failure", Miss.NEGATED),
         ("not melanoma", Miss.NEGATED),
+        ("patients without prior heart failure", Miss.NEGATED),  # the walk back finds the negation
+        # Rezdiffra's label wording: an unknown word before joining words still narrows the term.
+        ("noncirrhotic MASH with moderate to advanced liver fibrosis", Miss.NARROWER),
+        ("MASH and liver fibrosis", Miss.NARROWER),
+        ("agitation in Parkinson's disease", Miss.NARROWER),
+        ("no evidence of melanoma", Miss.NARROWER),
+        ("heart failure due to ATTR", Miss.NARROWER),  # a cause after the term narrows it too
         ("liver cirrhosis with portal hypertension", Miss.SEVERAL_DISEASES),
         ("hypertension and heart failure", Miss.SEVERAL_DISEASES),
     ],
@@ -120,6 +129,7 @@ def test_normal_words_drop_case_accents_brackets_possessives_and_join_non() -> N
     assert normal_words("Non-Small-Cell  Lung") == ("nonsmall", "cell", "lung")
     assert normal_words("non small cell") == ("nonsmall", "cell")
     assert normal_words("Sj\u00f6gren") == ("sjogren",)
+    assert normal_words("\u03b11-antitrypsin") == ("alpha", "1", "antitrypsin")  # Greek letters spelled out
     assert normal_words("Dermatitis, Atopic") == ("dermatitis", "atopic")
 
 
@@ -236,3 +246,26 @@ def test_the_as_sent_fetch_keeps_to_the_listed_hosts_and_the_size_cap() -> None:
     web = build_clients("data@example.org", httpx.MockTransport(_Nlm(big)), rate_limits=False).web
     with pytest.raises(ValueError, match="larger than"):
         web.get_as_sent(mesh_source.FILE_URL.format(year=2026), 50)
+
+
+def test_a_timeout_on_next_years_file_still_takes_this_years(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    this_year = mesh_source.FILE_URL.format(year=2026)
+    nlm = _Nlm({this_year: FIXTURE.read_bytes()})
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == mesh_source.FILE_URL.format(year=2027):
+            raise httpx.ConnectTimeout("timed out", request=request)
+        return nlm(request)
+
+    stats = collect_all(
+        [],
+        build_clients("data@example.org", httpx.MockTransport(answer), rate_limits=False),
+        LocalSnapshotStore(tmp_path),
+        session_factory,
+        date(2026, 11, 1),
+        now=lambda: NOW,
+        sources=frozenset({"mesh"}),
+    )
+    assert [(x.source, x.created, x.error) for x in stats] == [("mesh", 1, None)]

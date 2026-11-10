@@ -59,8 +59,10 @@ def collect_descriptors(client: PoliteHttpClient, year: int) -> Iterator[Fetched
     for candidate in (year + 1, year):
         try:
             content = client.get_as_sent(FILE_URL.format(year=candidate), MAX_BYTES)
-        except httpx.HTTPStatusError:
-            continue
+        except (httpx.HTTPError, ValueError):
+            if candidate == year:
+                raise
+            continue  # next year's file is missing or unreadable: this year's still counts
         if content.startswith(GZIP_MAGIC):
             yield to_document(candidate, content)
             return
