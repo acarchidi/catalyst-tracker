@@ -46,10 +46,18 @@ Decisions 2 to 6 are the coding agent's proposals for how to get the facts the o
 
 ### 2. Indication on every entry
 
-- The extractor's proposed indication is published only when its words appear in the quote, by the same whole-word rule the drug names follow.
-- Plain code then matches it to a MeSH descriptor or one of its entry terms, from NLM's MeSH data (free, no account).
-- No match leaves the entry without an indication and sends the claim to the review queue with the reason.
-- This touches the publish gate: test first, and Opus review.
+Amended 2026-11-10, after measuring the export of that day (agent's proposal):
+
+- **MeSH match:** plain code matches the indication's words to one MeSH disease (`catalyst.mesh`).
+  - The index comes from NLM's descriptor file, stored exactly as NLM sends it (the .gz file, about 17 MB), with its hash, under a `mesh:` source key. A run asks for next year's file first, because NLM keeps only the current year's.
+  - It holds the disease trees (C and F03) less the broadest descriptors ("Disease", "Syndrome", "Rare Diseases", and any descriptor at the top of a tree, such as "Neoplasms" and "Infections"): 5,156 descriptors and 56,486 terms. Terms MeSH tags as abbreviations or acronyms are left out, and so are non-disease descriptors such as Recurrence, Disease Progression, Death, Inflammation, and Fibrosis.
+  - Text and terms are read the same way: Greek letters spelled out, accents dropped, lower case, brackets and possessives removed, hyphens read as spaces, and "non" joined to the next word, so "non small cell" never reads as "small cell".
+  - A text matches when its whole words hold disease terms of exactly one descriptor. Walking back from each term to the start of the text or another term, every word must only grade, stage, name people, or join ("advanced", "relapsed", "patients", "with"). Any other word narrows the term to a disease MeSH may not have ("noncirrhotic MASH with liver fibrosis" is not liver cirrhosis), and "not", "no", or "without" negates it. A cause after the term ("pruritus associated with PBC") narrows it too. All give no match, as do no term or terms of two or more diseases. There are no synonyms beyond MeSH's own.
+  - Measured on 371 distinct extracted indications from the 2026-11-10 export: 153 match one disease (41%), 123 are narrower, 15 name several, and 80 name none. Two random samples of 40 matches were all correct. A miss sends only the indication to review. The extractor's indication quote (the next pull request) asks for the disease as the source names it, which should leave fewer narrowing words.
+  - **What is printed:** the indication as its own quote words it, with the MeSH identifier attached for search and filters. The MeSH name (for example "Glycogen Storage Disease Type II" for Pompe disease) appears in no quote, so it is never printed as the indication.
+- **Its own quote:** the matched words are in the claim's date quote for only 81 of 395 claims, because releases usually name the disease in another sentence. So the indication gets its own verbatim quote, a sentence naming the drug and the disease. That quote is a new extractor output with a new prompt version, and the gold set is scored again. Plain code checks the quote against the stored copy and the disease words inside it, as for every quote.
+- **Its own gate:** a catalyst whose indication fails these checks publishes as it does today, without an indication. Only the indication waits in the review queue with its reason. No existing check is loosened. This touches the publish gate: test first, and Opus review.
+- **Three pull requests:** the MeSH file and matcher first; then the extractor's indication quote with the gold set; then the writer.
 
 ### 3. Development stage, preclinical included
 

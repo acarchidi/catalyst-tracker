@@ -114,7 +114,8 @@ def _parser() -> argparse.ArgumentParser:
         help=(
             f"Only these collectors, comma-separated, from: {', '.join(SOURCES)} (default: all); "
             "also 'ctgov-linked', only the trials our claims and catalysts name (ADR 0040), and "
-            "'drugs', the drug list (ADR 0035); both run only when named."
+            "'drugs', the drug list (ADR 0035), and 'mesh', NLM's disease names (ADR 0053); "
+            "these run only when named."
         ),
     )
     _store_arguments(collect)
