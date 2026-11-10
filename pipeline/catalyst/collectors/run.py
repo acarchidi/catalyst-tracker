@@ -23,7 +23,7 @@ from catalyst.collectors.http import HostPolicy, PoliteHttpClient, shared_limite
 from catalyst.collectors.ratelimit import Limiter, NoWait
 from catalyst.collectors.sec.edgar import SEC_LIMITER, SUBMISSIONS_URL, EdgarClient, company_profile
 from catalyst.collectors.sec.filings import DEFAULT_FORMS, collect_filings
-from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
+from catalyst.collectors.sources import ctgov, fedreg, mesh, openfda, wires
 from catalyst.db.repository import known_source_keys, upsert_company
 from catalyst.drug_list_store import load_drugs
 from catalyst.logs import log_alert, log_event
@@ -37,8 +37,8 @@ SOURCES = ("sec", "ctgov", "openfda", "fedreg", "wire")
 # Run only when named: "ctgov-linked" refreshes just the trials our claims and catalysts name, by
 # registry number, in minutes instead of the sponsor-wide run's hours (ADR 0040); "drugs" fills
 # the drug list from Drugs@FDA and ClinicalTrials.gov (ADR 0035) for companies already
-# collected, in about 13 minutes of polite requests.
-ON_REQUEST = (linked_trials.SOURCE, "drugs")
+# collected, in about 13 minutes of polite requests; "mesh" stores NLM's yearly disease names (ADR 0053).
+ON_REQUEST = (linked_trials.SOURCE, "drugs", mesh.SOURCE)
 _PER_COMPANY = frozenset({"sec", "ctgov", "openfda"})
 
 
@@ -88,6 +88,7 @@ def build_clients(
         "clinicaltrials.gov": HostPolicy(limiter("clinicaltrials.gov", ctgov.REQUESTS_PER_SECOND)),
         "api.fda.gov": HostPolicy(limiter("api.fda.gov", openfda.REQUESTS_PER_SECOND)),
         "www.federalregister.gov": HostPolicy(limiter("www.federalregister.gov", fedreg.REQUESTS_PER_SECOND)),
+        mesh.HOST: HostPolicy(limiter(mesh.HOST, mesh.REQUESTS_PER_SECOND)),
         "www.prnewswire.com": HostPolicy(
             limiter("www.prnewswire.com", wires.REQUESTS_PER_SECOND), check_robots=True
         ),
@@ -240,7 +241,7 @@ def _on_request(
     sources: frozenset[str],
     linked_batch_size: int,
 ) -> list[CollectionStats]:
-    """Run the sources that run only when named: linked trials (ADR 0040), then the drug list (ADR 0035)."""
+    """Run the sources that run only when named: linked trials (ADR 0040), the drug list (ADR 0035), MeSH."""
     results: list[CollectionStats] = []
     if linked_trials.SOURCE in sources:
         sponsors = {name: pilot.cik for pilot in companies for name in pilot.ctgov_sponsors}
@@ -253,6 +254,8 @@ def _on_request(
         )
     if "drugs" in sources:
         results.append(_drug_list(session_factory, clients.web, companies, now))
+    if mesh.SOURCE in sources:  # NLM's disease names for matching indications (ADR 0053)
+        results.append(collector.run(mesh.SOURCE, partial(mesh.collect_descriptors, clients.web, now().year)))
     return results
 
 

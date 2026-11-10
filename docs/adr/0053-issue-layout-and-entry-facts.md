@@ -46,10 +46,15 @@ Decisions 2 to 6 are the coding agent's proposals for how to get the facts the o
 
 ### 2. Indication on every entry
 
-- The extractor's proposed indication is published only when its words appear in the quote, by the same whole-word rule the drug names follow.
-- Plain code then matches it to a MeSH descriptor or one of its entry terms, from NLM's MeSH data (free, no account).
-- No match leaves the entry without an indication and sends the claim to the review queue with the reason.
-- This touches the publish gate: test first, and Opus review.
+Amended 2026-11-10, after measuring the export of that day (agent's proposal):
+
+- **MeSH match:** plain code matches the indication's words to one MeSH disease.
+  - The index comes from NLM's descriptor file (`desc2026.gz`), stored with its hash under a `mesh:` source key. It holds only the disease trees (C and F03): 5,194 descriptors and 60,341 terms, each inverted term also in reading order.
+  - A text matches when its whole words hold disease terms of exactly one descriptor. Longer terms are found first. No term, or terms of two or more diseases, means no match, never a guess. There are no synonyms beyond MeSH's own terms, and no abbreviation of three letters or fewer matches alone.
+  - Measured on 371 distinct extracted indications: 272 match one disease (73%), 36 name several, and 63 name none.
+- **Its own quote:** the matched words are in the claim's date quote for only 81 of 395 claims, because releases usually name the disease in another sentence. So the indication gets its own verbatim quote, a sentence naming the drug and the disease. That quote is a new extractor output with a new prompt version, and the gold set is scored again. Plain code checks the quote against the stored copy and the disease words inside it, as for every quote.
+- **Its own gate:** a catalyst whose indication fails these checks publishes as it does today, without an indication. Only the indication waits in the review queue with its reason. No existing check is loosened. This touches the publish gate: test first, and Opus review.
+- **Three pull requests:** the MeSH file and matcher first; then the extractor's indication quote with the gold set; then the writer.
 
 ### 3. Development stage, preclinical included
 
