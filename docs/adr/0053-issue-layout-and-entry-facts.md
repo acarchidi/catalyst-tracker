@@ -58,8 +58,15 @@ Amended 2026-11-10, after measuring the export of that day (agent's proposal):
 - **Its own sentence, found by plain code** (amended again 2026-11-10, owner's choice of three routes after two failed):
   - *Tried first:* the matched words are in the claim's date quote for only 81 of 395 claims. Adding a disease and its own quote to extractor prompt 1.1.0 dropped four gated scores below their floors (recall 0.80 against 0.90, precision 0.889 against 0.90, type 0.938 against 0.944, window 0.875 against 0.889; run 42886179457). It was not merged, and the extractor stays at 1.0.0.
   - *Tried second:* a separate model reader per drug named the gold disease word for word for 8 of 16 events (run 42889537423). Even given the catalyst's quote, it cannot tell apart two diseases one sentence names for one drug. It was not merged.
-  - *Chosen:* plain code (`catalyst.extract.indication`) takes the indication the extractor already reads for each catalyst. It must name one MeSH disease, and one visible sentence of the stored source must name both the drug and that disease's words. The printed indication is that sentence's own words, with the MeSH identifier attached. No model call is made.
-  - *Coverage:* a lower bound on 508 held claims, searching only each claim's quote and paragraph, is 49 (10%). The writer counts the full-release figure on its first run. The main route to nearly every entry is the company pipeline page (decision 5), which states each program's indication and phase.
+  - *Chosen:* plain code (`catalyst.extract.indication`) takes the indication the extractor already reads for each catalyst. No model call is made.
+    - The indication must name one MeSH disease, with the words after its term checked too: "Alzheimer's disease agitation" is not Alzheimer disease, and "obesity and cardiometabolic disease" names two conditions.
+    - One visible sentence of the stored source must state that the drug is aimed at that disease. A sentence that only mentions both is not enough (Opus review of PR 124).
+    - The clause holding the drug must have no negation or failure word, no other code-named drug or drug on file, and no other disease. The disease must not be given as a cause ("due to", "-associated"). After any grading words, the disease must follow "in", "for", "of", "with", or "against", placed after a word naming the program ("trial", "study", "treatment", "patients", a phase, the drug itself).
+    - The printed indication is that sentence's own words, with no brackets, with the MeSH identifier attached.
+  - *Coverage:* precision over coverage.
+    - A lower bound on 508 held claims, searching only each claim's quote and paragraph, is 17 (3%). All 17 were checked by hand and are right.
+    - The writer counts the full-release figure on its first run.
+    - The route to nearly every entry is the company pipeline page (decision 5), which states each program's indication and phase in a table row naming the drug.
 - **Its own gate:** a catalyst whose indication fails these checks publishes as it does today, without an indication. Only the indication waits in the review queue with its reason. No existing check is loosened. This touches the publish gate: test first, and Opus review.
 - **Three pull requests:** the MeSH file and matcher (merged, PR 123); the plain-code sentence check (PR 124); then the writer, with Opus review.
 
