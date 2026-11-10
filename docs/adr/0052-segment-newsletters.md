@@ -86,8 +86,8 @@ Each issue carries two notices, above and below its records: "Nothing here is fi
 ### 7. Rules carried over
 
 - No advice of any kind: no buy or sell language, no price targets (scenarios excepted, ADR 0017), and nothing tailored to a reader.
-- No medical advice: no dosing, no protocols, no suggestion that a reader try an intervention, and no self-experimentation or do-it-yourself case reports, even when published. Where an intervention is banned in sport (World Anti-Doping Agency list), the entry says so.
-- No dual-use detail: synthetic-biology papers whose main content is a method of concern are left out of the shortlist.
+- No medical advice: no dosing, no protocols, no suggestion that a reader try an intervention, and no self-experimentation or do-it-yourself case reports, even when published. An issue does not say whether an intervention is banned in sport: that would be a published value, and the World Anti-Doping Agency's Prohibited List is not yet a collected source. Revisit if the owner wants it, after checking the list's terms.
+- No dual-use detail: the owner leaves out any synthetic-biology paper whose main content is a method of concern when picking papers. The analyst's private note may flag a candidate for this; the flag never removes or adds a paper by itself.
 - Respect each source's terms: PubMed's usage policy and rate limit, publishers' copyright (title, citation, link, and one short quote only), and robots.txt for company pages.
 
 ## Alternatives
