@@ -84,6 +84,32 @@ class PoliteHttpClient:
         response.raise_for_status()
         return response
 
+    def get_as_sent(self, url: str, max_bytes: int) -> bytes:
+        """Fetch `url` and return its body exactly as the server sent it, never unpacked.
+
+        For a file the server labels "Content-Encoding: gzip" although it is itself a .gz file
+        (NLM's MeSH file), so the stored copy is the file, not its unpacked text. A body over
+        `max_bytes` is refused.
+        """
+        host = urlsplit(url).hostname or ""
+        policy = self._hosts.get(host)
+        if policy is None:
+            raise ValueError(f"this client only fetches from {self.host_label}, not {host!r}")
+        if policy.check_robots and not self._robots_allow(host, policy, url):
+            raise RobotsDisallowedError(f"robots.txt on {host} does not allow {url}")
+        policy.limiter.wait()
+        with self._http.stream("GET", url, headers=self._headers) as response:
+            response.raise_for_status()
+            body = bytearray()
+            for chunk in response.iter_raw():
+                body += chunk
+                if len(body) > max_bytes:
+                    raise ValueError(f"{url} is larger than {max_bytes} bytes")
+            log_event(
+                _log, "http_request", url=str(response.url), status=response.status_code, bytes=len(body)
+            )
+        return bytes(body)
+
     def _robots_allow(self, host: str, policy: HostPolicy, url: str) -> bool:
         if host not in self._robots:
             policy.limiter.wait()
