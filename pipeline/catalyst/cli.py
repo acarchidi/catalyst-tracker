@@ -800,7 +800,8 @@ def _digest(args: argparse.Namespace) -> int:
             raise ValueError(
                 f"the latest issue is dated {latest.isoformat()}; a later one cannot be built yet"
             )
-        if len({args.out, args.html, args.page} - {None}) < 1 + bool(args.html) + bool(args.page):
+        outputs = [path.resolve() for path in (args.out, args.html, args.page) if path]
+        if len(set(outputs)) < len(outputs):
             raise ValueError("--out, --html, and --page must name different files")
         details = _export_details(args.from_export, issue_date) if args.from_export else None
         database = "" if details is not None else settings.database_url()
