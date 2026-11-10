@@ -1,6 +1,6 @@
 # 0052 — Segment newsletters: longevity, gene editing and synthetic biology, augmentation, and neurotechnology
 
-- **Status:** accepted as a plan (owner request 2026-11-10); prices, names, and launch order stay with the owner
+- **Status:** accepted as a plan (owner request 2026-11-10). The owner asked for the four segments, a monthly cadence, sale on their own or as an add-on, 1 to 3 papers of the month, and the month's collaborations and mergers. Everything else here is the coding agent's proposal, marked "(agent's proposal)" where it first appears; prices, names, and launch order stay with the owner
 - **Date:** 2026-11-10
 - **Roadmap item:** new Phase 3b, "Segment newsletters"
 
@@ -29,14 +29,16 @@ Facts that shape the design:
 
 ### 1. What a segment issue holds
 
-Each issue goes out once a month, on a fixed day: the first Monday, after the main digest. It is built by the same plain code as the digest and approved by the owner. Four parts:
+Each issue goes out once a month, on a fixed day: the first Monday, after the main digest (agent's proposal). It is built by the same plain code as the digest and approved by the owner. **Every entry is a published record:** a claim from a stored, hashed source copy, with its verbatim quote, checked and written by the publish gate like any catalyst (spec: Provenance; ADR 0047, decision 2). The builder reads only published records. Four parts:
 
 1. **The segment calendar.** Catalysts in the segment in the next 90 days, dates that moved in the month, and outcomes posted in the month. Same rules and source links as the digest.
-2. **Trials.** Trials in the segment that were newly registered, started, completed, or posted results on ClinicalTrials.gov during the month. Each entry gives the registry number, sponsor, phase, and status, from the registry record.
+2. **Trials.** Trials in the segment that were newly registered, started, completed, or posted results on ClinicalTrials.gov during the month. Each entry gives the registry number, sponsor, phase, and status, as claims quoted from the stored registry record. This is a new collection scope: trials of any sponsor that match a segment's rules, not only covered companies' trials.
 3. **Papers of the month (1 to 3).** See decision 3.
 4. **Deals of the month.** See decision 4.
 
-Each issue also carries the notice ("Nothing here is financial advice"). The augmentation and longevity issues carry a second line: nothing here is medical advice, and no intervention is recommended for anyone.
+Each issue carries two notices, above and below its records: "Nothing here is financial advice" and "Nothing here is medical advice; no intervention is recommended for anyone". All four segments carry both, because all four report interventions.
+
+**Paid only.** A segment issue is paid content, built from the paid shape. A segment publication's free plan is the waitlist and its About page; free subscribers get no issues. A reader who wants a free view gets the main free digest. A test proves the builder cannot produce a segment issue in the free shape. Checkpoint CP7b applies to each new publication: its first issue and its first paid post, including the owner's check that free subscribers and signed-out visitors see none of it.
 
 ### 2. Which records belong to a segment
 
@@ -51,18 +53,19 @@ Each issue also carries the notice ("Nothing here is financial advice"). The aug
 
 ### 3. Papers of the month
 
-- **Source:** PubMed, through E-utilities. Peer-reviewed journal articles only, as in the Phase 4 publications item. Preprints (bioRxiv, medRxiv) are left out by default. If the owner wants them, they appear in their own list, labelled "preprint, not peer reviewed".
-- **Candidates:** articles published in the month that match the segment's MeSH terms, or that report one of the segment's registered trials (the trial number is in the PubMed record).
-- **Shortlist:** plain code ranks candidates by checkable facts: a clinical trial or a meta-analysis before other designs, a randomized design, the number of participants where PubMed records it, and whether the paper reports a trial on our calendar. Citation counts are not used, because new papers have none.
-- **Choice:** the owner picks 1 to 3 from a shortlist of about 10 when approving the issue. The analyst role may add a private note on each candidate to help; that note is never published.
-- **What is printed:** the title, journal, date, first author, study design and size as PubMed records them, the trial number if any, one short verbatim sentence from the abstract, and a link to PubMed and to the journal. No abstract is reprinted in full and no summary is written by a model.
+- **Source:** PubMed, through E-utilities. Each paper is a source document, stored with its hash like any other, and its printed facts are claims quoted from that record. Peer-reviewed journal articles only, as in the Phase 4 publications item (agent's proposal; the owner asked for "academic papers"). Preprints (bioRxiv, medRxiv) are left out by default. If the owner wants them, they appear in their own list, labelled "preprint, not peer reviewed".
+- **Candidates:** articles published in the month that match the segment's MeSH terms or its title and abstract terms (new records often have no MeSH terms yet), or that report one of the segment's registered trials (the trial number is in the PubMed record).
+- **Shortlist:** plain code ranks candidates by checkable facts: a clinical trial or a meta-analysis before other designs (PubMed publication types), a randomized design, the linked trial's registry enrollment where the paper names a trial, and whether the paper reports a trial on our calendar. PubMed has no participant-count field, so size counts only through a linked trial. Citation counts are not used, because new papers have none.
+- **Choice:** the owner picks 1 to 3 from a shortlist of about 10 when approving the issue (agent's proposal). The analyst role may add a private note on each candidate. That call gets only the candidate's PubMed record, with no tools and no database access, as for every agent that reads outside text. The shortlist and notes reach the owner privately, never in a public log or file (ADR 0049, decision 3). The note is never published.
+- **What is printed:** the title, journal, date, first author, publication type, the trial number if any, one short verbatim sentence from the abstract, and a link to PubMed and to the journal. Plain code picks the sentence: the first sentence of the abstract's conclusions section, else its last sentence. No abstract is reprinted in full and no summary is written by a model.
 
 ### 4. Deals of the month
 
 - **What counts:** collaborations, licences, option deals, asset purchases, and mergers or acquisitions in which at least one party works in the segment.
 - **Sources:** the party's own press release or SEC filing (for example an 8-K under Item 1.01 or 2.01), or a wire copy of the release. News is a lead, never a source (spec: Provenance).
+- **How:** deals are corporate events. The extractor learns the deal type from a new prompt version, the gold set gains deal entries, both readers are scored again, and checkpoint CP13 applies before any deal publishes (quality-gates.md), as for the rest of Phase 10. Each deal is a claim checked and written by the publish gate.
 - **What is printed:** the parties, the kind of deal, the terms as disclosed (upfront, milestones, royalties) or "terms not disclosed", the date, the quote, and the link.
-- **Private companies:** included when one of the parties publishes the deal on a page or wire we can collect. A deal known only from news is left out.
+- **Private companies:** included when one of the parties publishes the deal on a page or wire we can collect. Only PR Newswire among the wires is reachable (ADR 0005) and collectors fetch only listed hosts, so private-company deals will be few at first. A deal known only from news is left out.
 - **"Most important":** plain code orders deals by disclosed value, then by whether a party is a covered public company. The owner may drop or reorder entries when approving the issue.
 - This pulls part of Phase 10's corporate events forward, limited to deals in the four segments.
 
@@ -74,14 +77,17 @@ Each issue also carries the notice ("Nothing here is financial advice"). The aug
 
 ### 6. Launch order and a demand test first
 
-- Each segment opens first as a free waitlist (a free Substack publication with an About page and no issues). A segment launches paid once it has at least 100 free sign-ups. The owner may change that number.
-- **Suggested order:** gene editing and synthetic biology first (most public companies, trials, and deals today), then longevity, then neurotechnology (needs Phase 8 devices), then augmentation (fewest regulated trials; it may prove too thin for a paid monthly, and the waitlist will show it).
-- **Owner time:** each issue needs about 15 to 20 minutes of the owner's review, mostly choosing papers. Four monthly issues add roughly 20 minutes a week. With the main digest and the review queue this exceeds the owner's 2 hours a week, so segments launch one at a time and only once the main digest's weekly review is under 30 minutes.
+- Each segment opens first as a free waitlist (a free Substack publication with an About page and no issues). A segment launches paid once it has at least 100 free sign-ups (agent's proposal; the owner may change the number). The About page makes no health claims.
+- **Suggested order (agent's proposal):** gene editing and synthetic biology first (most public companies, trials, and deals today), then longevity, then neurotechnology (needs Phase 8 devices), then augmentation (fewest regulated trials; it may prove too thin for a paid monthly, and the waitlist will show it).
+- **Owner time:** the owner asked on 2026-11-09 to spend no more than 2 hours a week on the business. Each issue needs about 20 to 30 minutes of review at first, mostly choosing papers, so four monthly issues add roughly 20 to 30 minutes a week. With the main digest and the review queue that would exceed 2 hours, so segments launch one at a time, and only once the main digest's weekly review takes the owner under 30 minutes (agent's proposal).
+- **Model cost:** analyst notes on about 40 candidates a month across four segments, deal extraction, and segment proposals all run inside the existing daily role caps and the $50-a-month workspace limit (ADR 0051). The analyst's cap is $0.50 a day, so notes are spread over the month or limited to the shortlist.
+- **Payment:** each new paid publication falls under ADR 0049, decision 5: the owner takes payment as an individual until the entity exists, and each widens the owner's personal liability and sales-tax exposure.
 
 ### 7. Rules carried over
 
 - No advice of any kind: no buy or sell language, no price targets (scenarios excepted, ADR 0017), and nothing tailored to a reader.
-- No medical advice: no dosing, no protocols, no suggestion that a reader try an intervention, and no content about unregulated self-experimentation beyond reporting a registered trial or a published paper.
+- No medical advice: no dosing, no protocols, no suggestion that a reader try an intervention, and no self-experimentation or do-it-yourself case reports, even when published. Where an intervention is banned in sport (World Anti-Doping Agency list), the entry says so.
+- No dual-use detail: synthetic-biology papers whose main content is a method of concern are left out of the shortlist.
 - Respect each source's terms: PubMed's usage policy and rate limit, publishers' copyright (title, citation, link, and one short quote only), and robots.txt for company pages.
 
 ## Alternatives
@@ -93,8 +99,8 @@ Each issue also carries the notice ("Nothing here is financial advice"). The aug
 
 ## Consequences
 
-- New roadmap phase 3b with its items. The first items (segment rules and waitlists) need no new account; papers need PubMed (free; an NCBI key is optional, and its commercial terms need checking first); deals pull part of Phase 10 forward.
-- New modalities in the controlled list need a reversible migration.
+- New roadmap phase 3b with its items. It waits for the Phase 2 Substack items and CP7b, not for Phase 3 or Gate 4: nothing in it needs accounts or alerts. The first items (segment rules and waitlists) need no new account; papers need PubMed (free; an NCBI key is optional, and its commercial terms need checking first); deals pull part of Phase 10 forward, with CP13.
+- New modalities in the controlled list need a reversible migration, a line in the spec's data model, and a new extractor prompt version with the gold set scored again.
 - `config/segments.toml` joins the owner-reviewed files, so a change to a segment's rules is the owner's call.
 - The spec's Offering gains a line for segment newsletters.
 - Revisit when a segment's waitlist reaches its threshold, when Substack bundles are confirmed, and when Phase 8 devices land (neurotechnology).
