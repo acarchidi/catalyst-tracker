@@ -33,7 +33,7 @@ from pydantic import Field, JsonValue, model_validator
 from catalyst.api.access import NOTICE, Access, calendar_window, shape
 from catalyst.api.read import DATE_FIELDS, OPEN_STATUSES
 from catalyst.api.views import CatalystDetail, CatalystSummary, ChangeView, Shaped, SourceView, View
-from catalyst.schemas import DateConfidence
+from catalyst.schemas import CatalystType, DateConfidence
 
 NEW_YORK = ZoneInfo("America/New_York")
 WEEK = timedelta(days=7)
@@ -43,12 +43,74 @@ PAID_CALENDAR_LIMIT = 200
 # An address may become a link only when it is a plain https address with nothing that could
 # end an HTML attribute or start another one.
 _PLAIN_HTTPS = compile_pattern(r"https://[^\s\"'<>`\\]+")
-_CONFIDENCE_LABELS = {
-    DateConfidence.COMPANY_CONFIRMED: "company-confirmed",
-    DateConfidence.REGULATOR_SCHEDULED: "regulator-scheduled",
-    DateConfidence.REGISTRY_ESTIMATE: "registry estimate",
-    DateConfidence.INFERRED: "inferred",
+# The colour key (owner decision 2026-11-10; ADR 0053). Coloured squares, not styles: they survive
+# a paste into Substack and an email client, and each entry also names its category in words.
+_CATEGORIES: dict[str, frozenset[CatalystType]] = {
+    "Clinical data": frozenset({CatalystType.TOPLINE_READOUT}),
+    "Conference presentation": frozenset({CatalystType.CONFERENCE_PRESENTATION}),
+    "Regulatory": frozenset(
+        {
+            CatalystType.PDUFA_DATE,
+            CatalystType.ADVISORY_COMMITTEE,
+            CatalystType.REGULATORY_SUBMISSION,
+            CatalystType.REGULATORY_ACCEPTANCE,
+            CatalystType.CHMP_OPINION,
+            CatalystType.COMPLETE_RESPONSE_LETTER,
+            CatalystType.LABEL_EXPANSION,
+        }
+    ),
+    "Trial progress": frozenset({CatalystType.ENROLLMENT_COMPLETION}),
+    "Corporate and financing": frozenset(
+        {
+            CatalystType.OFFERING,
+            CatalystType.SHELF_FILING,
+            CatalystType.MERGER_ACQUISITION,
+            CatalystType.EARNINGS,
+        }
+    ),
 }
+_CATEGORY_MARKS = {
+    "Clinical data": "\U0001f7e6",  # blue square
+    "Conference presentation": "\U0001f7ea",  # purple square
+    "Regulatory": "\U0001f7e9",  # green square
+    "Trial progress": "\U0001f7e8",  # yellow square
+    "Corporate and financing": "\U0001f7e5",  # red square
+}
+_CATEGORY_KEY = tuple((_CATEGORY_MARKS[name], name) for name in _CATEGORIES)
+# What the company expects, by type: "Company expects potential data in 2026."
+_EXPECTED = {
+    CatalystType.TOPLINE_READOUT: "potential data",
+    CatalystType.CONFERENCE_PRESENTATION: "a presentation",
+    CatalystType.REGULATORY_SUBMISSION: "a regulatory submission",
+    CatalystType.REGULATORY_ACCEPTANCE: "a regulatory acceptance decision",
+    CatalystType.PDUFA_DATE: "an FDA decision",
+    CatalystType.ADVISORY_COMMITTEE: "an advisory committee meeting",
+    CatalystType.CHMP_OPINION: "a CHMP opinion",
+    CatalystType.COMPLETE_RESPONSE_LETTER: "an FDA response",
+    CatalystType.LABEL_EXPANSION: "a label expansion decision",
+    CatalystType.ENROLLMENT_COMPLETION: "enrollment to complete",
+    CatalystType.OFFERING: "an offering",
+    CatalystType.SHELF_FILING: "a shelf filing",
+    CatalystType.MERGER_ACQUISITION: "the transaction to close",
+    CatalystType.EARNINGS: "results",
+}
+# Who stands behind the date, said in words instead of the old date label.
+_DAY_LABELS = {
+    DateConfidence.COMPANY_CONFIRMED: "",
+    DateConfidence.REGULATOR_SCHEDULED: "set by the regulator",
+    DateConfidence.REGISTRY_ESTIMATE: "registry estimate",
+    DateConfidence.INFERRED: "our estimate",
+}
+_WIDE_LABELS = {
+    DateConfidence.REGULATOR_SCHEDULED: "The regulator expects",
+    DateConfidence.REGISTRY_ESTIMATE: "The trial registry estimates",
+    DateConfidence.INFERRED: "We estimate",
+}
+_PREPOSITION = compile_pattern(
+    r"(?i)(in|by|during|at|before|after|around|within|over|from|through|until|on)\b"
+)
+_FRAGMENT_WORDS = 4
+_FRAGMENT_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.~")
 
 
 class MoveKind(StrEnum):
@@ -320,23 +382,25 @@ def _as_date(value: JsonValue | None) -> date | None:
 def render_html(digest: Digest) -> str:
     """Return the issue as an HTML fragment with no styles, scripts, or attributes but link addresses.
 
-    Every word that comes from a record is escaped, quotes included: source text is untrusted.
-    The only links are source addresses that are plain https addresses.
+    The layout is the owner's (owner decision 2026-11-10; ADR 0053): a key to the catalyst
+    categories at the top, three sections, and the notice last in small print. Every word that
+    comes from a record is escaped: source text is untrusted. The only links are source addresses
+    that are plain https addresses; the quote reaches the reader as a text fragment on that link,
+    percent-encoded, so it can never add a tag or an attribute.
     """
     week = f"{_day(digest.week_from, year=False)} to {_day(digest.week_to)}"
     paid = digest.access == Access.PAID.value
-    calendar = f" through {_day(digest.calendar_to)}" if digest.calendar_to else ""
     where = "the calendar" if paid else "the next 30 days of the calendar"
     parts = [
         f"<h1>Catalyst digest: week of {week}</h1>",
         *(["<p>Full issue for paid subscribers.</p>"] if paid else []),
-        f"<p>{escape(digest.notice)}</p>",
-        f"<h2>Dates that moved ({digest.counts.moved})</h2>",
+        "<p>Key: " + " · ".join(f"{mark} {escape(name)}" for mark, name in _CATEGORY_KEY) + "</p>",
+        f"<h2>Rescheduled Catalysts ({digest.counts.moved})</h2>",
         _list([_move_item(move) for move in digest.moved]) or f"<p>No date on {where} moved this week.</p>",
-        f"<h2>New on the calendar ({digest.counts.new})</h2>",
+        f"<h2>New ({digest.counts.new})</h2>",
         _list([_item(catalyst) for catalyst in digest.new])
         or f"<p>No catalyst was added to {where} this week.</p>",
-        f"<h2>Also on the calendar{calendar} ({digest.counts.upcoming})</h2>",
+        f"<h2>{_upcoming_heading(digest)} ({digest.counts.upcoming})</h2>",
         _list([_item(catalyst) for catalyst in digest.upcoming]) or "<p>Nothing else is listed.</p>",
     ]
     if digest.counts.upcoming_not_listed:
@@ -348,7 +412,7 @@ def render_html(digest: Digest) -> str:
             f"<p>Outside the next 30 days: {moved} date{'' if moved == 1 else 's'} moved and "
             f"{added} catalyst{' was' if added == 1 else 's were'} added.</p>"
         )
-    parts.append(f"<p>{escape(digest.notice)}</p>")
+    parts.append(f"<p><small>{escape(digest.notice)}</small></p>")
     return "\n".join(parts) + "\n"
 
 
@@ -358,6 +422,12 @@ def render_page(digest: Digest) -> str:
     title = escape(f"Catalyst digest: week of {week} ({digest.access} issue)")
     head = f'<head>\n<meta charset="utf-8">\n<title>{title}</title>\n</head>'
     return f'<!doctype html>\n<html lang="en">\n{head}\n<body>\n{render_html(digest)}</body>\n</html>\n'
+
+
+def _upcoming_heading(digest: Digest) -> str:
+    """Name the calendar section by its last day: the free calendar's end, else the latest listed day."""
+    last = digest.calendar_to or max((catalyst.window.end for catalyst in digest.upcoming), default=None)
+    return f"Upcoming Catalysts through {_day(last)}" if last else "Upcoming Catalysts"
 
 
 def _list(items: list[str]) -> str:
@@ -372,13 +442,48 @@ def _span(start: date, end: date) -> str:
     return _day(start) if start == end else f"{_day(start)} to {_day(end)}"
 
 
+def category(catalyst_type: CatalystType) -> str:
+    """Return the colour-key category of a catalyst type (ADR 0053)."""
+    return next(name for name, types in _CATEGORIES.items() if catalyst_type in types)
+
+
 def _heading(catalyst: CatalystSummary) -> str:
     ticker = f" ({catalyst.company.ticker})" if catalyst.company.ticker else ""
-    return f"<strong>{escape(catalyst.company.name + ticker)}</strong>: {escape(catalyst.title)}"
+    name = category(catalyst.catalyst_type)
+    return (
+        f"{_CATEGORY_MARKS[name]} <strong>{escape(catalyst.company.name + ticker)}</strong>: "
+        f"{escape(catalyst.title)}"
+    )
 
 
-def _label(catalyst: CatalystSummary) -> str:
-    return f"Date label: {_CONFIDENCE_LABELS[catalyst.date_confidence]}."
+def _facts(catalyst: CatalystSummary) -> list[str]:
+    """Return the indication and trial lines, each only when a published value stands behind it."""
+    lines: list[str] = []
+    if catalyst.indication:
+        lines.append(f"<p>Indication: {escape(catalyst.indication.name)}</p>")
+    if catalyst.trials:
+        named = [f"{t.study_name} ({t.nct_id})" if t.study_name else t.nct_id for t in catalyst.trials]
+        lines.append(f"<p>Trial: {escape(', '.join(named))}</p>")
+    return lines
+
+
+def when(catalyst: CatalystSummary) -> str:
+    """Say when the event may happen, and who stands behind the date, in one sentence (ADR 0053).
+
+    A day is given as the day. A wider window is given in the source's own words: "Company
+    expects potential data in 2026." Who stands behind the date replaces the old date label.
+    """
+    window = catalyst.window
+    if window.start == window.end:
+        who = _DAY_LABELS[catalyst.date_confidence]
+        return f"{_day(window.start)}{f' ({who})' if who else ''}."
+    words = window.raw_text.strip()
+    if not _PREPOSITION.match(words):
+        words = f"in {words}"
+    event = _EXPECTED.get(catalyst.catalyst_type, "the event")
+    if catalyst.date_confidence is DateConfidence.COMPANY_CONFIRMED:
+        return f"Company expects {event} {words}."
+    return f"{_WIDE_LABELS[catalyst.date_confidence]} {event} {words}."
 
 
 def _is_plain_https(url: str) -> bool:
@@ -397,31 +502,48 @@ def _is_plain_https(url: str) -> bool:
     return parts.scheme == "https" and bool(host) and "@" not in parts.netloc
 
 
-def _source_lines(source: SourceView) -> list[str]:
-    label = escape(
-        f"{source.publisher}, {source.document_type}, published {_day(source.published_at.date())}"
-    )
-    if _is_plain_https(source.url):
-        cited = f'<a href="{escape(source.url, quote=True)}">{label}</a>'
+def quote_link(url: str, quote: str) -> str:
+    """Return the address with a text fragment that highlights the quote (spec: Provenance, rule 3).
+
+    Every character but a letter, a digit, "_", ".", and "~" is percent-encoded, so the fragment
+    holds nothing that could end the address or the attribute. A long quote is matched by its
+    first and last words. An address that already has a fragment is left as it is.
+    """
+    words = quote.split()
+    if not words or "#" in url:
+        return url
+    if len(words) > 2 * _FRAGMENT_WORDS:
+        directive = (
+            f"{_encode(' '.join(words[:_FRAGMENT_WORDS]))},{_encode(' '.join(words[-_FRAGMENT_WORDS:]))}"
+        )
     else:
-        cited = f"{label}, {escape(source.url)}"
-    return [f"<blockquote>{escape(source.quote)}</blockquote>", f"<p>Source: {cited}</p>"]
+        directive = _encode(" ".join(words))
+    return f"{url}#:~:text={directive}"
+
+
+def _encode(text: str) -> str:
+    return "".join(ch if ch in _FRAGMENT_SAFE else "".join(f"%{b:02X}" for b in ch.encode()) for ch in text)
+
+
+def _source_line(source: SourceView) -> str:
+    label = escape(f"{source.publisher}, {source.document_type}, {_day(source.published_at.date())}")
+    if _is_plain_https(source.url):
+        address = escape(quote_link(source.url, source.quote), quote=True)
+        return f'<p>Sources: <a href="{address}">{label}</a></p>'
+    return f"<p>Sources: {label}, {escape(source.url)}</p>"
 
 
 def _move_item(move: DateMove) -> str:
-    window = move.catalyst.window
     before = _span(move.before.start, move.before.end)
     if move.before.raw_text:
         before = f"{move.before.raw_text} ({before})"
     lines = [
         _heading(move.catalyst),
+        *_facts(move.catalyst),
         "<p>"
-        + escape(
-            f"Now: {window.raw_text} ({_span(window.start, window.end)}). Before: {before}. "
-            f"{_MOVE_SENTENCES[move.kind]} {_label(move.catalyst)}"
-        )
+        + escape(f"When: {when(move.catalyst)} Before: {before}. {_MOVE_SENTENCES[move.kind]}")
         + "</p>",
-        *_source_lines(move.source),
+        _source_line(move.source),
         *_history_lines(move.catalyst),
     ]
     return "<li>" + "\n".join(lines) + "</li>"
@@ -459,15 +581,13 @@ def _window_text(state: dict[str, JsonValue]) -> str:
 
 
 def _item(catalyst: CatalystSummary) -> str:
-    window = catalyst.window
     dated = [source for source in catalyst.sources if DATE_FIELDS.intersection(source.fields)]
     source = next(chain(dated, catalyst.sources), None)
     lines = [
         _heading(catalyst),
-        "<p>"
-        + escape(f"When: {window.raw_text} ({_span(window.start, window.end)}). {_label(catalyst)}")
-        + "</p>",
-        *(_source_lines(source) if source else []),
+        *_facts(catalyst),
+        "<p>" + escape(f"When: {when(catalyst)}") + "</p>",
+        *([_source_line(source)] if source else []),
         *_history_lines(catalyst),
     ]
     return "<li>" + "\n".join(lines) + "</li>"
