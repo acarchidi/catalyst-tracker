@@ -124,7 +124,7 @@ _COMMON_FIRST_WORDS = frozenset(
         "year-end",
     }
 )
-_END_WORDS = compile_pattern(r"(the )?(end|year-end)\b")
+_END_WORDS = compile_pattern(r"(?i)(the )?(end|year-end)\b")
 _PREPOSITION = compile_pattern(
     r"(?i)(in|by|during|at|before|after|around|within|over|from|through|until|on)\b"
 )
@@ -510,18 +510,19 @@ def when(catalyst: CatalystSummary) -> str:
 def _date_words(raw: str, start: date, end: date) -> str:
     """Return the source's date words as they read after "expects potential data".
 
-    A common first word loses its capital ("In 2026" reads "in 2026"); words about an end take
-    "by" ("end of 2026" reads "by end of 2026"); words with no preposition take "in". Blank words
+    A common first word loses its capital ("In 2026" reads "in 2026"). Words about an end take
+    "at" ("end of 2026" reads "at end of 2026"): the date reader takes them as the fourth quarter,
+    and "by" would claim the whole time up to it. Words with no preposition take "in". Blank words
     give the window's days instead.
     """
     words = " ".join(raw.split())
     if not words:
         return f"between {_day(start)} and {_day(end)}"
     first, _, rest = words.partition(" ")
-    if first.lower() in _COMMON_FIRST_WORDS:
+    if first.lower() in _COMMON_FIRST_WORDS or first.lower().startswith("mid-"):
         words = f"{first.lower()} {rest}".rstrip()
     if _END_WORDS.match(words):
-        return f"by {words}"
+        return f"at {words}"
     return words if _PREPOSITION.match(words) else f"in {words}"
 
 

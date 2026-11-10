@@ -469,12 +469,15 @@ def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
         *(
             (raw, DateConfidence.COMPANY_CONFIRMED, date(2026, 7, 1), date(2026, 12, 31), expected)
             for raw, expected in [
-                ("end of 2026", "Company expects potential data by end of 2026."),
-                ("year-end 2026", "Company expects potential data by year-end 2026."),
-                ("the end of the year", "Company expects potential data by the end of the year."),
+                ("end of 2026", "Company expects potential data at end of 2026."),
+                ("year-end 2026", "Company expects potential data at year-end 2026."),
+                ("the end of the year", "Company expects potential data at the end of the year."),
                 ("In 2026", "Company expects potential data in 2026."),
                 ("First half of 2027", "Company expects potential data in first half of 2027."),
                 ("mid-2027", "Company expects potential data in mid-2027."),
+                ("Mid-2027", "Company expects potential data in mid-2027."),
+                ("The End of 2026", "Company expects potential data at the End of 2026."),
+                ("by the end of 2026", "Company expects potential data by the end of 2026."),
                 ("Q1 2027", "Company expects potential data in Q1 2027."),
                 ("December 2026", "Company expects potential data in December 2026."),
                 (

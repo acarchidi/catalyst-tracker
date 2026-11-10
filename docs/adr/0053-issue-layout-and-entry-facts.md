@@ -67,12 +67,12 @@ Decisions 2 to 6 are the coding agent's proposals for how to get the facts the o
 
 ### 5. Pipeline and program pages
 
-- They back no published value, so the entry lists them on their own line, "Company pages:", apart from "Sources:".
 
 - A collector finds each covered company's website from its SEC data, or from links in its own filings.
 - It reads robots.txt and fetches a few likely pipeline addresses at the usual rate limit. A page counts as the pipeline page only when it is on the company's own domain and names at least one of the company's published drugs.
 - It counts as a program page when its title or main heading names the drug.
 - Both are stored with their hash, linked as "Company pipeline" and "Program page", and checked by the weekly link check (ADR 0043).
+- They back no published value, so the entry lists them on their own line, "Company pages:", apart from "Sources:".
 - A later item may take phase and indication claims from these stored pages, with their quotes. That needs the company website added to the spec's source ranking, an owner-only change.
 
 ### 6. Conferences with their dates
