@@ -56,6 +56,8 @@ The free tier gives away trust: an accurate, sourced 30-day calendar that anyone
 | Correction requests (ADR 0050) | Anyone may send one, with a link to a primary document | The same |
 | Referral credit (ADR 0050) | No | On Substack for now: Substack's own referral program, on its terms, switched on by the owner. With our own accounts: free months for bringing in paid subscribers |
 
+**Segment newsletters (planned; ADR 0052).** Four monthly newsletters, each sold on its own or as an add-on: longevity and healthspan; gene editing and synthetic biology; augmentation; brain–computer interfaces and neurotechnology. Each issue carries the segment's calendar and trials, 1 to 3 peer-reviewed papers of the month chosen by the owner, and the month's collaborations and mergers, every item with its source. Prices are the owner's to set.
+
 For now, a paid subscription on Substack carries only the paid weekly digest. The rest of the paid column (watchlists, alerts, the research assistant, exports, and the other rows) comes with our own accounts in Phase 3, and nothing on Substack promises it earlier (ADR 0049, ADR 0050).
 
 A professional tier for funds, analysts, and business-development teams is planned with the public REST API (ADR 0050): it holds everything in the $15 tier plus the API tier and three seats, and the $15 tier loses nothing. Its price is the owner's to set.
