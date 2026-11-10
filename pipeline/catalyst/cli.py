@@ -986,7 +986,12 @@ def _evaluate_indication(args: argparse.Namespace) -> int:
     try:
         adapter = anthropic_adapter.from_settings()
         database = settings.database_url()
-        store = SupabaseSnapshotStore(settings.supabase_url(), settings.supabase_secret_key())
+        # Only the first reader's path reads the stored MeSH file (Opus review of PR 124).
+        store = (
+            None
+            if args.prompt == CHECKER_PROMPT[0]
+            else SupabaseSnapshotStore(settings.supabase_url(), settings.supabase_secret_key())
+        )
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
@@ -1001,6 +1006,8 @@ def _evaluate_indication(args: argparse.Namespace) -> int:
                 checked, [load_prompt(*CHECKER_PROMPT)], [config.roles[VERIFIER_ROLE]], [cases], answers
             )
         else:
+            if store is None:  # never: the store is opened above for this path
+                return 2
             with Session(engine) as session:
                 index = stored_index(session, store)
             if index is None:

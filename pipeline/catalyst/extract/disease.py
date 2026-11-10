@@ -41,7 +41,7 @@ from catalyst.extract.text import QuoteSpan, document_text, visible_text
 from catalyst.llm.client import ModelClient
 from catalyst.llm.config import RoleConfig
 from catalyst.llm.prompts import Prompt, load_prompt
-from catalyst.mesh import MeshIndex, Miss
+from catalyst.mesh import MeshIndex, Miss, normal_words
 from catalyst.verify.second import VERIFIER_ROLE
 
 READER_PROMPT = ("indicate_catalysts", "1.0.0")
@@ -71,17 +71,22 @@ def _one_line(words: str) -> str:
     return " ".join(plain.split())[:1000]
 
 
+def _field(words: str) -> str:
+    """Return stored words as one JSON string, so source text cannot imitate the layout around it."""
+    return json.dumps(_one_line(words), ensure_ascii=False)
+
+
 def reader_input(drug: str, event: str, offered: Sequence[QuoteSpan]) -> str:
     """Return what the first reader reads: the drug, the event, then the numbered candidates."""
-    lines = [f"[{number}] {_one_line(span.quote)}" for number, span in enumerate(offered, start=1)]
-    return f"Drug: {_one_line(drug)}\nEvent: {_one_line(event)}\n\nCandidate sentences:\n" + "\n".join(lines)
+    lines = [f"[{number}] {_field(span.quote)}" for number, span in enumerate(offered, start=1)]
+    return f"Drug: {_field(drug)}\nEvent: {_field(event)}\n\nCandidate sentences:\n" + "\n".join(lines)
 
 
 def checker_input(drug: str, event: str, sentence: str, disease: str) -> str:
     """Return what the second reader reads: the drug, the event, the one sentence, and the disease."""
     return (
-        f"Drug: {_one_line(drug)}\nEvent: {_one_line(event)}\n"
-        f"Sentence: {_one_line(sentence)}\nDisease: {_one_line(disease)}"
+        f"Drug: {_field(drug)}\nEvent: {_field(event)}\n"
+        f"Sentence: {_field(sentence)}\nDisease: {_field(disease)}"
     )
 
 
@@ -99,6 +104,8 @@ def find_indication(
     """Find this catalyst's indication: offer, read, check by code, then check by the second reader."""
     if not usable_drug(drug):
         return Outcome(IndicationMiss.UNUSABLE_DRUG)
+    if len({d for _, _, found in index.terms_in(normal_words(event)) for d in found}) > 1:
+        return Outcome(IndicationMiss.EVENT_NAMES_SEVERAL)
     offered = candidates(text, visible, drug)
     if not offered:
         return Outcome(IndicationMiss.NO_CANDIDATE)

@@ -33,9 +33,14 @@ _CAUSE_BEFORE = re.compile(
     r"\b(?:due to|associated with|secondary to|caused by|related to|induced by|attributable to)\s*$",
     re.IGNORECASE,
 )
-_CAUSE_AFTER = re.compile(r"^-?\s*(?:associated|related|induced)\b", re.IGNORECASE)
-# A trailing abbreviation in brackets, as in "psoriatic arthritis (PsA)", is dropped from the answer.
-_TRAILING_SHORT_FORM = re.compile(r"\s*\([^()\[\]]{1,15}\)\s*$")
+_CAUSE_AFTER = re.compile(r"^[-\u2010-\u2015]?\s*(?:associated|related|induced)\b", re.IGNORECASE)
+# A trailing abbreviation in brackets, as in "acute myeloid leukemia (AML)", is dropped from the
+# answer: one word with no spaces, at least two capitals, at most 12 characters. "(type 2)" stays,
+# and so is refused for its brackets (Opus review of PR 124).
+_TRAILING_SHORT_FORM = re.compile(r"\s*\((?=(?:[^()\s]*[A-Z]){2})[^()\[\]\s]{2,12}\)\s*$")
+# At most this many sentences naming the drug are looked for in the visible text, so a page full
+# of hidden sentences cannot make the search slow (Opus review of PR 124).
+MAX_LOOKED_AT = 100
 COMMON = frozenset(
     {"the", "a", "an", "and", "or", "of", "in", "for", "with", "to", "is", "it", "its", "this", "that"}
 )
@@ -51,6 +56,7 @@ class IndicationMiss(StrEnum):
     DISEASE_NOT_IN_SENTENCE = "the disease is not written in the sentence as given"
     BRACKETS = "the disease's words hold brackets"
     CAUSE = "the sentence names the disease only as the cause of another condition"
+    EVENT_NAMES_SEVERAL = "the event's own quote names more than one disease, so it cannot say which"
     NOT_CONFIRMED = "the second reader did not confirm the sentence states the disease"
 
 
@@ -86,6 +92,7 @@ def candidates(text: str, visible: str, drug: str) -> list[QuoteSpan]:
     """Return the sentences a reader may choose from: visible, naming the drug, with no hidden characters."""
     drug_words = normal_words(drug)
     found: list[QuoteSpan] = []
+    looked_at = 0
     for start, end in sentences(text):
         sentence = text[start:end]
         if len(sentence) > MAX_SENTENCE_CHARS or invisible_characters(sentence):
@@ -93,6 +100,9 @@ def candidates(text: str, visible: str, drug: str) -> list[QuoteSpan]:
         words = normal_words(sentence)
         if not any(words[i : i + len(drug_words)] == drug_words for i in range(len(words))):
             continue
+        looked_at += 1
+        if looked_at > MAX_LOOKED_AT:
+            break
         if find_quote(visible, sentence) is None:
             continue
         found.append(QuoteSpan(start=start, end=end, quote=sentence))

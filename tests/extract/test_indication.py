@@ -127,6 +127,7 @@ def test_every_offered_sentence_is_the_sources_own_words(before: str, after: str
         ("Zentocel is in a Phase 3 trial for pain secondary to melanoma.", "melanoma"),
         ("Zentocel is in a Phase 1 trial in melanoma-associated retinopathy.", "melanoma"),
         ("Zentocel is in Phase 3 for melanoma related fatigue.", "melanoma"),
+        ("Zentocel is in a Phase 1 trial in melanoma\u2013associated retinopathy.", "melanoma"),
     ],
 )
 def test_a_disease_the_sentence_gives_as_a_cause_is_refused(sentence: str, disease: str) -> None:
@@ -143,3 +144,16 @@ def test_a_trailing_abbreviation_in_brackets_is_dropped_from_the_disease() -> No
     found = hard_check(_span(sentence), "acute myeloid leukemia (AML)", _index())
     assert isinstance(found, Found)
     assert found.words == "acute myeloid leukemia"
+
+
+def test_a_bracket_that_is_not_an_abbreviation_is_kept_and_so_refused() -> None:
+    sentence = "Zentocel is in a Phase 3 trial in diabetes (type 2)."
+    assert hard_check(_span(sentence), "diabetes (type 2)", _index()) is IndicationMiss.BRACKETS
+
+
+def test_hidden_sentences_naming_the_drug_cannot_make_the_search_slow() -> None:
+    text = " ".join(f"Zentocel hidden {n}." for n in range(3000))
+    visible = "nothing " * 50000
+    began = time.monotonic()
+    assert candidates(text, visible, "zentocel") == []
+    assert time.monotonic() - began < 3
