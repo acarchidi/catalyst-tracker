@@ -36,7 +36,7 @@ Each issue goes out once a month, on a fixed day: the first Monday, after the ma
 3. **Papers of the month (1 to 3).** See decision 3.
 4. **Deals of the month.** See decision 4.
 
-Each issue carries two notices, above and below its records: "Nothing here is financial advice" and "Nothing here is medical advice; no intervention is recommended for anyone". All four segments carry both, because all four report interventions.
+Each issue carries two notices, once at the end in small type (ADR 0053, decision 1; at first "above and below its records"): "Nothing here is financial advice" and "Nothing here is medical advice; no intervention is recommended for anyone". All four segments carry both, because all four report interventions.
 
 **Paid only.** A segment issue is paid content, built from the paid shape. A segment publication's free plan is the waitlist and its About page; free subscribers get no issues. A reader who wants a free view gets the main free digest. A test proves the builder cannot produce a segment issue in the free shape. Checkpoint CP7b applies to each new publication: its first issue and its first paid post, including the owner's check that free subscribers and signed-out visitors see none of it.
 

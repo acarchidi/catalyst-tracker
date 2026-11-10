@@ -23,7 +23,9 @@ from catalyst.api.views import (
     CatalystSummary,
     ChangeView,
     CompanyView,
+    IndicationView,
     SourceView,
+    TrialView,
     WindowView,
 )
 from catalyst.outreach.digest import (
@@ -33,9 +35,11 @@ from catalyst.outreach.digest import (
     details_from_export,
     latest_issue_date,
     move_kind,
+    quote_link,
     render_html,
     render_page,
     week_of,
+    when,
 )
 from catalyst.schemas import CatalystStatus, CatalystType, DateConfidence, DatePrecision, SourceTier
 
@@ -374,26 +378,187 @@ def _parsed(html: str) -> _Tags:
     return parser
 
 
-ALLOWED_TAGS = {"h1", "h2", "p", "ul", "li", "strong", "a", "blockquote"}
+ALLOWED_TAGS = {"h1", "h2", "p", "ul", "li", "strong", "a", "small"}
 
 
-def test_the_html_shows_each_listed_catalyst_with_its_quote_and_deep_link() -> None:
+def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
+    # Owner decision 2026-11-10 (ADR 0053): section names, a colour key on top, the notice once at the
+    # end in small print, "When:" in words, no date label, and the quote reached through its link.
     slipped = _slipped(quote="topline data now expected in the fourth quarter of 2026")
     fresh = _detail(first_learned=IN_WEEK, quote="data on October 20, 2026", name="Fresh Bio")
-    page = _parsed(render_html(build_digest([slipped, fresh], ISSUE)))
+    html = render_html(build_digest([slipped, fresh], ISSUE))
+    page = _parsed(html)
     text = " ".join(" ".join(page.text).split())
     assert "week of 28 September to 4 October 2026" in text
-    assert text.count(NOTICE) == 2  # above and below the records
+    assert text.count(NOTICE) == 1
+    assert html.rstrip().endswith(f"<p><small>{NOTICE}</small></p>")
+    assert text.index("Key: ") < text.index("Rescheduled Catalysts (1)") < text.index("New (1)")
+    assert "Upcoming Catalysts through 4 November 2026 (0)" in text
+    for name in ("Clinical data", "Conference presentation", "Regulatory", "Trial progress"):
+        assert name in text
     assert "Example Bio, Inc. (EXB)" in text
-    assert "Now: 4Q26 (1 October 2026 to 31 December 2026)" in text
-    assert "Before: 3Q26 (1 July 2026 to 30 September 2026)" in text
+    assert (
+        "When: Company expects potential data in 4Q26. Before: 3Q26 (1 July 2026 to 30 September 2026)."
+        in text
+    )
     assert "moved later" in text
-    assert "company-confirmed" in text
-    assert "topline data now expected in the fourth quarter of 2026" in text
-    assert "October 20, 2026 (20 October 2026)" in text  # a one-day window is written once
-    assert "data on October 20, 2026" in text
-    assert page.links == [SEC_URL, SEC_URL]
+    assert "When: 20 October 2026." in text  # a day is given as the day
+    assert "Date label" not in text
+    assert "company-confirmed" not in text
+    assert "blockquote" not in html
+    assert "topline data now expected" not in text  # the quote is on the link, not in the text
+    assert page.links == [
+        quote_link(SEC_URL, "topline data now expected in the fourth quarter of 2026"),
+        quote_link(SEC_URL, "data on October 20, 2026"),
+    ]
     assert set(page.tags) <= ALLOWED_TAGS
+
+
+def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
+    records = [_detail(start=date(2026, 11, 1), end=date(2027, 6, 30), raw="1H27")]
+    text = _text(render_html(build_digest(records, ISSUE, access=Access.PAID)))
+    assert "Upcoming Catalysts through 30 June 2027 (1)" in text
+    assert "Upcoming Catalysts (0)" in _text(render_html(build_digest([], ISSUE, access=Access.PAID)))
+
+
+@pytest.mark.parametrize(
+    ("raw", "confidence", "start", "end", "expected"),
+    [
+        (
+            "in 2026",
+            DateConfidence.COMPANY_CONFIRMED,
+            date(2026, 1, 1),
+            date(2026, 12, 31),
+            "Company expects potential data in 2026.",
+        ),
+        (
+            "2H 2026",
+            DateConfidence.COMPANY_CONFIRMED,
+            date(2026, 7, 1),
+            date(2026, 12, 31),
+            "Company expects potential data in 2H 2026.",
+        ),
+        (
+            "by the end of 2027",
+            DateConfidence.COMPANY_CONFIRMED,
+            date(2026, 8, 11),
+            date(2027, 12, 31),
+            "Company expects potential data by the end of 2027.",
+        ),
+        (
+            "December 2026",
+            DateConfidence.REGISTRY_ESTIMATE,
+            date(2026, 12, 1),
+            date(2026, 12, 31),
+            "The trial registry estimates completion in December 2026.",
+        ),
+        (
+            "December 15, 2026",
+            DateConfidence.REGULATOR_SCHEDULED,
+            date(2026, 12, 15),
+            date(2026, 12, 15),
+            "15 December 2026 (set by the regulator).",
+        ),
+        (
+            "December 15, 2026",
+            DateConfidence.COMPANY_CONFIRMED,
+            date(2026, 12, 15),
+            date(2026, 12, 15),
+            "15 December 2026.",
+        ),
+        *(
+            (raw, DateConfidence.COMPANY_CONFIRMED, date(2026, 7, 1), date(2026, 12, 31), expected)
+            for raw, expected in [
+                ("end of 2026", "Company expects potential data at end of 2026."),
+                ("year-end 2026", "Company expects potential data at year-end 2026."),
+                ("the end of the year", "Company expects potential data at the end of the year."),
+                ("In 2026", "Company expects potential data in 2026."),
+                ("First half of 2027", "Company expects potential data in first half of 2027."),
+                ("mid-2027", "Company expects potential data in mid-2027."),
+                ("Mid-2027", "Company expects potential data in mid-2027."),
+                ("The End of 2026", "Company expects potential data at the End of 2026."),
+                ("by the end of 2026", "Company expects potential data by the end of 2026."),
+                ("Q1 2027", "Company expects potential data in Q1 2027."),
+                ("December 2026", "Company expects potential data in December 2026."),
+                (
+                    "   ",
+                    "Company expects potential data between 1 July 2026 and 31 December 2026.",
+                ),
+            ]
+        ),
+        (
+            "2H26",
+            DateConfidence.INFERRED,
+            date(2026, 7, 1),
+            date(2026, 12, 31),
+            "Our estimate: potential data in 2H26.",
+        ),
+    ],
+)
+def test_when_says_the_date_in_words_and_who_stands_behind_it(
+    raw: str, confidence: DateConfidence, start: date, end: date, expected: str
+) -> None:
+    record = _detail(start=start, end=end, raw=raw).model_copy(update={"date_confidence": confidence})
+    assert when(record) == expected
+
+
+def test_an_entry_names_its_indication_and_trial_when_published() -> None:
+    record = _detail().model_copy(
+        update={
+            "indication": IndicationView(
+                id=uuid4(), mesh_id="D008545", name="Melanoma", line_of_therapy=None, biomarker=None
+            ),
+            "trials": [TrialView(id=uuid4(), nct_id="NCT01234567", study_name="EXAMPLE-1")],
+        }
+    )
+    text = _text(render_html(build_digest([record], ISSUE)))
+    assert "Indication: Melanoma" in text
+    assert "Trial: EXAMPLE-1 (NCT01234567)" in text
+    assert "Indication:" not in _text(render_html(build_digest([_detail()], ISSUE)))
+
+
+@given(hostile=st.text(min_size=1, max_size=200))
+def test_an_indication_or_study_name_can_never_add_a_tag_or_a_link(hostile: str) -> None:
+    record = _detail().model_copy(
+        update={
+            "indication": IndicationView(
+                id=uuid4(), mesh_id="D000001", name=hostile, line_of_therapy=None, biomarker=None
+            ),
+            "trials": [TrialView(id=uuid4(), nct_id="NCT01234567", study_name=hostile)],
+        }
+    )
+    page = _parsed(render_html(build_digest([record], ISSUE)))
+    assert page.tags.count("a") == 1
+    assert set(page.tags) <= ALLOWED_TAGS
+
+
+def test_every_catalyst_type_has_a_category_and_an_expected_event() -> None:
+    for catalyst_type in CatalystType:
+        record = _detail(start=date(2026, 7, 1), end=date(2026, 12, 31), raw="2H26").model_copy(
+            update={"catalyst_type": catalyst_type}
+        )
+        assert "the event" not in when(record)
+        assert render_html(build_digest([record], ISSUE, access=Access.PAID))
+
+
+def test_the_quote_link_encodes_everything_but_plain_characters() -> None:
+    assert (
+        quote_link(SEC_URL, "data in 2H-2026, as planned")
+        == f"{SEC_URL}#:~:text=data%20in%202H%2D2026%2C%20as%20planned"
+    )
+    long = "one two three four five six seven eight nine ten"
+    assert (
+        quote_link(SEC_URL, long) == f"{SEC_URL}#:~:text=one%20two%20three%20four,seven%20eight%20nine%20ten"
+    )
+    assert quote_link(SEC_URL + "#part", "a quote") == SEC_URL + "#part"
+    assert quote_link(SEC_URL, "   ") == SEC_URL
+
+
+@given(quote=st.text(min_size=1, max_size=200))
+def test_the_quote_link_is_always_a_plain_address(quote: str) -> None:
+    link = quote_link(SEC_URL, quote)
+    assert link.startswith(SEC_URL)
+    assert all(ch.isascii() and ch.isprintable() and ch not in " \"'<>`\\" for ch in link)
 
 
 def test_the_html_states_the_counts_outside_the_free_calendar_and_an_empty_week() -> None:
@@ -420,7 +585,7 @@ def test_source_text_can_never_add_a_tag_or_a_link(hostile: str, where: str) -> 
     words[where] = hostile
     record = _slipped(quote=words["quote"], title=words["title"], name=words["name"], raw=words["raw"])
     page = _parsed(render_html(build_digest([record], ISSUE)))
-    assert page.links == [SEC_URL]
+    assert page.links == [quote_link(SEC_URL, words["quote"])]
     assert set(page.tags) <= ALLOWED_TAGS
     assert page.tags.count("a") == 1
 
@@ -435,11 +600,11 @@ def test_source_text_can_never_add_a_tag_or_a_link(hostile: str, where: str) -> 
         "&lt;b&gt; already escaped",
     ],
 )
-def test_markup_in_a_quote_is_shown_as_the_words_it_is(hostile: str) -> None:
-    page = _parsed(render_html(build_digest([_slipped(quote=hostile)], ISSUE)))
-    assert page.links == [SEC_URL]
+def test_markup_in_a_quote_or_a_title_never_becomes_markup(hostile: str) -> None:
+    page = _parsed(render_html(build_digest([_slipped(quote=hostile, title=hostile)], ISSUE)))
+    assert page.links == [quote_link(SEC_URL, hostile)]  # the quote travels percent-encoded on the link
     assert set(page.tags) <= ALLOWED_TAGS
-    assert hostile in "".join(page.text)  # verbatim, character for character
+    assert hostile in "".join(page.text)  # the title, verbatim, character for character
 
 
 @pytest.mark.parametrize(
@@ -502,7 +667,8 @@ def test_the_command_writes_the_digest_and_prints_only_counts(
     assert written["moved"][0]["kind"] == "later"
     assert written["notice"] == NOTICE
     page = _parsed(html.read_text(encoding="utf-8"))
-    assert "topline data now expected in the fourth quarter of 2026" in "".join(page.text)
+    fragment = quote_link("https://x", "topline data now expected in the fourth quarter of 2026")
+    assert [link for link in page.links if link.endswith(fragment.removeprefix("https://x"))]
     # The advisory committee on 5 November is one day past this issue's 30 days; never shown unsourced.
     assert str(seed.adcom) not in out.read_text(encoding="utf-8")
     assert str(seed.unsourced) not in out.read_text(encoding="utf-8")
@@ -648,7 +814,7 @@ def test_the_page_is_a_whole_document_around_the_same_issue() -> None:
     assert render_html(digest) in page
     parsed = _parsed(page)
     assert set(parsed.tags) <= ALLOWED_TAGS | {"html", "head", "meta", "title", "body"}
-    assert parsed.links == [SEC_URL, SEC_URL]
+    assert [link.split("#")[0] for link in parsed.links] == [SEC_URL, SEC_URL]
     assert "<title>Catalyst digest: week of 28 September to 4 October 2026 (free issue)</title>" in page
     paid = render_page(build_digest([_slipped()], ISSUE, access=Access.PAID))
     assert "(paid issue)</title>" in paid
@@ -658,7 +824,7 @@ def test_the_page_is_a_whole_document_around_the_same_issue() -> None:
 def test_source_text_cannot_add_markup_to_the_paid_page_either(hostile: str) -> None:
     record = _slipped(quote=hostile, raw=hostile, title=hostile, name=hostile)
     parsed = _parsed(render_page(build_digest([record], ISSUE, access=Access.PAID)))
-    assert parsed.links == [SEC_URL]
+    assert parsed.links == [quote_link(SEC_URL, hostile)]
     assert set(parsed.tags) <= ALLOWED_TAGS | {"html", "head", "meta", "title", "body"}
 
 
