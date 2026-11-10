@@ -2,7 +2,7 @@ name: Collect (live)
 
 # Collects source documents into the live Supabase database for a chosen company list
 # (owner request 2026-10-18: today's prototype). Migrates first, so the extractor's tables
-# exist. Started by hand from the Actions tab or by the coding session. No model calls, so no
+# exist. Started by hand from the Actions tab or by the coding session, and on a weekday schedule (ADR 0051). No model calls, so no
 # spend; SEC EDGAR stays under 10 requests a second inside the collector. Safe to re-run:
 # every collector skips what it already stored.
 # The other modes work on the private bucket of source copies (ADR 0046), with no collection:

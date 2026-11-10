@@ -2,7 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-11-10
-- **Roadmap item:** Phase 1, "Orchestrator controls" groundwork, and Phase 2 hosting (owner request 2026-11-10)
+- **Roadmap item:** none; how the live jobs run until revenue (owner request 2026-11-10)
 
 ## Context
 
@@ -21,16 +21,18 @@ The spec already plans collection twice each weekday. No schedule was ever switc
 1. **A weekday schedule for the two live jobs.**
    - Collection runs at 22:13 UTC, Monday to Friday (5:13 pm New York in winter, 6:13 pm in summer). It collects SEC filings of the last 10 days for every covered company. A missed day is caught by the next run; collectors skip what they already stored.
    - Extraction runs at 00:43 UTC, Tuesday to Saturday, and reads at most 20 new releases.
-   - Both share one concurrency group, so they never overlap; a late collection only delays the extraction.
+   - Both share one concurrency group with the Gate 1 job, so two never run at once. GitHub keeps only one run waiting in a group: a newer run replaces a waiting one, which is then cancelled without an alert. Nothing is lost, because the next weekday's run covers the last 10 days and the extractor skips what it has read, but a hand-started run can be replaced by a scheduled one, and the other way round.
    - A scheduled run has no inputs. Each input falls back to its default. The export and the gold-set scoring never run on the schedule.
-   - This is once each weekday, not the spec's twice: it is enough to keep the database awake and the calendar a day fresh, at half the model cost.
-2. **Cost.** GitHub Actions minutes are free for a public repository. SEC collection makes no model calls. Extraction stays inside the existing daily caps in `config/models.toml`, which this record does not change. At a few cents a release for each reading, 20 releases a weekday is roughly $1 a day; the owner's Anthropic workspace limit of $50 a month stays the ceiling.
+   - This departs from the spec and AGENTS.md in three ways, on purpose: once each weekday instead of twice, no Saturday run, and times fixed in UTC, so New York times move by an hour with daylight saving (GitHub schedules run in UTC). Once a weekday is enough to keep the database awake and the calendar a day fresh, at about half the model cost. Revisit at the first paying subscriber.
+   - In a week with more than 20 new releases on a weekday, the rest wait for a quieter day, newest first.
+   - Merged changes (a migration, a prompt, the extractor) now reach the live database at the next weekday evening without anyone starting a run.
+2. **Cost.** GitHub Actions minutes are free for a public repository. SEC collection makes no model calls. Extraction stays inside the existing daily caps in `config/models.toml`, which this record does not change. Measured in ADR 0038 (153 releases for $1.84), a reading costs about 1.2 cents, so 20 releases read twice is roughly $0.25 to $0.60 a weekday, about $5 to $13 a month. If both roles hit their $2 caps every day it would be about $88 a month; the owner's Anthropic workspace limit of $50 a month stays the ceiling.
 3. **Failures reach the owner.** Both jobs already turn a failure into an alert issue (ADR 0023). If the database pauses again, the next weekday's run says so the same evening.
 4. **When to upgrade Supabase to Pro**, at the first of:
    - the first paying subscriber (from then, losing the database without a backup would lose what subscribers pay for);
    - the bucket nearing 1 GB;
    - the database pausing again despite this schedule.
-5. **The stop rule, once Pro is bought.** Three months after the first issue, if net revenue is below running costs for two months in a row, the owner is reminded to cancel Pro. The coding agent sets that monthly check when the owner says Pro is bought.
+5. **The stop rule, once Pro is bought.** Three months after the first issue published on Substack, if net revenue is below running costs for two months in a row, the owner is reminded to cancel Pro. The coding agent sets that monthly check when the owner says Pro is bought.
 
 ## Alternatives
 
@@ -41,6 +43,6 @@ The spec already plans collection twice each weekday. No schedule was ever switc
 ## Consequences
 
 - The database should no longer pause, and the calendar refreshes each weekday without anyone starting a job.
-- Model spend becomes regular: about $20 a month at the start, inside the caps.
+- Model spend becomes regular: roughly $5 to $13 a month at the start, inside the caps.
 - The bucket grows with each weekday's new filings. The upgrade trigger in decision 4 watches for it; a weekly size alert is a follow-up.
 - Scheduled workflows on a public repository stop after 60 days with no repository activity. Ordinary work keeps it active.

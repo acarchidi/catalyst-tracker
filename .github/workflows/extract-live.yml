@@ -13,7 +13,7 @@ name: Extract catalysts (live)
 #   run log only sealed to the one-off public key given as the public_key input; the private
 #   half stays with the coding session (ADR 0034, decision 9). Without a key, export stops.
 # Extract and export first bring the live database up to date, so the checks' tables exist.
-# Started by hand from the Actions tab or by the coding session; costs a few cents per
+# Started by hand from the Actions tab or by the coding session, and on a weekday schedule (ADR 0051); costs a few cents per
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 # After an extraction, plain code turns the run's summary and today's spend into alert issues
 # for the owner (ADR 0023); a separate job, the only one that may write issues, posts them.

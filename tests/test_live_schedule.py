@@ -46,7 +46,9 @@ def test_both_live_jobs_run_on_weekdays() -> None:
 
 def test_a_scheduled_collection_collects_sec_filings_for_every_company() -> None:
     workflow = _load("collect-live.yml")
-    ran = {name for name, cond in _steps(workflow, "collect").items() if _runs_on_schedule(cond, "collect")}
+    steps = _steps(workflow, "collect")
+    assert "Measure or compress the stored copies" in steps
+    ran = {name for name, cond in steps.items() if _runs_on_schedule(cond, "collect")}
     assert {"Bring the live database up to date", "Collect", "Build alerts from this run"} <= ran
     assert "Measure or compress the stored copies" not in ran
     body = (WORKFLOWS / "collect-live.yml").read_text(encoding="utf-8")
@@ -57,7 +59,10 @@ def test_a_scheduled_collection_collects_sec_filings_for_every_company() -> None
 
 def test_a_scheduled_extraction_reads_at_most_20_releases_and_nothing_private() -> None:
     workflow = _load("extract-live.yml")
-    ran = {name for name, cond in _steps(workflow, "extract").items() if _runs_on_schedule(cond, "extract")}
+    steps = _steps(workflow, "extract")
+    # The steps checked below exist, so "not in ran" cannot pass because one was renamed.
+    assert {"Export published and held catalysts", "Score a reader on the gold set"} <= set(steps)
+    ran = {name for name, cond in steps.items() if _runs_on_schedule(cond, "extract")}
     assert "Extract catalysts from the newest press releases" in ran
     assert "Build alerts from this run" in ran
     # The export and the gold-set scoring never run without an explicit choice.
