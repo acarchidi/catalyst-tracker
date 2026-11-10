@@ -101,11 +101,30 @@ _DAY_LABELS = {
     DateConfidence.REGISTRY_ESTIMATE: "registry estimate",
     DateConfidence.INFERRED: "our estimate",
 }
-_WIDE_LABELS = {
-    DateConfidence.REGULATOR_SCHEDULED: "The regulator expects",
-    DateConfidence.REGISTRY_ESTIMATE: "The trial registry estimates",
-    DateConfidence.INFERRED: "We estimate",
-}
+_COMMON_FIRST_WORDS = frozenset(
+    {
+        "in",
+        "by",
+        "during",
+        "at",
+        "before",
+        "after",
+        "around",
+        "within",
+        "on",
+        "the",
+        "first",
+        "second",
+        "third",
+        "fourth",
+        "early",
+        "mid",
+        "late",
+        "end",
+        "year-end",
+    }
+)
+_END_WORDS = compile_pattern(r"(the )?(end|year-end)\b")
 _PREPOSITION = compile_pattern(
     r"(?i)(in|by|during|at|before|after|around|within|over|from|through|until|on)\b"
 )
@@ -477,13 +496,33 @@ def when(catalyst: CatalystSummary) -> str:
     if window.start == window.end:
         who = _DAY_LABELS[catalyst.date_confidence]
         return f"{_day(window.start)}{f' ({who})' if who else ''}."
-    words = window.raw_text.strip()
-    if not _PREPOSITION.match(words):
-        words = f"in {words}"
+    words = _date_words(window.raw_text, window.start, window.end)
     event = _EXPECTED.get(catalyst.catalyst_type, "the event")
     if catalyst.date_confidence is DateConfidence.COMPANY_CONFIRMED:
         return f"Company expects {event} {words}."
-    return f"{_WIDE_LABELS[catalyst.date_confidence]} {event} {words}."
+    if catalyst.date_confidence is DateConfidence.REGISTRY_ESTIMATE:
+        return f"The trial registry estimates completion {words}."
+    if catalyst.date_confidence is DateConfidence.REGULATOR_SCHEDULED:
+        return f"The regulator expects {event} {words}."
+    return f"Our estimate: {event} {words}."
+
+
+def _date_words(raw: str, start: date, end: date) -> str:
+    """Return the source's date words as they read after "expects potential data".
+
+    A common first word loses its capital ("In 2026" reads "in 2026"); words about an end take
+    "by" ("end of 2026" reads "by end of 2026"); words with no preposition take "in". Blank words
+    give the window's days instead.
+    """
+    words = " ".join(raw.split())
+    if not words:
+        return f"between {_day(start)} and {_day(end)}"
+    first, _, rest = words.partition(" ")
+    if first.lower() in _COMMON_FIRST_WORDS:
+        words = f"{first.lower()} {rest}".rstrip()
+    if _END_WORDS.match(words):
+        return f"by {words}"
+    return words if _PREPOSITION.match(words) else f"in {words}"
 
 
 def _is_plain_https(url: str) -> bool:

@@ -23,7 +23,9 @@ from catalyst.api.views import (
     CatalystSummary,
     ChangeView,
     CompanyView,
+    IndicationView,
     SourceView,
+    TrialView,
     WindowView,
 )
 from catalyst.outreach.digest import (
@@ -448,7 +450,7 @@ def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
             DateConfidence.REGISTRY_ESTIMATE,
             date(2026, 12, 1),
             date(2026, 12, 31),
-            "The trial registry estimates potential data in December 2026.",
+            "The trial registry estimates completion in December 2026.",
         ),
         (
             "December 15, 2026",
@@ -464,6 +466,30 @@ def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
             date(2026, 12, 15),
             "15 December 2026.",
         ),
+        *(
+            (raw, DateConfidence.COMPANY_CONFIRMED, date(2026, 7, 1), date(2026, 12, 31), expected)
+            for raw, expected in [
+                ("end of 2026", "Company expects potential data by end of 2026."),
+                ("year-end 2026", "Company expects potential data by year-end 2026."),
+                ("the end of the year", "Company expects potential data by the end of the year."),
+                ("In 2026", "Company expects potential data in 2026."),
+                ("First half of 2027", "Company expects potential data in first half of 2027."),
+                ("mid-2027", "Company expects potential data in mid-2027."),
+                ("Q1 2027", "Company expects potential data in Q1 2027."),
+                ("December 2026", "Company expects potential data in December 2026."),
+                (
+                    "   ",
+                    "Company expects potential data between 1 July 2026 and 31 December 2026.",
+                ),
+            ]
+        ),
+        (
+            "2H26",
+            DateConfidence.INFERRED,
+            date(2026, 7, 1),
+            date(2026, 12, 31),
+            "Our estimate: potential data in 2H26.",
+        ),
     ],
 )
 def test_when_says_the_date_in_words_and_who_stands_behind_it(
@@ -471,6 +497,36 @@ def test_when_says_the_date_in_words_and_who_stands_behind_it(
 ) -> None:
     record = _detail(start=start, end=end, raw=raw).model_copy(update={"date_confidence": confidence})
     assert when(record) == expected
+
+
+def test_an_entry_names_its_indication_and_trial_when_published() -> None:
+    record = _detail().model_copy(
+        update={
+            "indication": IndicationView(
+                id=uuid4(), mesh_id="D008545", name="Melanoma", line_of_therapy=None, biomarker=None
+            ),
+            "trials": [TrialView(id=uuid4(), nct_id="NCT01234567", study_name="EXAMPLE-1")],
+        }
+    )
+    text = _text(render_html(build_digest([record], ISSUE)))
+    assert "Indication: Melanoma" in text
+    assert "Trial: EXAMPLE-1 (NCT01234567)" in text
+    assert "Indication:" not in _text(render_html(build_digest([_detail()], ISSUE)))
+
+
+@given(hostile=st.text(min_size=1, max_size=200))
+def test_an_indication_or_study_name_can_never_add_a_tag_or_a_link(hostile: str) -> None:
+    record = _detail().model_copy(
+        update={
+            "indication": IndicationView(
+                id=uuid4(), mesh_id="D000001", name=hostile, line_of_therapy=None, biomarker=None
+            ),
+            "trials": [TrialView(id=uuid4(), nct_id="NCT01234567", study_name=hostile)],
+        }
+    )
+    page = _parsed(render_html(build_digest([record], ISSUE)))
+    assert page.tags.count("a") == 1
+    assert set(page.tags) <= ALLOWED_TAGS
 
 
 def test_every_catalyst_type_has_a_category_and_an_expected_event() -> None:

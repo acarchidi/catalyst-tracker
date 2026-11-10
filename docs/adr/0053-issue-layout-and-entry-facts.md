@@ -1,12 +1,12 @@
 # 0053 — Issue layout, and the facts each entry needs
 
-- **Status:** accepted (owner decisions 2026-11-10). Decision 1 is built with this ADR; decisions 2 to 6 are roadmap items. Where a decision says "the coding agent proposes", the owner has not ruled on that part
+- **Status:** accepted. The owner decided on 2026-11-10 what each issue shows: everything in the Context list below, and skipping issue 1. How decisions 2 to 6 get those facts, and the order, are the coding agent's proposals, marked "(agent's proposal)". Decision 1 is built with this ADR; decisions 2 to 6 are roadmap items
 - **Date:** 2026-11-10
 - **Roadmap items:** Phase 2, "Issue layout" and "Facts on every entry"
 
 ## Context
 
-On 2026-11-10 the owner skipped issue 1 (dated 2026-11-09; not ready to launch) and asked for these changes across all publications:
+On 2026-11-10 the owner skipped issue 1 (dated 2026-11-09): "we arent ready to launch just yet, so we have to skip this one." The owner asked for these changes across all publications:
 
 - the financial-advice notice once, at the very end, in smaller type;
 - sections named "Rescheduled Catalysts", "New", and "Upcoming Catalysts through [date]";
@@ -40,7 +40,9 @@ Facts from the export of 2026-11-10 (147 open catalysts on the paid calendar):
 - **Sections:** "Rescheduled Catalysts (n)", "New (n)", and "Upcoming Catalysts through [date] (n)". The date is the free calendar's last day (the issue date plus 30 days). On the paid page, which has no last day, it is the latest day any listed window reaches.
 - **When:** a day is written as the day, for example "When: 15 December 2026.", with "(set by the regulator)", "(registry estimate)", or "(our estimate)" when the company is not the one standing behind it. A wider window uses the source's own words, for example "When: Company expects potential data in 2026." The words before the date are fixed per catalyst type, computed by plain code (ADR 0047, decision 1). They replace the date label without losing who stands behind the date.
 - **The quote:** no longer printed in the issue. The source link carries a text fragment (`#:~:text=`), so the source page opens with the quoted sentence highlighted (spec: Provenance, rule 3). The fragment is percent-encoded by plain code, so it cannot add a tag or an attribute. Browsers without text fragments open the page at the top. The JSON issue, the read API, and the export keep every quote. This supersedes "the verbatim quote" and "the date label" in ADR 0047, decision 2, for the HTML only.
-- **The notice:** printed once, last, inside `<small>`. Substack may show it at normal size; the owner checks the first paste. This also replaces "above and below its records" in ADR 0052, decision 1, for the segment issues' notices.
+- **The notice:** printed once, last, inside `<small>`. Substack may show it at normal size; the owner checks the first paste. This supersedes "above and below" in ADR 0049, decision 6, ADR 0052, decision 1 (the segment issues' notices), and the roadmap's segment builder item. The same words in CP7b (quality-gates.md, owner-only) change in their own pull request, which must merge before CP7b runs.
+
+Decisions 2 to 6 are the coding agent's proposals for how to get the facts the owner asked for.
 
 ### 2. Indication on every entry
 
@@ -65,22 +67,24 @@ Facts from the export of 2026-11-10 (147 open catalysts on the paid calendar):
 
 ### 5. Pipeline and program pages
 
+- They back no published value, so the entry lists them on their own line, "Company pages:", apart from "Sources:".
+
 - A collector finds each covered company's website from its SEC data, or from links in its own filings.
 - It reads robots.txt and fetches a few likely pipeline addresses at the usual rate limit. A page counts as the pipeline page only when it is on the company's own domain and names at least one of the company's published drugs.
 - It counts as a program page when its title or main heading names the drug.
-- Both are stored with their hash, linked in the sources line as "Company pipeline" and "Program page", and checked by the weekly link check (ADR 0043).
-- **The coding agent proposes:** a later item may take phase and indication claims from these stored pages, with their quotes, as a company-website source.
+- Both are stored with their hash, linked as "Company pipeline" and "Program page", and checked by the weekly link check (ADR 0043).
+- A later item may take phase and indication claims from these stored pages, with their quotes. That needs the company website added to the spec's source ranking, an owner-only change.
 
 ### 6. Conferences with their dates
 
-- `config/conferences.toml`, reviewable by the owner, lists each meeting: the names and abbreviations sources use, the year, the first and last day, the city, and the official page.
-- The coding agent checks each entry against the official page when adding it.
-- When a quote names a listed meeting, plain code adds "ACG 2026 Annual Scientific Meeting, [first day] to [last day], [city]" with the official page in the sources line.
+- `config/conferences.toml`, reviewable by the owner, lists only which meetings to follow: the names and abbreviations sources use, and the official page's address.
+- A collector stores each official page with its hash. The meeting's dates and city are claims from that stored copy, each with the verbatim sentence that states them, checked by plain code and written by the publish gate like any other claim (spec: Provenance). Nothing typed into the config file is ever printed as a date.
+- When a quote names a followed meeting with published dates, plain code adds "ACG 2026 Annual Scientific Meeting, [first day] to [last day], [city]" with the official page in the sources line.
 - **"A medical conference":** an unnamed meeting cannot be identified from that text. It stays as written until a later release or filing names the meeting, and that document then updates the record.
 
 ### Order
 
-Decision 1 ships first. Then 2 and 6, which need no model change. Then 3, then 5, then 4 (it waits for the owner-only spec change). The owner said launch waits for these facts, so the Phase 2 items for them come before the first issue.
+Decision 1 ships first. Then 2 and 6, which need no model change. Then 3, then 5, then 4 (it waits for the owner-only spec change). The agent proposes that the first issue waits for these facts, since the owner asked that every entry carry them (agent's proposal).
 
 ## Alternatives
 
