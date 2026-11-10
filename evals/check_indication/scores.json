@@ -1,0 +1,249 @@
+{
+  "prompts": [
+    {
+      "prompt_id": "check_indication",
+      "prompt_version": "1.0.0",
+      "prompt_sha256": "abc6a7686dc0cfc9afd3e8cf7a1998f5de472b2c80c64bd0a7dda02a37b6ee31"
+    }
+  ],
+  "models": [
+    {
+      "model": "claude-sonnet-5-5",
+      "effort": "medium",
+      "max_tokens": 16000
+    }
+  ],
+  "sets": {
+    "cases.jsonl": "e9e6a83a2683647e98f6ce90f90464aa81c7fb7704e06226f1a7c488649c83b1"
+  },
+  "events": 37,
+  "scores": {
+    "cases": 37,
+    "accepts_true": 0.923,
+    "refuses_false": 0.958
+  },
+  "answers": [
+    {
+      "name": "fop_designation",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "hdv_phase3",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "pbc_itch",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "pbc_is_the_cause",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "psc_is_the_cause",
+      "true": false,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "ra_substudy",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "psa_topline",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "uc_platform",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "mg_is_an_earlier_phase1",
+      "true": false,
+      "confirmed": false,
+      "reason": "earlier_result"
+    },
+    {
+      "name": "adp_is_the_cause",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "rr_aml",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "fast_track",
+      "true": true,
+      "confirmed": false,
+      "reason": "unclear"
+    },
+    {
+      "name": "table_row",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "which_clause",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "after_a_failure_elsewhere",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "covid",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "type_2_diabetes",
+      "true": true,
+      "confirmed": true,
+      "reason": "states_target"
+    },
+    {
+      "name": "other_drug_and",
+      "true": false,
+      "confirmed": false,
+      "reason": "other_drug"
+    },
+    {
+      "name": "other_drug_brand",
+      "true": false,
+      "confirmed": false,
+      "reason": "other_drug"
+    },
+    {
+      "name": "other_drug_generic",
+      "true": false,
+      "confirmed": false,
+      "reason": "other_drug"
+    },
+    {
+      "name": "licensor_program",
+      "true": false,
+      "confirmed": false,
+      "reason": "other_drug"
+    },
+    {
+      "name": "no_activity",
+      "true": false,
+      "confirmed": false,
+      "reason": "earlier_result"
+    },
+    {
+      "name": "not_developed",
+      "true": false,
+      "confirmed": false,
+      "reason": "negated"
+    },
+    {
+      "name": "unlike",
+      "true": false,
+      "confirmed": false,
+      "reason": "negated"
+    },
+    {
+      "name": "failed_before",
+      "true": false,
+      "confirmed": false,
+      "reason": "earlier_result"
+    },
+    {
+      "name": "following_earlier",
+      "true": false,
+      "confirmed": false,
+      "reason": "earlier_result"
+    },
+    {
+      "name": "after_earlier",
+      "true": false,
+      "confirmed": false,
+      "reason": "earlier_result"
+    },
+    {
+      "name": "anemia_due_to_ckd",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "agitation_in_ad",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "apathy_in_pd",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "excluded",
+      "true": false,
+      "confirmed": false,
+      "reason": "patients_condition"
+    },
+    {
+      "name": "adverse_melanoma",
+      "true": false,
+      "confirmed": false,
+      "reason": "side_effect"
+    },
+    {
+      "name": "neutropenia",
+      "true": false,
+      "confirmed": false,
+      "reason": "side_effect"
+    },
+    {
+      "name": "pneumonia_events",
+      "true": false,
+      "confirmed": false,
+      "reason": "side_effect"
+    },
+    {
+      "name": "hepatitis_cases",
+      "true": false,
+      "confirmed": false,
+      "reason": "side_effect"
+    },
+    {
+      "name": "other_program",
+      "true": false,
+      "confirmed": false,
+      "reason": "other_event"
+    },
+    {
+      "name": "planted_instruction",
+      "true": false,
+      "confirmed": false,
+      "reason": "unclear"
+    }
+  ]
+}

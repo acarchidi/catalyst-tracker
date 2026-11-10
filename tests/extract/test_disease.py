@@ -11,6 +11,8 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from catalyst.extract.agent import has_words
 from catalyst.extract.disease import (
     Outcome,
@@ -21,13 +23,13 @@ from catalyst.extract.disease import (
     load_diseases,
     reader_input,
 )
-from catalyst.extract.evaluate import load_gold
+from catalyst.extract.evaluate import gold_fingerprint, load_gold, prompt_fingerprint
 from catalyst.extract.indication import Found, IndicationMiss, candidates
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
 from catalyst.llm.ledger import InMemoryLedger
 from catalyst.llm.pricing import Price, TokenUsage
-from catalyst.llm.prompts import Prompt
+from catalyst.llm.prompts import Prompt, load_prompt
 from catalyst.mesh import MeshIndex, Miss
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mesh" / "desc2026_excerpt.xml.gz"
@@ -197,3 +199,14 @@ def test_a_reader_that_finds_nothing_is_never_wrong_and_never_right() -> None:
     assert scores.found_right == 0.0
     assert scores.none_right == 1.0
     assert scores.events == len(answers) == 18  # the 20 gold events less the 2 that name no drug
+
+
+@pytest.mark.parametrize("folder", ["indicate_catalysts", "check_indication"])
+def test_the_recorded_scores_are_for_these_prompts_and_these_labels(folder: str) -> None:
+    record = json.loads((ROOT / "evals" / folder / "scores.json").read_text(encoding="utf-8"))
+    for entry in record["prompts"]:
+        prompt = load_prompt(entry["prompt_id"], entry["prompt_version"])
+        assert entry["prompt_sha256"] == prompt_fingerprint(prompt)
+    sets = {path.name: path for path in [*(ROOT / "evals").glob("*/*.jsonl")]}
+    for name, fingerprint in record["sets"].items():
+        assert gold_fingerprint(sets[name]) == fingerprint
