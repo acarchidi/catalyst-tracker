@@ -33,10 +33,19 @@ from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import ON_REQUEST, SOURCES, build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
+from catalyst.collectors.sources.mesh import stored_index
 from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
 from catalyst.export import build_export, write_export
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
+from catalyst.extract.disease import (
+    CHECKER_PROMPT,
+    READER_PROMPT,
+    evaluate_checker,
+    evaluate_readers,
+    load_diseases,
+    score_record,
+)
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
@@ -264,9 +273,12 @@ def _parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--out", type=Path, required=True, help="Write the scores record (JSON) here.")
     evaluate.add_argument(
         "--prompt",
-        choices=sorted(_READERS),
+        choices=sorted([*_READERS, *_INDICATION_READERS]),
         default=EXTRACTOR_PROMPT[0],
-        help="Which reader to score: the extractor (default) or the verifier's second reading.",
+        help=(
+            "Which reader to score: the extractor (default), the verifier's second reading, "
+            "or either reader of indications (ADR 0053)."
+        ),
     )
     planted = commands.add_parser(
         "planted-errors",
@@ -940,7 +952,13 @@ _READERS = {
 }
 
 
+_INDICATION_READERS = {READER_PROMPT[0], CHECKER_PROMPT[0]}
+INDICATION_EVALS = EVALS.parent
+
+
 def _evaluate(args: argparse.Namespace) -> int:
+    if args.prompt in _INDICATION_READERS:
+        return _evaluate_indication(args)
     try:
         adapter = anthropic_adapter.from_settings()
         database = settings.database_url()
@@ -960,6 +978,48 @@ def _evaluate(args: argparse.Namespace) -> int:
     record = scores_record(scores, load_prompt(*prompt_ref), role, EVALS / "gold.jsonl", len(gold))
     args.out.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2))
+    return 0
+
+
+def _evaluate_indication(args: argparse.Namespace) -> int:
+    """Score a reader of indications: both readers on the gold events, or the checker on its cases."""
+    try:
+        adapter = anthropic_adapter.from_settings()
+        database = settings.database_url()
+        store = SupabaseSnapshotStore(settings.supabase_url(), settings.supabase_secret_key())
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    config = load_config()
+    engine = create_engine(database)
+    try:
+        client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
+        if args.prompt == CHECKER_PROMPT[0]:
+            cases = INDICATION_EVALS / "check_indication" / "cases.jsonl"
+            checked, answers = evaluate_checker(client, cases)
+            record = score_record(
+                checked, [load_prompt(*CHECKER_PROMPT)], [config.roles[VERIFIER_ROLE]], [cases], answers
+            )
+        else:
+            with Session(engine) as session:
+                index = stored_index(session, store)
+            if index is None:
+                print("no MeSH descriptor file is stored yet; run the mesh collector first", file=sys.stderr)
+                return 2
+            labels = INDICATION_EVALS / "indicate_catalysts" / "indications.jsonl"
+            gold = load_gold(EVALS / "gold.jsonl")
+            read, answers = evaluate_readers(client, gold, load_diseases(labels), EVALS / "documents", index)
+            record = score_record(
+                read,
+                [load_prompt(*READER_PROMPT), load_prompt(*CHECKER_PROMPT)],
+                [config.roles[ROLE], config.roles[VERIFIER_ROLE]],
+                [EVALS / "gold.jsonl", labels],
+                answers,
+            )
+    finally:
+        engine.dispose()
+    args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(json.dumps(record, indent=2, ensure_ascii=False))
     return 0
 
 

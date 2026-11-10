@@ -40,7 +40,7 @@ on:
       prompt:
         description: "evaluate only: which reader to score"
         type: choice
-        options: [extract_catalysts, verify_catalysts]
+        options: [extract_catalysts, verify_catalysts, indicate_catalysts, check_indication]
         default: extract_catalysts
       public_key:
         description: "export (required) or extract (optional): the one-line public key from `catalyst seal-keygen`; files are printed only sealed to it"
@@ -162,6 +162,9 @@ jobs:
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          # Read only, by the indication readers: the stored MeSH descriptor file (ADR 0053).
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
           PROMPT: ${{ inputs.prompt }}
         run: |
