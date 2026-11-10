@@ -11,8 +11,14 @@ name: Collect (live)
 # replaces each plain copy with its checked compressed copy, then prints the size again. It is
 # safe to stop and re-run; a run that reaches its time limit leaves the rest for the next run.
 # They print counts and sizes only, never content.
+# A weekday schedule (ADR 0051) collects the last 10 days of SEC filings for every covered
+# company. It keeps the free Supabase project from pausing for inactivity, at no cost.
+# Scheduled runs have no inputs, so each input below falls back to its default.
 
 on:
+  schedule:
+    # 22:13 UTC on weekdays: 5:13 pm New York in winter, 6:13 pm in summer, after the close.
+    - cron: "13 22 * * 1-5"
   workflow_dispatch:
     inputs:
       mode:
@@ -63,7 +69,7 @@ jobs:
 
       - name: Bring the live database up to date
         id: migrate
-        if: ${{ inputs.mode == 'collect' }}
+        if: ${{ (inputs.mode || 'collect') == 'collect' }}
         timeout-minutes: 10
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -72,7 +78,7 @@ jobs:
 
       - name: Collect
         id: collect
-        if: ${{ inputs.mode == 'collect' }}
+        if: ${{ (inputs.mode || 'collect') == 'collect' }}
         timeout-minutes: 160
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -80,11 +86,14 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
-          COMPANIES: ${{ inputs.companies }}
+          COMPANIES: ${{ inputs.companies || 'coverage' }}
           SINCE: ${{ inputs.since }}
-          SOURCES: ${{ inputs.sources }}
+          SOURCES: ${{ inputs.sources || 'sec' }}
         run: |
           set +e
+          # A scheduled run has no date input: it takes the last 10 days, so a missed day is
+          # caught by the next run. Collectors skip what they already stored.
+          if [ -z "$SINCE" ]; then SINCE=$(date -u -d '10 days ago' +%F); fi
           case "$COMPANIES" in
             gate1) list=config/gate1_companies.toml ;;
             coverage) list=config/coverage_companies.toml ;;
@@ -105,14 +114,14 @@ jobs:
       # Free: no model call. Reads the bucket and, for the totals by source, the database.
       # Compression starts no new copy after 140 minutes, so it ends before the step's limit.
       - name: Measure or compress the stored copies
-        if: ${{ inputs.mode != 'collect' }}
+        if: ${{ (inputs.mode || 'collect') != 'collect' }}
         timeout-minutes: 160
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
-          MODE: ${{ inputs.mode }}
+          MODE: ${{ inputs.mode || 'collect' }}
         run: |
           set +e
           case "$MODE" in
@@ -135,7 +144,7 @@ jobs:
       # Free: no model call. Runs even when a step failed, so the failure is reported.
       - name: Build alerts from this run
         id: alerts
-        if: ${{ !cancelled() && inputs.mode == 'collect' }}
+        if: ${{ !cancelled() && (inputs.mode || 'collect') == 'collect' }}
         timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}

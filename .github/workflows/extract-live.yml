@@ -17,8 +17,14 @@ name: Extract catalysts (live)
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 # After an extraction, plain code turns the run's summary and today's spend into alert issues
 # for the owner (ADR 0023); a separate job, the only one that may write issues, posts them.
+# A weekday schedule (ADR 0051) reads up to 20 new releases after each day's collection, inside
+# the same daily caps. Scheduled runs have no inputs, so each input falls back to its default.
 
 on:
+  schedule:
+    # 00:43 UTC Tuesday to Saturday: the evening after each weekday's collection (22:13 UTC).
+    # Both workflows share one concurrency group, so a late collection only delays this run.
+    - cron: "43 0 * * 2-6"
   workflow_dispatch:
     inputs:
       mode:
@@ -69,7 +75,7 @@ jobs:
 
       - name: Bring the live database up to date
         id: migrate
-        if: ${{ inputs.mode == 'extract' || inputs.mode == 'export' }}
+        if: ${{ (inputs.mode || 'extract') == 'extract' || inputs.mode == 'export' }}
         timeout-minutes: 10
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -78,7 +84,7 @@ jobs:
 
       - name: Extract catalysts from the newest press releases
         id: extract
-        if: ${{ inputs.mode == 'extract' }}
+        if: ${{ (inputs.mode || 'extract') == 'extract' }}
         timeout-minutes: 45
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
@@ -86,7 +92,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
-          LIMIT: ${{ inputs.limit }}
+          LIMIT: ${{ inputs.limit || 20 }}
           PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
           set +e
@@ -135,7 +141,7 @@ jobs:
       # Free: no model call. Runs even when the extraction failed, so the failure is reported.
       - name: Build alerts from this run
         id: alerts
-        if: ${{ !cancelled() && inputs.mode == 'extract' }}
+        if: ${{ !cancelled() && (inputs.mode || 'extract') == 'extract' }}
         timeout-minutes: 5
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
