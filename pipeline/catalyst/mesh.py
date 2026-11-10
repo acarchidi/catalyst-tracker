@@ -159,6 +159,7 @@ class Miss(StrEnum):
     SEVERAL_DISEASES = "terms of more than one MeSH disease in the text"
     NARROWER = "a word before the disease term narrows it to a disease MeSH may not have"
     NEGATED = "the disease term follows a word that negates it"
+    CAUSED = "a cause after the disease term narrows it to a disease MeSH may not have"
 
 
 def normal_words(text: str) -> tuple[str, ...]:
@@ -271,7 +272,7 @@ def _context(words: tuple[str, ...], taken: list[bool], start: int, end: int) ->
         rest = after + 1
         while rest < len(words) and not taken[rest]:
             if words[rest] not in QUALIFIERS and words[rest] not in CAUSES:
-                return Miss.NARROWER
+                return Miss.CAUSED
             rest += 1
     return None
 
