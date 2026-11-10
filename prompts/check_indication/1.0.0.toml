@@ -18,7 +18,7 @@ Answer with:
   - "patients_condition": the disease is a condition patients had, or were excluded for, not the target;
   - "earlier_result": the disease belongs to an earlier, finished, or failed study or result;
   - "negated": the sentence says the drug is not aimed at the disease;
-  - "cause_of_other": the disease is named only as the cause of another condition the drug treats;
+  - "cause_of_other": the disease is named only as the cause of another condition the drug treats, as septic shock is in "hypotension due to septic shock" or tuberous sclerosis is in "seizures associated with tuberous sclerosis";
   - "other_event": the sentence is about the drug in another disease or program than this event's;
   - "unclear": none of the above, or the sentence does not say.
 states is true exactly when reason is "states_target".

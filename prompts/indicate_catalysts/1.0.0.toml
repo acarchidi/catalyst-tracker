@@ -11,9 +11,9 @@ The message gives the drug's name, the event sentence, then numbered candidate s
 
 Give:
 - sentence: the number of the one candidate sentence that states that this drug is aimed at that disease for this event. Prefer a sentence that spells the disease out. Null if no candidate states it.
-- disease: the disease or condition alone, copied exactly from that sentence, without the line of therapy, stage, severity, biomarker, or patient group: for example "acute myeloid leukemia" from "relapsed/refractory acute myeloid leukemia". Null when sentence is null.
+- disease: the disease or condition alone, copied exactly from that sentence, without the line of therapy, stage, severity, biomarker, or patient group: for example "acute myeloid leukemia" from "relapsed/refractory acute myeloid leukemia". Leave out an abbreviation in brackets: "psoriatic arthritis" from "psoriatic arthritis (PsA)". Null when sentence is null.
 
-A sentence states the disease only if it says this drug is aimed at it. A side effect, a condition patients had or were excluded for, another drug's disease, an earlier or failed result, or a disease named only as the cause of another condition is not the disease this event concerns. If you are unsure, answer null.
+A sentence states the disease only if it says this drug is aimed at it. A side effect, a condition patients had or were excluded for, another drug's disease, an earlier or failed result, or a disease named only as the cause of another condition is not the disease this event concerns: in "hypotension due to septic shock" the disease is "hypotension", never "septic shock". If you are unsure, answer null.
 """
 output_schema = """
 {

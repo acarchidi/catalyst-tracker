@@ -9,6 +9,7 @@ import time
 from functools import cache
 from pathlib import Path
 
+import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
@@ -89,9 +90,9 @@ def test_a_disease_not_written_in_the_sentence_is_refused() -> None:
     assert hard_check(_span(AML), "melanoma", _index()) is IndicationMiss.DISEASE_NOT_IN_SENTENCE
 
 
-def test_a_disease_with_brackets_is_refused() -> None:
-    sentence = "Zentocel is in a Phase 3 trial in acute myeloid leukemia (AML)."
-    assert hard_check(_span(sentence), "acute myeloid leukemia (AML)", _index()) is IndicationMiss.BRACKETS
+def test_a_disease_with_brackets_inside_is_refused() -> None:
+    sentence = "Zentocel is in a Phase 3 trial in Acute (not) Myeloid Leukemia."
+    assert hard_check(_span(sentence), "Acute (not) Myeloid Leukemia", _index()) is IndicationMiss.BRACKETS
 
 
 def test_a_disease_mesh_cannot_name_as_one_is_refused_with_its_reason() -> None:
@@ -110,3 +111,35 @@ def test_every_offered_sentence_is_the_sources_own_words(before: str, after: str
     for span in candidates(text, text, "zentocel"):
         assert text[span.start : span.end] == span.quote
         assert "zentocel" in span.quote.casefold()
+
+
+@pytest.mark.parametrize(
+    ("sentence", "disease"),
+    [
+        (
+            "Zentocel is in Phase 2b in cholestatic pruritus due to primary biliary cholangitis (PBC).",
+            "primary biliary cholangitis",
+        ),
+        (
+            "Zentocel is in a Phase 3 trial for anemia associated with chronic kidney disease.",
+            "chronic kidney disease",
+        ),
+        ("Zentocel is in a Phase 3 trial for pain secondary to melanoma.", "melanoma"),
+        ("Zentocel is in a Phase 1 trial in melanoma-associated retinopathy.", "melanoma"),
+        ("Zentocel is in Phase 3 for melanoma related fatigue.", "melanoma"),
+    ],
+)
+def test_a_disease_the_sentence_gives_as_a_cause_is_refused(sentence: str, disease: str) -> None:
+    assert hard_check(_span(sentence), disease, _index()) is IndicationMiss.CAUSE
+
+
+def test_a_disease_named_as_the_target_is_not_taken_for_a_cause() -> None:
+    sentence = "Zentocel is in a Phase 3 trial in patients with melanoma, with data due in 2027."
+    assert isinstance(hard_check(_span(sentence), "melanoma", _index()), Found)
+
+
+def test_a_trailing_abbreviation_in_brackets_is_dropped_from_the_disease() -> None:
+    sentence = "Zentocel is in a Phase 3 trial in acute myeloid leukemia (AML)."
+    found = hard_check(_span(sentence), "acute myeloid leukemia (AML)", _index())
+    assert isinstance(found, Found)
+    assert found.words == "acute myeloid leukemia"

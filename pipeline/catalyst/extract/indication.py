@@ -27,6 +27,15 @@ _BREAK = re.compile(r"(?<=[.!?;])\s+|[\n\u2028\u2029]+|[\u2022\u25cf\u25e6\u25aa
 MAX_CANDIDATES = 20
 MAX_SENTENCE_CHARS = 1000
 MIN_DRUG_LETTERS = 3
+# Both models confirmed a disease written as the cause of the condition treated ("pruritus due to
+# primary biliary cholangitis"; runs 42903067210 and 42903081793), so plain code refuses it.
+_CAUSE_BEFORE = re.compile(
+    r"\b(?:due to|associated with|secondary to|caused by|related to|induced by|attributable to)\s*$",
+    re.IGNORECASE,
+)
+_CAUSE_AFTER = re.compile(r"^-?\s*(?:associated|related|induced)\b", re.IGNORECASE)
+# A trailing abbreviation in brackets, as in "psoriatic arthritis (PsA)", is dropped from the answer.
+_TRAILING_SHORT_FORM = re.compile(r"\s*\([^()\[\]]{1,15}\)\s*$")
 COMMON = frozenset(
     {"the", "a", "an", "and", "or", "of", "in", "for", "with", "to", "is", "it", "its", "this", "that"}
 )
@@ -41,6 +50,7 @@ class IndicationMiss(StrEnum):
     NOT_A_CANDIDATE = "the reader's sentence number is not one of the candidates"
     DISEASE_NOT_IN_SENTENCE = "the disease is not written in the sentence as given"
     BRACKETS = "the disease's words hold brackets"
+    CAUSE = "the sentence names the disease only as the cause of another condition"
     NOT_CONFIRMED = "the second reader did not confirm the sentence states the disease"
 
 
@@ -91,15 +101,29 @@ def candidates(text: str, visible: str, drug: str) -> list[QuoteSpan]:
     return found
 
 
+def named_as_cause(sentence: str, disease: str) -> bool:
+    """Say whether any place the sentence writes the disease gives it as another condition's cause."""
+    pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, disease.split())) + r"(?!\w)"
+    for found in re.finditer(pattern, sentence):
+        if _CAUSE_BEFORE.search(sentence[: found.start()]) or _CAUSE_AFTER.match(sentence[found.end() :]):
+            return True
+    return False
+
+
 def hard_check(sentence: QuoteSpan, disease: str, index: MeshIndex) -> Found | IndicationMiss | Miss:
     """Check a reader's disease against its sentence, with no model.
 
-    The disease must be written in the sentence as given, hold no brackets, and name one MeSH disease.
+    A trailing abbreviation in brackets is dropped. The rest must hold no brackets, be written in
+    the sentence as given, never be given there as another condition's cause, and name one MeSH
+    disease.
     """
-    if "(" in disease or ")" in disease or "[" in disease:
+    disease = _TRAILING_SHORT_FORM.sub("", disease)
+    if any(mark in disease for mark in "()[]"):
         return IndicationMiss.BRACKETS
     if not has_words(sentence.quote, disease):
         return IndicationMiss.DISEASE_NOT_IN_SENTENCE
+    if named_as_cause(sentence.quote, disease):
+        return IndicationMiss.CAUSE
     match = index.match(disease, tail=True)
     if isinstance(match, Miss):
         return match
