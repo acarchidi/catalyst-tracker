@@ -14,13 +14,13 @@
     }
   ],
   "sets": {
-    "cases.jsonl": "e9e6a83a2683647e98f6ce90f90464aa81c7fb7704e06226f1a7c488649c83b1"
+    "cases.jsonl": "c0a20694987804cbf1dddf17b129547c97efaa24956d19533aeb483ae4ba202a"
   },
-  "events": 37,
+  "events": 39,
   "scores": {
-    "cases": 37,
-    "accepts_true": 0.923,
-    "refuses_false": 0.958
+    "cases": 39,
+    "accepts_true": 1.0,
+    "refuses_false": 0.962
   },
   "answers": [
     {
@@ -92,8 +92,8 @@
     {
       "name": "fast_track",
       "true": true,
-      "confirmed": false,
-      "reason": "unclear"
+      "confirmed": true,
+      "reason": "states_target"
     },
     {
       "name": "table_row",
@@ -147,7 +147,7 @@
       "name": "licensor_program",
       "true": false,
       "confirmed": false,
-      "reason": "other_drug"
+      "reason": "unclear"
     },
     {
       "name": "no_activity",
@@ -201,7 +201,7 @@
       "name": "apathy_in_pd",
       "true": false,
       "confirmed": false,
-      "reason": "cause_of_other"
+      "reason": "patients_condition"
     },
     {
       "name": "excluded",
@@ -244,6 +244,18 @@
       "true": false,
       "confirmed": false,
       "reason": "unclear"
+    },
+    {
+      "name": "disease_then_symptom",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
+    },
+    {
+      "name": "disease_then_psychosis",
+      "true": false,
+      "confirmed": false,
+      "reason": "cause_of_other"
     }
   ]
 }

@@ -10,4 +10,4 @@ Scores (`catalyst eval-extractor --prompt check_indication --out scores.json`, o
 - `accepts_true`: of true cases, the share it confirms.
 - `refuses_false`: of false cases, the share it refuses. A false case it confirms would let a wrong indication publish.
 
-Current scores (`scores.json`, run 42904400128): accepts_true 0.923 (12 of 13), refuses_false 0.958 (23 of 24). The one false case it confirms (`psc_is_the_cause`) is also refused by plain code, which refuses a disease the sentence gives as a cause.
+Current scores (`scores.json`, run 42906248003): accepts_true 1.0 (13 of 13), refuses_false 0.962 (25 of 26). The one false case it confirms (`psc_is_the_cause`) is also refused by plain code, which refuses a disease the sentence gives as a cause.

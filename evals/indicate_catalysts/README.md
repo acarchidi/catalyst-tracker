@@ -22,6 +22,6 @@ Scores (`catalyst eval-extractor --prompt indicate_catalysts --out scores.json`,
 
 Known limits, written into the labels: abbreviations such as "UC", "PsA" and "Progressive MS" are never matched, so events whose only stating sentence uses one cannot publish. Two SPY072 events share one sentence naming two diseases; they are scored strictly, and plain code refuses an indication when the event's own quote names more than one disease.
 
-Current scores (`scores.json`, runs 42904400128 and 42904405989): found_right 0.333 (5 of 15), none_right 1.0 (3 of 3), wrong 0.0 (0 of 18).
+Current scores (`scores.json`, run 42906242447): found_right 0.133 (2 of 15), none_right 1.0 (3 of 3), wrong 0.0 (0 of 18).
 
 The scores are recorded here, not floored yet: an indication is not published until a later pull request adds the writer, and that pull request sets the floor.
