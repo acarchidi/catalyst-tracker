@@ -53,6 +53,8 @@ OWNER_PATHS = (
     "evals/verify_catalysts/baseline.json",  # the second reading's floor (ADR 0018, part 2)
     "evals/verify_catalysts/unscored.json",  # an exemption the second reading must never get
     "evals/planted_errors/baseline.json",  # the planted-error test's floor (ADR 0018, part 4)
+    "evals/indicate_catalysts/baseline.json",  # the indication readers' floors (ADR 0053, decision 2)
+    "evals/check_indication/baseline.json",  # the indication checker's floors (ADR 0053, decision 2)
 )
 # Instruction files the reviewer loads, wherever they sit in the repository.
 OWNER_FILE_NAMES = ("AGENTS.md", "CLAUDE.md", ".mcp.json")
