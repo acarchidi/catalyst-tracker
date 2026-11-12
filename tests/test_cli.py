@@ -1032,3 +1032,9 @@ def test_the_indication_job_prints_its_counts_and_fails_when_it_could_not_do_its
     monkeypatch.setattr(cli, "indicate_catalysts", lambda *_args, **_kwargs: _Report())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["indicate-catalysts", "--snapshot-store", "local", "--limit", "3"]) == expected
     assert json.loads(capsys.readouterr().out) == summary
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_the_indication_job_refuses_a_limit_below_one(limit: str) -> None:
+    with pytest.raises(SystemExit):
+        main(["indicate-catalysts", "--limit", limit])

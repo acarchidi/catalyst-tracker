@@ -325,6 +325,11 @@ def _identity_problems(
     return problems
 
 
+def _finite_number(value: object) -> bool:
+    """Say whether a value read from a file is a finite number; NaN passes no comparison."""
+    return not isinstance(value, bool) and isinstance(value, int | float) and math.isfinite(value)
+
+
 def _floor_problems(folder: str, earned: dict[str, Any], floor: dict[str, float]) -> list[str]:
     """Return each score past its floor (or, for `wrong`, its ceiling), missing, or not a number.
 
@@ -340,10 +345,13 @@ def _floor_problems(folder: str, earned: dict[str, Any], floor: dict[str, float]
     for name in sorted(required - set(earned)):
         problems.append(f"{folder}/scores.json has no {name} score")
     for name, limit in floor.items():
+        if not _finite_number(limit):  # read from a file: it may hold anything
+            problems.append(f"{folder}/baseline.json gives {name} as {limit!r}, not a number")
+            continue
         raw = earned.get(name)
         if raw is None:
             continue  # counted above, or not a score this folder records
-        if isinstance(raw, bool) or not isinstance(raw, int | float) or not math.isfinite(raw):
+        if not _finite_number(raw):
             problems.append(f"{folder}/scores.json gives {name} as {raw!r}, not a number")
             continue
         value = float(raw)

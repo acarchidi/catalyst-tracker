@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
-from catalyst.extract.indicate import CONFIRMED_CHECK, claim_field, indicate_catalysts
+from catalyst.extract.indicate import CONFIRMED_CHECK, REDRAWN, claim_field, indicate_catalysts
 from catalyst.extract.text import document_text, find_quote
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
@@ -27,6 +27,7 @@ from catalyst.llm.ledger import InMemoryLedger
 from catalyst.llm.pricing import Price, TokenUsage
 from catalyst.llm.prompts import Prompt
 from catalyst.mesh import MeshIndex
+from catalyst.publish.gate import match_quote
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
@@ -284,3 +285,48 @@ def test_a_role_at_its_cap_stops_the_job(session_factory: sessionmaker[Session],
     assert summary["stopped"]
     assert summary["considered"] == 0
     assert _all(session_factory, IndicationAttempt) == []
+
+
+def test_a_kept_indication_passes_the_publish_gates_own_quote_check(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    catalyst_id = _seed(session_factory, store)
+    _run(session_factory, store, _Fake())
+    (row,) = [c for c in _all(session_factory, Claim) if c.field == claim_field(catalyst_id)]
+    claim = Claim.model_validate(row._asdict())
+    result = match_quote(claim, document_text(RELEASE, "text/html"))
+    assert result.outcome == "pass", result.reason
+
+
+def test_a_later_try_that_names_another_disease_for_the_same_sentence_is_refused(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    catalyst_id = _seed(session_factory, store)
+    span = find_quote(document_text(RELEASE, "text/html"), TARGET)
+    assert span is not None
+    with session_factory.begin() as session:  # an earlier run kept this sentence with another disease
+        document = session.execute(select(TABLES[SourceDocument].c.id)).scalar_one()
+        earlier = Claim(
+            source_document_id=document,
+            subject_type=ClaimSubject.CATALYST,
+            subject_id=catalyst_id,
+            field=claim_field(catalyst_id),
+            value={"mesh_id": "D000001", "mesh_name": "Other", "words": "other", "text_version": "1"},
+            quote=span.quote,
+            quote_start=span.start,
+            quote_end=span.end,
+            agent="extractor",
+            prompt_id="indicate_catalysts",
+            prompt_version="1.0.0",
+            provider="fake",
+            model="claude-sonnet-5-5",
+            extracted_at=NOW,
+        )
+        _add(session, earlier)
+    summary = _run(session_factory, store, _Fake())
+    assert summary["found"] == 0
+    (attempt,) = _all(session_factory, IndicationAttempt)
+    assert (attempt.outcome, attempt.reason, attempt.indication_claim_id) == ("refused", REDRAWN, None)
+    assert not [c for c in _all(session_factory, ClaimCheck) if c.claim_id == earlier.id]

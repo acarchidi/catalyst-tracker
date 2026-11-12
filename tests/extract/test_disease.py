@@ -362,3 +362,13 @@ def test_a_label_set_missing_from_disk_stops_the_readers(tmp_path: Path) -> None
     evals = _copy_evals(tmp_path)
     (evals / "check_indication" / "cases.jsonl").unlink()
     assert indication_gate_problems(evals) != []
+
+
+def test_a_floor_that_is_not_a_number_stops_the_readers(tmp_path: Path) -> None:
+    evals = _copy_evals(tmp_path)
+    (evals / "indicate_catalysts" / "baseline.json").write_text(
+        '{"found_right": NaN, "none_right": 1.0, "wrong": "low"}', encoding="utf-8"
+    )
+    problems = indication_gate_problems(evals)
+    assert any("found_right" in p for p in problems)
+    assert any("wrong" in p for p in problems)

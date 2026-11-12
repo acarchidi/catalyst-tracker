@@ -304,7 +304,10 @@ def _parser() -> argparse.ArgumentParser:
         help="Ask both indication readers about published catalysts without an indication (costs money).",
     )
     indicate.add_argument(
-        "--limit", type=int, default=10, help="Most catalysts to ask about in this run (default 10)."
+        "--limit",
+        type=_at_least_one,
+        default=10,
+        help="Most catalysts to ask about in this run (default 10).",
     )
     _store_arguments(indicate)
     sample_check = commands.add_parser(
@@ -1052,6 +1055,14 @@ def _evaluate_indication(args: argparse.Namespace) -> int:
     args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2, ensure_ascii=False))
     return 0
+
+
+def _at_least_one(text: str) -> int:
+    """Parse a count that must be 1 or more, so a slip like -1 never means "all but one"."""
+    number = int(text)
+    if number < 1:
+        raise argparse.ArgumentTypeError(f"must be 1 or more, not {number}")
+    return number
 
 
 def _indicate(args: argparse.Namespace) -> int:

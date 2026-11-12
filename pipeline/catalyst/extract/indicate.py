@@ -40,7 +40,7 @@ from catalyst.extract.disease import (
     indication_gate_problems,
 )
 from catalyst.extract.indication import Found, IndicationMiss
-from catalyst.extract.text import document_text, read_page
+from catalyst.extract.text import TEXT_VERSION, document_text, read_page
 from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.config import load_config
 from catalyst.logs import log_event
@@ -63,6 +63,9 @@ _log = logging.getLogger(__name__)
 
 FIELD_PREFIX = "indication:"  # then the catalyst's id, so two catalysts never share one claim row
 CONFIRMED_CHECK = "indication_confirmed"  # the second reader's verdict, kept beside the claim
+# A later try kept the same sentence with another disease: the stored claim's value stays as it
+# was, so the try is refused rather than pointed at a claim stating something else (review of PR 127).
+REDRAWN = "an earlier run kept another disease for this sentence"
 EVENT_FIELD = "catalyst_type"  # the source that states the event is the one that gives its type
 
 
@@ -185,6 +188,7 @@ def indication_claim(
         "mesh_name": found.descriptor.name,
         "words": found.words,  # what is printed: the sentence's own words, never the MeSH name
         "drug": task.drug,
+        "text_version": TEXT_VERSION,  # the offsets hold only for this text version (gate.match_quote)
         "checked_by": {
             "prompt_id": CHECKER_PROMPT[0],
             "prompt_version": CHECKER_PROMPT[1],
@@ -209,24 +213,35 @@ def indication_claim(
     )
 
 
+def found_mesh(claim: Claim) -> object:
+    """Return the MeSH identifier a kept indication claim states."""
+    return claim_value(claim.value).get("mesh_id")
+
+
 def _store(
     session: Session, task: _Task, outcome: Outcome, provider: str, models: tuple[str, str], at: datetime
-) -> None:
-    """Keep one try, and for a found indication its claim and the second reader's pass, together."""
+) -> str | None:
+    """Keep one try, and for a found indication its claim and the second reader's pass, together.
+
+    Return why no indication stands, or None when one does.
+    """
     if not isinstance(outcome.result, Found):
-        row = _attempt(task, IndicationResult.REFUSED, str(outcome.result), None, models, at)
+        reason = str(outcome.result)
+        row = _attempt(task, IndicationResult.REFUSED, reason, None, models, at)
         session.execute(insert(TABLES[IndicationAttempt]).values(**row.model_dump()).on_conflict_do_nothing())
-        return
+        return reason
     claim = indication_claim(task, outcome.result, provider, models, at)
     table = TABLES[Claim]
     inserted = session.execute(
         insert(table).values(**claim.model_dump()).on_conflict_do_nothing().returning(table.c.id)
     ).scalar_one_or_none()
-    claim_id = inserted if inserted is not None else claim.id
-    if inserted is None:  # the same sentence was kept by an earlier run: point at that claim
+    claim_id: UUID
+    if inserted is not None:
+        claim_id = inserted
+    else:  # the same sentence was kept by an earlier run: point at that claim
         key = TABLES[Claim].c
-        claim_id = session.execute(
-            select(key.id).where(
+        earlier = session.execute(
+            select(key.id, key.value).where(
                 key.source_document_id == claim.source_document_id,
                 key.field == claim.field,
                 key.quote_start == claim.quote_start,
@@ -236,13 +251,21 @@ def _store(
                 key.agent == claim.agent,
                 key.prompt_id == claim.prompt_id,
             )
-        ).scalar_one()
+        ).one()
+        if claim_value(earlier.value).get("mesh_id") != found_mesh(claim):
+            row = _attempt(task, IndicationResult.REFUSED, REDRAWN, None, models, at)
+            session.execute(
+                insert(TABLES[IndicationAttempt]).values(**row.model_dump()).on_conflict_do_nothing()
+            )
+            return REDRAWN
+        claim_id = earlier.id
     check = ClaimCheck(
         claim_id=claim_id, check_name=CONFIRMED_CHECK, outcome=CheckOutcome.PASS, checked_at=at
     )
     session.execute(insert(TABLES[ClaimCheck]).values(**check.model_dump()).on_conflict_do_nothing())
     row = _attempt(task, IndicationResult.FOUND, None, claim_id, models, at)
     session.execute(insert(TABLES[IndicationAttempt]).values(**row.model_dump()).on_conflict_do_nothing())
+    return None
 
 
 def _tasks(session: Session, report: IndicationReport, models: tuple[str, str]) -> list[_Task]:
@@ -323,11 +346,10 @@ def indicate_catalysts(
             )
             continue
         with session_factory.begin() as session:
-            _store(session, task, outcome, provider, models, now())
-        if isinstance(outcome.result, Found):
+            reason = _store(session, task, outcome, provider, models, now())
+        if reason is None:
             report.found += 1
         else:
-            reason = str(outcome.result)
             report.refused[reason] = report.refused.get(reason, 0) + 1
     log_event(_log, "indications_read", **{k: v for k, v in report.summary().items() if k != "refused"})
     return report
