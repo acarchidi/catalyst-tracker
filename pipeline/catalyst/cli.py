@@ -68,6 +68,7 @@ from catalyst.outreach.digest import (
     render_html,
     render_page,
 )
+from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
 from catalyst.publish.write import publish_claims
@@ -599,6 +600,7 @@ def _extract(args: argparse.Namespace) -> int:
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
         decisions = _decide_after(sessionmaker(engine), store, checks)
         published = _publish_after(sessionmaker(engine), store, decisions, config.roles[VERIFIER_ROLE].model)
+        indications = _indications_after(sessionmaker(engine), store, client, published, args.limit)
     finally:
         engine.dispose()
     if args.out is not None:
@@ -610,10 +612,11 @@ def _extract(args: argparse.Namespace) -> int:
         "second_reading": second,
         "decisions": decisions,
         "published": published,
+        "indications": indications,
     }
     print(json.dumps(summary, indent=2))
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
-    gate_failed = "error" in decisions or "error" in published
+    gate_failed = "error" in decisions or "error" in published or "error" in indications
     failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or gate_failed
     return 1 if failed else 0
 
@@ -675,6 +678,29 @@ def _publish_after(
         return publish_claims(session_factory, store, _utc_now, verifier_model=verifier_model).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
         return {"error": f"{type(error).__name__}: publishing did not finish"}
+
+
+def _indications_after(
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    client: ModelClient,
+    published: dict[str, Any],
+    limit: int,
+) -> dict[str, Any]:
+    """Find newly published catalysts' indications, then write the confirmed ones (ADR 0053).
+
+    After the writer, so new catalysts are asked about the same day; skipped when publishing did
+    not finish. A blocked gate or a role at its cap is reported, not an error: the catalysts
+    simply wait for a later run.
+    """
+    if "error" in published or "skipped" in published:
+        return {"skipped": "publishing did not finish, so no indication was asked for"}
+    try:
+        read = indicate_catalysts(session_factory, store, client, limit=limit, now=_utc_now).summary()
+        written = publish_indications(session_factory, store, _utc_now).summary()
+    except (SQLAlchemyError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the indication step did not finish"}
+    return {"read": read, **written}
 
 
 def _resolve(_args: argparse.Namespace) -> int:
@@ -776,9 +802,10 @@ def _publish_claims(args: argparse.Namespace) -> int:
     try:
         model = load_config().roles[VERIFIER_ROLE].model
         report = publish_claims(sessionmaker(engine), store, _utc_now, verifier_model=model)
+        indications = publish_indications(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()
-    print(json.dumps(report.summary(), indent=2))
+    print(json.dumps(report.summary() | indications.summary(), indent=2))
     return 0
 
 

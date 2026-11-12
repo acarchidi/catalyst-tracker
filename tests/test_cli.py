@@ -17,8 +17,10 @@ from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
 from catalyst.extract.evaluate import Scores
+from catalyst.extract.indicate import IndicationReport
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
+from catalyst.publish.indication import IndicationWrites
 from catalyst.publish.run import DecisionReport
 from catalyst.publish.sanity import SafeReport
 from catalyst.publish.write import PublishReport
@@ -116,6 +118,13 @@ def _type_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
 def _safe_to_write_job_stands_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for the writer's own check, which needs a database; its own tests use one."""
     monkeypatch.setattr(cli, "check_safe_to_write", lambda *_args: SafeReport(claims=1))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+
+
+@pytest.fixture(autouse=True)
+def _indication_jobs_stand_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the indication job and the writer's indication pass, which need a database."""
+    monkeypatch.setattr(cli, "indicate_catalysts", lambda *_args, **_kw: IndicationReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "publish_indications", lambda *_args, **_kw: IndicationWrites())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 class _FakeEngine:
