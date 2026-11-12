@@ -15,7 +15,7 @@ from collections.abc import Generator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import date, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
 from pydantic import JsonValue
@@ -37,6 +37,7 @@ from catalyst.api.views import (
     WindowView,
 )
 from catalyst.db.tables import TABLES
+from catalyst.extract.agent import has_words
 from catalyst.logs import log_event
 from catalyst.schemas import (
     Catalyst,
@@ -73,6 +74,7 @@ _TRIAL = TABLES[Trial]
 OPEN_STATUSES = (CatalystStatus.UPCOMING, CatalystStatus.SLIPPED)
 BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.DRUGS)
 DRUGS = CatalystField.DRUGS.value
+INDICATION = CatalystField.INDICATION_ID.value
 TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0039)
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
@@ -283,7 +285,7 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     ids = [row.id for row in rows]
     changes: dict[UUID, list[Row[Any]]] = defaultdict(list)
     for change in session.execute(
-        select(_CHANGE, *_SOURCE_COLUMNS)
+        select(_CHANGE, *_SOURCE_COLUMNS, _CLAIM.c.value.label("claim_value"))
         .join(_CLAIM, _CLAIM.c.id == _CHANGE.c.claim_id)
         .join(_DOC, _DOC.c.id == _CLAIM.c.source_document_id)
         .where(_CHANGE.c.catalyst_id.in_(ids))
@@ -379,7 +381,7 @@ def _build(
         catalyst_type=row.catalyst_type,
         title=row.title,
         company=companies[row.company_id],
-        indication=indications.get(row.indication_id) if row.indication_id else None,
+        indication=_shown_indication(indications.get(row.indication_id), latest.get(INDICATION)),
         drugs=[DrugView(id=link.drug_id, name=link.preferred_name, role=link.role) for link in links],
         trials=[trial for _, trial in trials],
         window=WindowView(
@@ -394,6 +396,22 @@ def _build(
         sources=[_source(source, fields) for source, fields in backing.values()],
         history=history,
     )
+
+
+def _shown_indication(indication: IndicationView | None, change: Row[Any] | None) -> IndicationView | None:
+    """Return the indication named in its own source's words, not the MeSH name (ADR 0053, decision 2).
+
+    The words are those the claim behind the latest `indication_id` change kept from its sentence;
+    the MeSH name is shown only when that claim kept none.
+    """
+    if indication is None or change is None:
+        return indication
+    stored: object = change.claim_value
+    value = cast(dict[str, object], stored) if isinstance(stored, dict) else {}
+    words = value.get("words")
+    if isinstance(words, str) and words.strip() and has_words(change.quote, words):
+        return indication.model_copy(update={"name": words})
+    return indication  # words the cited quote does not hold are never shown
 
 
 def drugs_value(links: Sequence[Row[Any]]) -> list[JsonValue]:

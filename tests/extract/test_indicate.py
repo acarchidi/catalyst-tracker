@@ -14,11 +14,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import httpx
+import pytest
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
+from catalyst.extract import indicate
 from catalyst.extract.indicate import CONFIRMED_CHECK, REDRAWN, claim_field, indicate_catalysts
 from catalyst.extract.text import document_text, find_quote
 from catalyst.llm.client import Completion, ModelClient
@@ -48,7 +51,7 @@ from catalyst.schemas import (
     SourceDocument,
     SourceTier,
 )
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import LocalSnapshotStore, SnapshotStoreError
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mesh" / "desc2026_excerpt.xml.gz"
 EVENT = "Topline data from the Phase 3 RAINIER trial of zentocel are expected in the second half of 2027."
@@ -66,7 +69,7 @@ def _add(session: Session, record: Entity) -> None:
     session.execute(insert(TABLES[type(record)]).values(**record.model_dump()))
 
 
-def _seed(
+def seed_catalyst(
     factory: sessionmaker[Session], store: LocalSnapshotStore, n: int = 1, role: DrugRole = DrugRole.ALONE
 ) -> UUID:
     """Publish one catalyst the way the writer does, from a claim naming the drug as the release does."""
@@ -136,7 +139,7 @@ def _seed(
 
 
 @dataclass
-class _Fake:
+class FakeReaders:
     """The first reader picks the sentence naming `disease`; the second answers as the test sets."""
 
     disease: str | None = "melanoma"
@@ -158,7 +161,7 @@ class _Fake:
         return Completion(json.dumps(answer), model, "req", "end_turn", TokenUsage(input=100, output=20))
 
 
-def _client(fake: _Fake, cap: str = "5") -> ModelClient:
+def _client(fake: FakeReaders, cap: str = "5") -> ModelClient:
     price = Price(input=Decimal(2), cache_write=Decimal(3), cache_read=Decimal(0), output=Decimal(10))
     role = RoleConfig(provider="fake", model="claude-sonnet-5-5", max_tokens=1000, daily_cap_usd=Decimal(cap))
     config = ModelConfig(
@@ -167,8 +170,8 @@ def _client(fake: _Fake, cap: str = "5") -> ModelClient:
     return ModelClient(config, {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
 
 
-def _run(
-    factory: sessionmaker[Session], store: LocalSnapshotStore, fake: _Fake, cap: str = "5"
+def run_readers(
+    factory: sessionmaker[Session], store: LocalSnapshotStore, fake: FakeReaders, cap: str = "5"
 ) -> dict[str, Any]:
     report = indicate_catalysts(
         factory, store, _client(fake, cap), limit=10, index=_index(), now=lambda: NOW, gate=lambda: []
@@ -176,7 +179,7 @@ def _run(
     return report.summary()
 
 
-def _all(factory: sessionmaker[Session], model: type[Entity]) -> list[Any]:
+def all_rows(factory: sessionmaker[Session], model: type[Entity]) -> list[Any]:
     with factory() as session:
         return list(session.execute(select(TABLES[model])).all())
 
@@ -185,37 +188,37 @@ def test_a_confirmed_indication_is_kept_as_a_claim_whose_quote_is_its_sentence(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    catalyst_id = _seed(session_factory, store)
-    summary = _run(session_factory, store, _Fake())
+    catalyst_id = seed_catalyst(session_factory, store)
+    summary = run_readers(session_factory, store, FakeReaders())
     assert (summary["considered"], summary["found"], summary["refused"]) == (1, 1, {})
-    (claim,) = [c for c in _all(session_factory, Claim) if c.field == claim_field(catalyst_id)]
+    (claim,) = [c for c in all_rows(session_factory, Claim) if c.field == claim_field(catalyst_id)]
     assert claim.quote == TARGET
     assert claim.subject_id == catalyst_id
     assert claim.value["words"] == "melanoma"
     assert claim.value["mesh_name"] == "Melanoma"
     assert document_text(RELEASE, "text/html")[claim.quote_start : claim.quote_end] == TARGET
-    (check,) = [c for c in _all(session_factory, ClaimCheck) if c.claim_id == claim.id]
+    (check,) = [c for c in all_rows(session_factory, ClaimCheck) if c.claim_id == claim.id]
     assert (check.check_name, check.outcome) == (CONFIRMED_CHECK, "pass")
-    (attempt,) = _all(session_factory, IndicationAttempt)
+    (attempt,) = all_rows(session_factory, IndicationAttempt)
     assert (attempt.outcome, attempt.indication_claim_id) == ("found", claim.id)
 
 
 def test_the_job_never_writes_a_catalyst(session_factory: sessionmaker[Session], tmp_path: Path) -> None:
     store = LocalSnapshotStore(tmp_path)
-    catalyst_id = _seed(session_factory, store)
-    changes = len(_all(session_factory, CatalystChange))
-    _run(session_factory, store, _Fake())
-    (row,) = [c for c in _all(session_factory, Catalyst) if c.id == catalyst_id]
+    catalyst_id = seed_catalyst(session_factory, store)
+    changes = len(all_rows(session_factory, CatalystChange))
+    run_readers(session_factory, store, FakeReaders())
+    (row,) = [c for c in all_rows(session_factory, Catalyst) if c.id == catalyst_id]
     assert row.indication_id is None
-    assert len(_all(session_factory, CatalystChange)) == changes
+    assert len(all_rows(session_factory, CatalystChange)) == changes
 
 
 def test_a_re_run_asks_nothing_again(session_factory: sessionmaker[Session], tmp_path: Path) -> None:
     store = LocalSnapshotStore(tmp_path)
-    _seed(session_factory, store)
-    _run(session_factory, store, _Fake())
-    again = _Fake()
-    summary = _run(session_factory, store, again)
+    seed_catalyst(session_factory, store)
+    run_readers(session_factory, store, FakeReaders())
+    again = FakeReaders()
+    summary = run_readers(session_factory, store, again)
     assert again.sent == []
     assert (summary["considered"], summary["already_tried"]) == (0, 1)
 
@@ -224,22 +227,22 @@ def test_a_refusal_is_kept_with_its_reason_and_no_claim(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    catalyst_id = _seed(session_factory, store)
-    summary = _run(session_factory, store, _Fake(states=False, reason="other_drug"))
+    catalyst_id = seed_catalyst(session_factory, store)
+    summary = run_readers(session_factory, store, FakeReaders(states=False, reason="other_drug"))
     assert summary["found"] == 0
     assert summary["refused"] == {"the second reader did not confirm the sentence states the disease": 1}
-    (attempt,) = _all(session_factory, IndicationAttempt)
+    (attempt,) = all_rows(session_factory, IndicationAttempt)
     assert (attempt.outcome, attempt.indication_claim_id) == ("refused", None)
     assert attempt.reason == "the second reader did not confirm the sentence states the disease"
-    assert not [c for c in _all(session_factory, Claim) if c.field == claim_field(catalyst_id)]
+    assert not [c for c in all_rows(session_factory, Claim) if c.field == claim_field(catalyst_id)]
 
 
 def test_no_model_is_called_while_the_gate_finds_a_problem(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    _seed(session_factory, store)
-    fake = _Fake()
+    seed_catalyst(session_factory, store)
+    fake = FakeReaders()
     report = indicate_catalysts(
         session_factory,
         store,
@@ -251,15 +254,15 @@ def test_no_model_is_called_while_the_gate_finds_a_problem(
     )
     assert report.blocked == ["indicate_catalysts has no scores.json"]
     assert fake.sent == []
-    assert _all(session_factory, IndicationAttempt) == []
+    assert all_rows(session_factory, IndicationAttempt) == []
 
 
 def test_without_a_stored_mesh_file_nothing_is_asked(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    _seed(session_factory, store)
-    fake = _Fake()
+    seed_catalyst(session_factory, store)
+    fake = FakeReaders()
     report = indicate_catalysts(
         session_factory, store, _client(fake), limit=10, now=lambda: NOW, gate=lambda: []
     )
@@ -272,28 +275,28 @@ def test_a_drug_tested_in_combination_is_left_alone(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    _seed(session_factory, store, role=DrugRole.IN_COMBINATION)
-    fake = _Fake()
-    summary = _run(session_factory, store, fake)
+    seed_catalyst(session_factory, store, role=DrugRole.IN_COMBINATION)
+    fake = FakeReaders()
+    summary = run_readers(session_factory, store, fake)
     assert (summary["considered"], fake.sent) == (0, [])
 
 
 def test_a_role_at_its_cap_stops_the_job(session_factory: sessionmaker[Session], tmp_path: Path) -> None:
     store = LocalSnapshotStore(tmp_path)
-    _seed(session_factory, store)
-    summary = _run(session_factory, store, _Fake(), cap="0.000001")
+    seed_catalyst(session_factory, store)
+    summary = run_readers(session_factory, store, FakeReaders(), cap="0.000001")
     assert summary["stopped"]
     assert summary["considered"] == 0
-    assert _all(session_factory, IndicationAttempt) == []
+    assert all_rows(session_factory, IndicationAttempt) == []
 
 
 def test_a_kept_indication_passes_the_publish_gates_own_quote_check(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    catalyst_id = _seed(session_factory, store)
-    _run(session_factory, store, _Fake())
-    (row,) = [c for c in _all(session_factory, Claim) if c.field == claim_field(catalyst_id)]
+    catalyst_id = seed_catalyst(session_factory, store)
+    run_readers(session_factory, store, FakeReaders())
+    (row,) = [c for c in all_rows(session_factory, Claim) if c.field == claim_field(catalyst_id)]
     claim = Claim.model_validate(row._asdict())
     result = match_quote(claim, document_text(RELEASE, "text/html"))
     assert result.outcome == "pass", result.reason
@@ -303,7 +306,7 @@ def test_a_later_try_that_names_another_disease_for_the_same_sentence_is_refused
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
     store = LocalSnapshotStore(tmp_path)
-    catalyst_id = _seed(session_factory, store)
+    catalyst_id = seed_catalyst(session_factory, store)
     span = find_quote(document_text(RELEASE, "text/html"), TARGET)
     assert span is not None
     with session_factory.begin() as session:  # an earlier run kept this sentence with another disease
@@ -325,8 +328,54 @@ def test_a_later_try_that_names_another_disease_for_the_same_sentence_is_refused
             extracted_at=NOW,
         )
         _add(session, earlier)
-    summary = _run(session_factory, store, _Fake())
+    summary = run_readers(session_factory, store, FakeReaders())
     assert summary["found"] == 0
-    (attempt,) = _all(session_factory, IndicationAttempt)
+    (attempt,) = all_rows(session_factory, IndicationAttempt)
     assert (attempt.outcome, attempt.reason, attempt.indication_claim_id) == ("refused", REDRAWN, None)
-    assert not [c for c in _all(session_factory, ClaimCheck) if c.claim_id == earlier.id]
+    assert not [c for c in all_rows(session_factory, ClaimCheck) if c.claim_id == earlier.id]
+
+
+def test_with_nothing_to_ask_about_the_mesh_file_is_not_read(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def never(*_args: object) -> None:
+        raise AssertionError("the MeSH file was read")
+
+    monkeypatch.setattr(indicate, "stored_index", never)
+    report = indicate_catalysts(
+        session_factory,
+        LocalSnapshotStore(tmp_path),
+        _client(FakeReaders()),
+        limit=10,
+        now=lambda: NOW,
+        gate=lambda: [],
+    )
+    assert (report.blocked, report.considered) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SnapshotStoreError("HTTP 503"),
+        httpx.ConnectError("refused"),
+        SyntaxError("not XML"),
+        ValueError("not gzip"),
+    ],
+)
+def test_a_mesh_file_that_cannot_be_read_blocks_the_run_and_asks_nothing(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    seed_catalyst(session_factory, store)
+
+    def broken(*_args: object) -> None:
+        raise error
+
+    monkeypatch.setattr(indicate, "stored_index", broken)
+    fake = FakeReaders()
+    report = indicate_catalysts(
+        session_factory, store, _client(fake), limit=10, now=lambda: NOW, gate=lambda: []
+    )
+    assert report.blocked
+    assert "MeSH" in report.blocked[0]
+    assert fake.sent == []
