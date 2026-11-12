@@ -39,7 +39,7 @@ from catalyst.extract.indication import (
 )
 from catalyst.extract.text import QuoteSpan, document_text, visible_text
 from catalyst.llm.client import ModelClient
-from catalyst.llm.config import RoleConfig
+from catalyst.llm.config import RoleConfig, load_config
 from catalyst.llm.prompts import Prompt, load_prompt
 from catalyst.mesh import MeshIndex, Miss, normal_words
 from catalyst.verify.second import VERIFIER_ROLE
@@ -271,3 +271,90 @@ def score_record(
         "scores": asdict(scores),
         "answers": answers,
     }
+
+
+# --- The gate before the readers run on live data (ADR 0053, decision 2) ---
+
+EVALS_ROOT = Path(__file__).resolve().parents[3] / "evals"
+# Which prompts, roles and sets earned each folder's scores, and which scores may only fall.
+_SCORED: dict[str, tuple[list[tuple[str, str]], list[str], list[str]]] = {
+    "indicate_catalysts": (
+        [READER_PROMPT, CHECKER_PROMPT],
+        [ROLE, VERIFIER_ROLE],
+        ["extract_catalysts/gold.jsonl", "indicate_catalysts/indications.jsonl"],
+    ),
+    "check_indication": ([CHECKER_PROMPT], [VERIFIER_ROLE], ["check_indication/cases.jsonl"]),
+}
+CEILINGS = frozenset({"wrong"})  # a share of wrong indications may not rise above its baseline
+
+
+def _identity_problems(
+    folder: str,
+    record: dict[str, Any],
+    scored: tuple[list[tuple[str, str]], list[str], list[str]],
+    evals: Path,
+) -> list[str]:
+    """Return how a scores record differs from the current prompts, role settings, and label sets."""
+    prompts, roles, sets = scored
+    problems: list[str] = []
+    if [(p.get("prompt_id"), p.get("prompt_version")) for p in record.get("prompts", [])] != prompts:
+        problems.append(f"{folder}/scores.json is not for prompts {prompts}")
+    else:
+        for entry, ref in zip(record["prompts"], prompts, strict=True):
+            if entry.get("prompt_sha256") != prompt_fingerprint(load_prompt(*ref)):
+                problems.append(f"{folder}/scores.json is for other words of {ref[0]} {ref[1]}")
+    config = load_config()
+    models = [
+        {
+            "model": config.roles[r].model,
+            "effort": config.roles[r].effort,
+            "max_tokens": config.roles[r].max_tokens,
+        }
+        for r in roles
+    ]
+    if record.get("models") != models:
+        problems.append(f"{folder}/scores.json is for other models or settings than {roles}")
+    wanted = {Path(name).name: gold_fingerprint(evals / name) for name in sets if (evals / name).exists()}
+    if len(wanted) != len(sets) or record.get("sets") != wanted:
+        problems.append(f"{folder}/scores.json is for other label sets than {sets}")
+    return problems
+
+
+def _floor_problems(folder: str, earned: dict[str, Any], floor: dict[str, float]) -> list[str]:
+    """Return each score past its floor (or, for `wrong`, its ceiling), and each score with neither."""
+    problems: list[str] = []
+    unfloored = sorted(set(earned) - set(floor) - {"events", "cases"})
+    if unfloored:
+        problems.append(f"{folder}/baseline.json names no floor for {', '.join(unfloored)}")
+    for name, limit in floor.items():
+        value = float(earned.get(name, 1.0 if name in CEILINGS else 0.0))
+        if name in CEILINGS and value > limit:
+            problems.append(f"{name} rose to {value}, above the ceiling {limit}")
+        elif name not in CEILINGS and value < limit:
+            problems.append(f"{name} fell to {value}, below the floor {limit}")
+    return problems
+
+
+def indication_gate_problems(evals: Path = EVALS_ROOT) -> list[str]:
+    """Return why the indication readers may not run on live data; empty when they may.
+
+    Each folder's scores.json must name exactly the current prompts (by fingerprint), the models
+    and settings of their roles in config/models.toml, and the current label sets; and every score
+    must meet its folder's baseline.json, a floor, or for `wrong` a ceiling.
+    """
+    problems: list[str] = []
+    for folder, scored in _SCORED.items():
+        scores_path, baseline_path = evals / folder / "scores.json", evals / folder / "baseline.json"
+        record: dict[str, Any] | None = None
+        if scores_path.exists():
+            loaded: dict[str, Any] = json.loads(scores_path.read_text(encoding="utf-8"))
+            problems += _identity_problems(folder, loaded, scored, evals)
+            record = loaded
+        else:
+            problems.append(f"{folder} has no scores.json: run `catalyst eval-extractor --prompt {folder}`")
+        if not baseline_path.exists():
+            problems.append(f"{folder} has no baseline.json: there is no floor to check")
+        elif record is not None:
+            floor: dict[str, float] = json.loads(baseline_path.read_text(encoding="utf-8"))
+            problems += _floor_problems(folder, record.get("scores", {}), floor)
+    return problems

@@ -22,6 +22,7 @@ from catalyst.extract.disease import (
     evaluate_checker,
     evaluate_readers,
     find_indication,
+    indication_gate_problems,
     load_diseases,
     reader_input,
 )
@@ -246,3 +247,37 @@ def test_the_recorded_scores_are_for_exactly_these_prompts_models_and_sets(
         for r in roles
     ]
     assert record["sets"] == {Path(s).name: gold_fingerprint(ROOT / "evals" / s) for s in sets}
+
+
+def test_the_recorded_indication_scores_meet_their_floors() -> None:
+    assert indication_gate_problems() == []
+
+
+@pytest.mark.parametrize(
+    ("folder", "score", "value", "problem"),
+    [
+        ("indicate_catalysts", "found_right", 0.0, "found_right fell to 0.0, below the floor"),
+        ("indicate_catalysts", "none_right", 0.5, "none_right fell to 0.5, below the floor"),
+        ("indicate_catalysts", "wrong", 0.056, "wrong rose to 0.056, above the ceiling 0.0"),
+        ("check_indication", "refuses_false", 0.5, "refuses_false fell to 0.5, below the floor"),
+    ],
+)
+def test_a_score_past_its_floor_stops_the_indication_readers(
+    tmp_path: Path, folder: str, score: str, value: float, problem: str
+) -> None:
+    evals = tmp_path / "evals"
+    for name in ("indicate_catalysts", "check_indication", "extract_catalysts"):
+        (evals / name).mkdir(parents=True)
+        for file in (ROOT / "evals" / name).glob("*.json*"):
+            (evals / name / file.name).write_bytes(file.read_bytes())
+    path = evals / folder / "scores.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    record["scores"][score] = value
+    path.write_text(json.dumps(record), encoding="utf-8")
+    assert any(problem in p for p in indication_gate_problems(evals))
+
+
+def test_missing_scores_or_floors_stop_the_indication_readers(tmp_path: Path) -> None:
+    problems = indication_gate_problems(tmp_path / "evals")
+    assert any("scores.json" in p for p in problems)
+    assert any("baseline.json" in p for p in problems)
