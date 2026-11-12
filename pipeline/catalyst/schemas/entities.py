@@ -25,6 +25,7 @@ from catalyst.schemas.enums import (
     DrugRole,
     EnrollmentType,
     GateDecision,
+    IndicationResult,
     LineOfTherapy,
     MatchedEntity,
     MatchStatus,
@@ -611,6 +612,46 @@ class SampleCheck(Entity):
     prompt_version: ShortText = Field(description="Version of that prompt.")
     model: ShortText = Field(description="Model that answered.")
     checked_at: AwareDatetime = Field(description="When the record was checked.")
+
+
+class IndicationAttempt(Entity):
+    """One try at a published catalyst's indication by both readers (ADR 0053, decision 2).
+
+    Kept whether the readers found one or not, so a re-run never pays to ask again about the same
+    catalyst, source claim, prompts and models. A found indication names the claim that holds its
+    sentence; a refused one keeps the plain-code or second reader's reason.
+    """
+
+    __tablename__ = "indication_attempt"
+    __unique__ = (
+        (
+            "catalyst_id",
+            "claim_id",
+            "reader_prompt_version",
+            "checker_prompt_version",
+            "reader_model",
+            "checker_model",
+        ),
+    )
+    __checks__: ClassVar[dict[str, str]] = {
+        "found_has_claim": "(outcome = 'found') = (indication_claim_id IS NOT NULL)",
+        "refused_has_reason": "outcome <> 'refused' OR reason IS NOT NULL",
+    }
+
+    catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The published catalyst.")
+    claim_id: Annotated[UUID, References("claim")] = Field(
+        description="The catalyst's source claim whose document and quote the readers read."
+    )
+    outcome: IndicationResult = Field(description="Found, or refused with a reason.")
+    reason: Name | None = Field(default=None, description="Why no indication stands; empty when found.")
+    indication_claim_id: Annotated[UUID, References("claim")] | None = Field(
+        default=None, description="The claim holding the indication's sentence, when found."
+    )
+    reader_prompt_version: ShortText = Field(description="Version of the first reader's prompt.")
+    checker_prompt_version: ShortText = Field(description="Version of the second reader's prompt.")
+    reader_model: ShortText = Field(description="Model the first reader ran on.")
+    checker_model: ShortText = Field(description="Model the second reader ran on.")
+    attempted_at: AwareDatetime = Field(description="When the readers were asked.")
 
 
 class Outcome(Entity):

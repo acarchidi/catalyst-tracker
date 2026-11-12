@@ -467,6 +467,30 @@ Rules:
 - Unique: `catalyst_id`, `week_of`, `prompt_id`, `prompt_version`, `model`
 - Database check `points_is_list`: `jsonb_typeof(points) = 'array'`
 
+## `indication_attempt`
+
+One try at a published catalyst's indication by both readers (ADR 0053, decision 2). Kept whether the readers found one or not, so a re-run never pays to ask again about the same catalyst, source claim, prompts and models. A found indication names the claim that holds its sentence; a refused one keeps the plain-code or second reader's reason.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `catalyst_id` | link to `catalyst` | yes | The published catalyst. |
+| `claim_id` | link to `claim` | yes | The catalyst's source claim whose document and quote the readers read. |
+| `outcome` | one of: `found`, `refused` | yes | Found, or refused with a reason. |
+| `reason` | text, up to 300 characters | no | Why no indication stands; empty when found. |
+| `indication_claim_id` | link to `claim` | no | The claim holding the indication's sentence, when found. |
+| `reader_prompt_version` | text, up to 100 characters | yes | Version of the first reader's prompt. |
+| `checker_prompt_version` | text, up to 100 characters | yes | Version of the second reader's prompt. |
+| `reader_model` | text, up to 100 characters | yes | Model the first reader ran on. |
+| `checker_model` | text, up to 100 characters | yes | Model the second reader ran on. |
+| `attempted_at` | date and time (with time zone) | yes | When the readers were asked. |
+
+Rules:
+
+- Unique: `catalyst_id`, `claim_id`, `reader_prompt_version`, `checker_prompt_version`, `reader_model`, `checker_model`
+- Database check `found_has_claim`: `(outcome = 'found') = (indication_claim_id IS NOT NULL)`
+- Database check `refused_has_reason`: `outcome <> 'refused' OR reason IS NOT NULL`
+
 ## `model_call`
 
 One model call and what it cost (spec: every model call logged with its cost). Daily spend caps are summed from this table, so every job shares one total per role.

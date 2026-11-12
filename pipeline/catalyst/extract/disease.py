@@ -23,6 +23,7 @@ architecture). Every refusal keeps its reason. A refused indication never holds 
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -277,6 +278,10 @@ def score_record(
 
 EVALS_ROOT = Path(__file__).resolve().parents[3] / "evals"
 # Which prompts, roles and sets earned each folder's scores, and which scores may only fall.
+_SCORE_FIELDS = {
+    "indicate_catalysts": frozenset(ReaderScores.__dataclass_fields__) - {"events"},
+    "check_indication": frozenset(CheckerScores.__dataclass_fields__) - {"cases"},
+}
 _SCORED: dict[str, tuple[list[tuple[str, str]], list[str], list[str]]] = {
     "indicate_catalysts": (
         [READER_PROMPT, CHECKER_PROMPT],
@@ -320,14 +325,36 @@ def _identity_problems(
     return problems
 
 
+def _finite_number(value: object) -> bool:
+    """Say whether a value read from a file is a finite number; NaN passes no comparison."""
+    return not isinstance(value, bool) and isinstance(value, int | float) and math.isfinite(value)
+
+
 def _floor_problems(folder: str, earned: dict[str, Any], floor: dict[str, float]) -> list[str]:
-    """Return each score past its floor (or, for `wrong`, its ceiling), and each score with neither."""
+    """Return each score past its floor (or, for `wrong`, its ceiling), missing, or not a number.
+
+    The scores that need a floor come from the scorer's own fields, not from the record, so a
+    record that leaves one out is refused (Opus review of PR 126). NaN passes no comparison, so a
+    score must be a finite number.
+    """
     problems: list[str] = []
-    unfloored = sorted(set(earned) - set(floor) - {"events", "cases"})
+    required = _SCORE_FIELDS[folder]
+    unfloored = sorted(required - set(floor))
     if unfloored:
         problems.append(f"{folder}/baseline.json names no floor for {', '.join(unfloored)}")
+    for name in sorted(required - set(earned)):
+        problems.append(f"{folder}/scores.json has no {name} score")
     for name, limit in floor.items():
-        value = float(earned.get(name, 1.0 if name in CEILINGS else 0.0))
+        if not _finite_number(limit):  # read from a file: it may hold anything
+            problems.append(f"{folder}/baseline.json gives {name} as {limit!r}, not a number")
+            continue
+        raw = earned.get(name)
+        if raw is None:
+            continue  # counted above, or not a score this folder records
+        if not _finite_number(raw):
+            problems.append(f"{folder}/scores.json gives {name} as {raw!r}, not a number")
+            continue
+        value = float(raw)
         if name in CEILINGS and value > limit:
             problems.append(f"{name} rose to {value}, above the ceiling {limit}")
         elif name not in CEILINGS and value < limit:

@@ -998,3 +998,43 @@ def test_gate1_checks_published_links_and_passes_only_a_working_one(
     monkeypatch.setattr(cli, "check_links", fake_check)
     assert main(["check-links", "--published", "--strict"]) == expected
     assert calls[0]["urls"] == ["https://www.sec.gov/x"]
+
+
+def test_a_strict_check_of_no_link_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "published_urls", lambda *_args: [])  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_links", lambda *_args, **_kwargs: LinkReport([]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["check-links", "--published", "--strict"]) == 1
+
+
+@pytest.mark.parametrize(
+    ("summary", "expected"),
+    [
+        ({"blocked": [], "stopped": None, "failed": 0}, 0),
+        ({"blocked": ["no scores"], "stopped": None, "failed": 0}, 1),
+        ({"blocked": [], "stopped": "the extractor is at its cap", "failed": 0}, 1),
+        ({"blocked": [], "stopped": None, "failed": 2}, 1),
+    ],
+)
+def test_the_indication_job_prints_its_counts_and_fails_when_it_could_not_do_its_work(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    summary: dict[str, Any],
+    expected: int,
+) -> None:
+    class _Report:
+        def summary(self) -> dict[str, Any]:
+            return summary
+
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "indicate_catalysts", lambda *_args, **_kwargs: _Report())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["indicate-catalysts", "--snapshot-store", "local", "--limit", "3"]) == expected
+    assert json.loads(capsys.readouterr().out) == summary
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_the_indication_job_refuses_a_limit_below_one(limit: str) -> None:
+    with pytest.raises(SystemExit):
+        main(["indicate-catalysts", "--limit", limit])

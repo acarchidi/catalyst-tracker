@@ -50,12 +50,14 @@ class IndicationMiss(StrEnum):
     """Why an indication cannot stand (beyond the MeSH reasons in `Miss`)."""
 
     UNUSABLE_DRUG = "the drug's name is too short or too common to find in a sentence"
+    COPY_DIFFERS = "the stored copy reads differently by the strict and the browser-like reader"
     NO_CANDIDATE = "no visible sentence of the source names the drug"
     NO_SENTENCE = "the reader found no sentence stating the disease"
     NOT_A_CANDIDATE = "the reader's sentence number is not one of the candidates"
     DISEASE_NOT_IN_SENTENCE = "the disease is not written in the sentence as given"
     BRACKETS = "the disease's words hold brackets"
     CAUSE = "the sentence names the disease only as the cause of another condition"
+    NARROWER_IN_SENTENCE = "the sentence writes another disease term straight after the disease"
     EVENT_NAMES_SEVERAL = "the event's own quote names more than one disease, so it cannot say which"
     NOT_CONFIRMED = "the second reader did not confirm the sentence states the disease"
 
@@ -120,6 +122,25 @@ def named_as_cause(sentence: str, disease: str) -> bool:
     return False
 
 
+_UNTIL_BREAK = re.compile(r"[^.,;:!?()\[\]\n]*")
+
+
+def followed_by_disease_term(sentence: str, disease: str, index: MeshIndex) -> bool:
+    """Say whether a place the sentence writes the disease runs straight on into another disease term.
+
+    "Alzheimer's disease psychosis" narrows "Alzheimer's disease" to a disease MeSH may not have.
+    Only the words up to the next punctuation count, and only a term starting at the first of
+    them; a following word that names no disease ("expected", "trial") is fine (ADR 0053).
+    """
+    pattern = r"(?<!\w)" + r"\s+".join(map(re.escape, disease.split())) + r"(?!\w)"
+    for found in re.finditer(pattern, sentence):
+        after = _UNTIL_BREAK.match(sentence, found.end())
+        words = normal_words(after.group(0) if after else "")[:4]
+        if any(start == 0 for start, _, _ in index.terms_in(words)):
+            return True
+    return False
+
+
 def hard_check(sentence: QuoteSpan, disease: str, index: MeshIndex) -> Found | IndicationMiss | Miss:
     """Check a reader's disease against its sentence, with no model.
 
@@ -134,6 +155,8 @@ def hard_check(sentence: QuoteSpan, disease: str, index: MeshIndex) -> Found | I
         return IndicationMiss.DISEASE_NOT_IN_SENTENCE
     if named_as_cause(sentence.quote, disease):
         return IndicationMiss.CAUSE
+    if followed_by_disease_term(sentence.quote, disease, index):
+        return IndicationMiss.NARROWER_IN_SENTENCE
     match = index.match(disease, tail=True)
     if isinstance(match, Miss):
         return match

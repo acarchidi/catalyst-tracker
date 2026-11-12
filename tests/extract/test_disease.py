@@ -5,6 +5,7 @@ stands unless both readers agree and every hard check passes.
 """
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from decimal import Decimal
 from functools import cache
@@ -281,3 +282,93 @@ def test_missing_scores_or_floors_stop_the_indication_readers(tmp_path: Path) ->
     problems = indication_gate_problems(tmp_path / "evals")
     assert any("scores.json" in p for p in problems)
     assert any("baseline.json" in p for p in problems)
+
+
+def _copy_evals(tmp_path: Path) -> Path:
+    evals = tmp_path / "evals"
+    for name in ("indicate_catalysts", "check_indication", "extract_catalysts"):
+        (evals / name).mkdir(parents=True)
+        for file in (ROOT / "evals" / name).glob("*.json*"):
+            (evals / name / file.name).write_bytes(file.read_bytes())
+    return evals
+
+
+def _edit_scores(evals: Path, folder: str, edit: Callable[[dict[str, Any]], None]) -> None:
+    path = evals / folder / "scores.json"
+    record = json.loads(path.read_text(encoding="utf-8"))
+    edit(record)
+    path.write_text(json.dumps(record), encoding="utf-8")
+
+
+def _nan_wrong(r: dict[str, Any]) -> None:
+    r["scores"]["wrong"] = float("nan")
+
+
+def _nan_found(r: dict[str, Any]) -> None:
+    r["scores"]["found_right"] = float("nan")
+
+
+def _text_found(r: dict[str, Any]) -> None:
+    r["scores"]["found_right"] = "high"
+
+
+def _no_wrong(r: dict[str, Any]) -> None:
+    del r["scores"]["wrong"]
+
+
+def _no_refuses(r: dict[str, Any]) -> None:
+    del r["scores"]["refuses_false"]
+
+
+def _one_prompt_less(r: dict[str, Any]) -> None:
+    r["prompts"].pop()
+
+
+def _one_prompt_more(r: dict[str, Any]) -> None:
+    r["prompts"].append(dict(r["prompts"][0]))
+
+
+def _other_model(r: dict[str, Any]) -> None:
+    r["models"][0]["model"] = "another-model"
+
+
+def _no_label_set(r: dict[str, Any]) -> None:
+    del r["sets"]["indications.jsonl"]
+
+
+@pytest.mark.parametrize(
+    ("folder", "edit"),
+    [
+        ("indicate_catalysts", _nan_wrong),
+        ("indicate_catalysts", _nan_found),
+        ("indicate_catalysts", _text_found),
+        ("indicate_catalysts", _no_wrong),
+        ("check_indication", _no_refuses),
+        ("indicate_catalysts", _one_prompt_less),
+        ("check_indication", _one_prompt_more),
+        ("check_indication", _other_model),
+        ("indicate_catalysts", _no_label_set),
+    ],
+)
+def test_any_tampered_or_unreadable_score_record_stops_the_readers(
+    tmp_path: Path, folder: str, edit: Callable[[dict[str, Any]], None]
+) -> None:
+    evals = _copy_evals(tmp_path)
+    _edit_scores(evals, folder, edit)
+    assert indication_gate_problems(evals) != []
+
+
+def test_a_label_set_missing_from_disk_stops_the_readers(tmp_path: Path) -> None:
+    evals = _copy_evals(tmp_path)
+    (evals / "check_indication" / "cases.jsonl").unlink()
+    assert indication_gate_problems(evals) != []
+
+
+def test_a_floor_that_is_not_a_number_stops_the_readers(tmp_path: Path) -> None:
+    evals = _copy_evals(tmp_path)
+    (evals / "indicate_catalysts" / "baseline.json").write_text(
+        '{"found_right": NaN, "none_right": 1.0, "wrong": "low"}', encoding="utf-8"
+    )
+    problems = indication_gate_problems(evals)
+    assert any("found_right" in p for p in problems)
+    assert any("wrong" in p for p in problems)
