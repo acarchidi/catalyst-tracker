@@ -16,6 +16,7 @@ import hashlib
 import re
 import zlib
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -398,29 +399,46 @@ class VerifyReport:
         return not self.missing and not self.changed and not self.unreadable
 
 
-def verify_snapshots(session_factory: sessionmaker[Session], store: SnapshotStore) -> VerifyReport:
+def verify_snapshots(
+    session_factory: sessionmaker[Session], store: SnapshotStore, *, workers: int = 1
+) -> VerifyReport:
     """Re-read every source document's copy and check it against the recorded hash.
 
     One copy that cannot be read (a storage or network error, a malformed row) is listed as
     unreadable and the audit continues, so one failure never hides the rest of the report.
+    `workers` copies are read at the same time (ADR 0054); the report lists them in source-key
+    order whatever the number.
     """
     table = TABLES[SourceDocument]
     with session_factory() as session:
         rows = session.execute(
             select(table.c.source_key, table.c.sha256, table.c.snapshot_key).order_by(table.c.source_key)
         ).all()
-    report = VerifyReport()
-    for source_key, sha256, key in rows:
-        report.checked += 1
+
+    def verdict(row: tuple[str, str, str]) -> str | None:
+        _, sha256, key = row
         if key != snapshot_key(sha256):
-            report.changed.append(source_key)
-            continue
+            return "changed"
         try:
             store.get(key)
         except SnapshotNotFoundError:
-            report.missing.append(source_key)
+            return "missing"
         except SnapshotIntegrityError:
-            report.changed.append(source_key)
+            return "changed"
         except (SnapshotStoreError, httpx.HTTPError, ValueError):
+            return "unreadable"
+        return None
+
+    report = VerifyReport()
+    triples = [(str(source_key), str(sha256), str(key)) for source_key, sha256, key in rows]
+    with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
+        verdicts = list(pool.map(verdict, triples))  # map keeps the rows' order
+    for (source_key, _, _), found in zip(triples, verdicts, strict=True):
+        report.checked += 1
+        if found == "changed":
+            report.changed.append(source_key)
+        elif found == "missing":
+            report.missing.append(source_key)
+        elif found == "unreadable":
             report.unreadable.append(source_key)
     return report

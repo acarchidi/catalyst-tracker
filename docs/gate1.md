@@ -5,7 +5,7 @@ Gate 1 (docs/quality-gates.md): 50 companies flow from source to the live databa
 1. Choose the companies (already done; repeatable): `uv run catalyst gate1-select`
 2. Collect them: `uv run catalyst collect --companies config/gate1_companies.toml --since 2026-07-01 --snapshot-store supabase`
 3. Check every stored copy: `uv run catalyst snapshots-verify --snapshot-store supabase`
-4. Check every link: `uv run catalyst check-links`
+4. Check every link published records cite, passing only HTTP 200: `uv run catalyst check-links --published --strict` (ADR 0054). `uv run catalyst check-links` alone checks every stored link; at ClinicalTrials.gov's pace that now takes hours.
 5. Make the owner's preview: `uv run catalyst sample-records`
 
 **Live run.** On GitHub: **Actions** tab, **Gate 1 live run** on the left, **Run workflow**, then the green **Run workflow** button (Claude Code usually starts it). It takes about an hour; the run's page shows each step's results. A red step names its source in the summary: one source failing (for example a site refusing for a minute) turns the run red without spoiling the others, and a re-run fills the gap.

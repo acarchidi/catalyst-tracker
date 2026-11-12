@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-16
+- **Amended by:** ADR 0054 (decision 2: Gate 1 checks the links published records cite, still passing only HTTP 200, because every stored link no longer fits in a run)
 - **Roadmap item:** Gate 1 (end of Phase 0): "50 companies flow from source to the live database, every record with a working deep source link"
 
 ## Context

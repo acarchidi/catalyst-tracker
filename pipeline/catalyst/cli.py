@@ -156,11 +156,19 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only the links published records cite; fail only on a missing or moved one (weekly check).",
     )
+    links.add_argument(
+        "--strict",
+        action="store_true",
+        help="Pass only when every link checked works (HTTP 200), as Gate 1 asks (ADR 0010, ADR 0054).",
+    )
     links.add_argument("--summary", type=Path, default=None, help="Also write the counts (JSON) here.")
     verify = commands.add_parser(
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
     _store_arguments(verify)
+    verify.add_argument(
+        "--workers", type=int, default=1, help="Copies read at the same time (default 1; ADR 0054)."
+    )
     _snapshot_space_arguments(commands)
     extract = commands.add_parser(
         "extract-catalysts",
@@ -451,7 +459,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     engine = create_engine(settings.database_url())
     try:
         if args.command == "snapshots-verify":
-            return _verify(store, sessionmaker(engine))
+            return _verify(store, sessionmaker(engine), args.workers)
         if args.command == "collect":
             return _collect(args, email, store, sessionmaker(engine))
         return _press_release(args, email, store, sessionmaker(engine))
@@ -516,7 +524,7 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         if args.summary is not None:
             args.summary.write_text(json.dumps(link_summary(report), indent=2) + "\n", encoding="utf-8")
         print(links_markdown(report), end="")
-        if args.published:  # a site error or a refusal says nothing about the document (ADR 0043)
+        if args.published and not args.strict:  # a refusal says nothing about the document (ADR 0043)
             return 1 if any(r.status in DEAD for r in report.results) else 0
         return 0 if report.ok else 1
     finally:
@@ -1137,8 +1145,8 @@ def _usage(store: SupabaseSnapshotStore, *, by_source: bool) -> int:
     return 0
 
 
-def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
-    report: VerifyReport = verify_snapshots(session_factory, store)
+def _verify(store: SnapshotStore, session_factory: sessionmaker[Session], workers: int = 1) -> int:
+    report: VerifyReport = verify_snapshots(session_factory, store, workers=workers)
     summary = {
         "checked": report.checked,
         "missing": report.missing,
