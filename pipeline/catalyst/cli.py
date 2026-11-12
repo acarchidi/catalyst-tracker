@@ -161,6 +161,9 @@ def _parser() -> argparse.ArgumentParser:
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
     )
     _store_arguments(verify)
+    verify.add_argument(
+        "--workers", type=int, default=1, help="Copies read at the same time (default 1; ADR 0054)."
+    )
     _snapshot_space_arguments(commands)
     extract = commands.add_parser(
         "extract-catalysts",
@@ -451,7 +454,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     engine = create_engine(settings.database_url())
     try:
         if args.command == "snapshots-verify":
-            return _verify(store, sessionmaker(engine))
+            return _verify(store, sessionmaker(engine), args.workers)
         if args.command == "collect":
             return _collect(args, email, store, sessionmaker(engine))
         return _press_release(args, email, store, sessionmaker(engine))
@@ -1137,8 +1140,8 @@ def _usage(store: SupabaseSnapshotStore, *, by_source: bool) -> int:
     return 0
 
 
-def _verify(store: SnapshotStore, session_factory: sessionmaker[Session]) -> int:
-    report: VerifyReport = verify_snapshots(session_factory, store)
+def _verify(store: SnapshotStore, session_factory: sessionmaker[Session], workers: int = 1) -> int:
+    report: VerifyReport = verify_snapshots(session_factory, store, workers=workers)
     summary = {
         "checked": report.checked,
         "missing": report.missing,

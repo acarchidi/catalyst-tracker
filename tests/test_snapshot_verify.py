@@ -107,3 +107,42 @@ def test_one_unreadable_copy_is_listed_and_the_audit_continues(
     assert report.unreadable == ["sec:0000000001-24-000001:a-bad.htm"]
     assert (report.missing, report.changed) == ([], [])
     assert not report.ok
+
+
+@pytest.mark.parametrize("workers", [1, 4, 8])
+def test_reading_copies_at_the_same_time_gives_the_same_report_in_the_same_order(
+    session_factory: sessionmaker[Session], tmp_path: Path, workers: int
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    gone: list[str] = []
+    changed: list[str] = []
+    for n in range(30):
+        snapshot = store.put(f"copy {n}".encode())
+        name = f"{n:02d}.htm"
+        _record(session_factory, snapshot, name)
+        if n % 7 == 0:
+            (tmp_path / snapshot.key).unlink()
+            gone.append(f"sec:0000000001-24-000001:{name}")
+        elif n % 5 == 0:
+            (tmp_path / snapshot.key).write_bytes(b"edited")
+            changed.append(f"sec:0000000001-24-000001:{name}")
+    report = verify_snapshots(session_factory, store, workers=workers)
+    assert report.checked == 30
+    assert report.missing == gone
+    assert report.changed == changed
+    assert report.unreadable == []
+
+
+def test_one_unreadable_copy_among_parallel_reads_is_still_listed(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    plain = LocalSnapshotStore(tmp_path)
+    bad = plain.put(b"bad")
+    _record(session_factory, bad, "a-bad.htm")
+    for n in range(10):
+        _record(session_factory, plain.put(f"good {n}".encode()), f"b-{n}.htm")
+    report = verify_snapshots(
+        session_factory, _FlakyStore(tmp_path, bad.key, SnapshotStoreError("HTTP 500")), workers=4
+    )
+    assert report.checked == 11
+    assert report.unreadable == ["sec:0000000001-24-000001:a-bad.htm"]

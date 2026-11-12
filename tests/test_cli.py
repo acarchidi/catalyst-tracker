@@ -81,7 +81,7 @@ def test_snapshots_verify_prints_the_report_and_fails_on_a_bad_copy(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     report = cli.VerifyReport(checked=2, missing=["sec:x:gone.htm"], changed=[])
-    monkeypatch.setattr(cli, "verify_snapshots", lambda *_args: report)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "verify_snapshots", lambda *_args, **_kwargs: report)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     assert main(["snapshots-verify"]) == 1
     out = capsys.readouterr().out
