@@ -156,6 +156,11 @@ def _parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Only the links published records cite; fail only on a missing or moved one (weekly check).",
     )
+    links.add_argument(
+        "--strict",
+        action="store_true",
+        help="Pass only when every link checked works (HTTP 200), as Gate 1 asks (ADR 0010, ADR 0054).",
+    )
     links.add_argument("--summary", type=Path, default=None, help="Also write the counts (JSON) here.")
     verify = commands.add_parser(
         "snapshots-verify", help="Re-read every stored source copy and check it against its recorded hash."
@@ -519,7 +524,7 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         if args.summary is not None:
             args.summary.write_text(json.dumps(link_summary(report), indent=2) + "\n", encoding="utf-8")
         print(links_markdown(report), end="")
-        if args.published:  # a site error or a refusal says nothing about the document (ADR 0043)
+        if args.published and not args.strict:  # a refusal says nothing about the document (ADR 0043)
             return 1 if any(r.status in DEAD for r in report.results) else 0
         return 0 if report.ok else 1
     finally:

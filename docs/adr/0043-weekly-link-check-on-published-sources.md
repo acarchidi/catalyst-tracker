@@ -2,6 +2,7 @@
 
 - **Status:** accepted
 - **Date:** 2026-10-20
+- **Amended by:** ADR 0054 (Gate 1's link check now also reads only published sources, with ADR 0010's HTTP 200 rule)
 - **Roadmap item:** Phase 1, "Auditor agent, weekly link check, sample checker on a stronger model, planted-error test, alerts only when something needs the owner plus a weekly summary" (part 2: the weekly link check)
 
 ## Context

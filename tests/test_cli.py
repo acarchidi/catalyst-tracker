@@ -971,3 +971,30 @@ def test_the_weekly_check_reads_published_links_and_fails_only_on_a_dead_one(
     assert main(["check-links", "--published", "--summary", str(out)]) == expected
     assert calls[0]["urls"] == ["https://www.sec.gov/x"]
     assert json.loads(out.read_text())["checked"] == 1
+
+
+@pytest.mark.parametrize(
+    ("status", "expected"),
+    [
+        (LinkStatus.OK, 0),
+        (LinkStatus.FAILED, 1),
+        (LinkStatus.REFUSED, 1),
+        (LinkStatus.BROKEN, 1),
+        (LinkStatus.MOVED, 1),
+    ],
+)
+def test_gate1_checks_published_links_and_passes_only_a_working_one(
+    monkeypatch: pytest.MonkeyPatch, status: LinkStatus, expected: int
+) -> None:
+    calls: list[dict[str, Any]] = []
+
+    def fake_check(*_args: object, **options: Any) -> LinkReport:
+        calls.append(options)
+        return LinkReport([LinkResult("https://www.sec.gov/x", status)])
+
+    monkeypatch.setenv("SEC_CONTACT_EMAIL", "data@example.org")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "published_urls", lambda *_args: ["https://www.sec.gov/x"])  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "check_links", fake_check)
+    assert main(["check-links", "--published", "--strict"]) == expected
+    assert calls[0]["urls"] == ["https://www.sec.gov/x"]

@@ -22,8 +22,8 @@ jobs:
     name: Gate 1 live run
     runs-on: ubuntu-latest
     # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
-    # each step has its own limit and they add up to well under 150 minutes (10 + 60 + 15 + 45
-    # + 5 + 5 = 140, plus setup): a step that times out fails, and the alert says so.
+    # each step has its own limit and they add up to under 150 minutes (10 + 60 + 30 + 35 + 5 +
+    # 5 = 145, plus setup): a step that times out fails, and the alert says so (ADR 0054).
     timeout-minutes: 150
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -80,20 +80,20 @@ jobs:
             | tee -a "$GITHUB_STEP_SUMMARY"
           exit "$status"
 
-      # Gate 1 asks that every published record has a working deep link, so this checks the links
-      # published records cite. Every stored link no longer fits: ClinicalTrials.gov allows about
-      # 45 requests a minute, and the drug list stored thousands of trial records (ADR 0054).
+      # Every stored link no longer fits in a run: ClinicalTrials.gov allows about 45 requests a
+      # minute, and the drug list stored thousands of trial records. So this checks the links
+      # published records cite, and still passes a link only on HTTP 200 (ADR 0010, ADR 0054).
       - name: Check every published source link
         id: links
         if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
-        timeout-minutes: 45
+        timeout-minutes: 35
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
         run: |
           set +e
-          uv run catalyst check-links --published > "$RUNNER_TEMP/links.md"
+          uv run catalyst check-links --published --strict > "$RUNNER_TEMP/links.md"
           status=$?
           tee -a "$GITHUB_STEP_SUMMARY" < "$RUNNER_TEMP/links.md"
           exit "$status"
