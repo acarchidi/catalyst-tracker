@@ -23,6 +23,7 @@ from catalyst.schemas.entities import (
     DrugTarget,
     EntityMatch,
     Indication,
+    IndicationAttempt,
     ModelCall,
     Outcome,
     ReviewDecision,
@@ -45,6 +46,7 @@ from catalyst.schemas.enums import (
     DrugRole,
     EnrollmentType,
     GateDecision,
+    IndicationResult,
     LineOfTherapy,
     MatchedEntity,
     MatchStatus,
@@ -86,6 +88,7 @@ ALL_MODELS: tuple[type[Entity], ...] = (
     CatalystChange,
     Outcome,
     SampleCheck,
+    IndicationAttempt,
     ModelCall,
 )
 
@@ -123,6 +126,8 @@ __all__ = [
     "EntityMatch",
     "GateDecision",
     "Indication",
+    "IndicationAttempt",
+    "IndicationResult",
     "LineOfTherapy",
     "MatchStatus",
     "MatchedEntity",

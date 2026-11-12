@@ -47,6 +47,7 @@ from catalyst.extract.disease import (
     score_record,
 )
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
+from catalyst.extract.indicate import indicate_catalysts
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
 from catalyst.issues import API, plan_markdown, post
@@ -154,7 +155,10 @@ def _parser() -> argparse.ArgumentParser:
     links.add_argument(
         "--published",
         action="store_true",
-        help="Only the links published records cite; fail only on a missing or moved one (weekly check).",
+        help=(
+            "Only the links published records cite; fail only on a missing or moved one, "
+            "unless --strict (weekly check)."
+        ),
     )
     links.add_argument(
         "--strict",
@@ -295,6 +299,14 @@ def _parser() -> argparse.ArgumentParser:
     planted.add_argument("--out", type=Path, required=True, help="Write the one-page report (Markdown) here.")
     planted.add_argument("--scores", type=Path, help="Also write the counts (JSON) here.")
     _issue_arguments(commands)
+    indicate = commands.add_parser(
+        "indicate-catalysts",
+        help="Ask both indication readers about published catalysts without an indication (costs money).",
+    )
+    indicate.add_argument(
+        "--limit", type=int, default=10, help="Most catalysts to ask about in this run (default 10)."
+    )
+    _store_arguments(indicate)
     sample_check = commands.add_parser(
         "sample-check",
         help="Check the week's random draw of published catalysts against their sources (costs money).",
@@ -434,6 +446,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "unseal": _unseal,
         "planted-errors": _planted_errors,
         "sample-check": _sample_check,
+        "indicate-catalysts": _indicate,
         "prospects-check": _prospects_check,
         "snapshots-compress": _snapshots_space,
         "snapshots-usage": _snapshots_space,
@@ -524,6 +537,9 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         if args.summary is not None:
             args.summary.write_text(json.dumps(link_summary(report), indent=2) + "\n", encoding="utf-8")
         print(links_markdown(report), end="")
+        if args.strict and not report.results:  # a check of nothing proves nothing (review of PR 125)
+            print("No link was checked.", file=sys.stderr)
+            return 1
         if args.published and not args.strict:  # a refusal says nothing about the document (ADR 0043)
             return 1 if any(r.status in DEAD for r in report.results) else 0
         return 0 if report.ok else 1
@@ -1036,6 +1052,25 @@ def _evaluate_indication(args: argparse.Namespace) -> int:
     args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2, ensure_ascii=False))
     return 0
+
+
+def _indicate(args: argparse.Namespace) -> int:
+    """Ask both readers about published catalysts' indications; fail if blocked, stopped, or a read failed."""
+    try:
+        adapter = anthropic_adapter.from_settings()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(settings.database_url())
+    try:
+        client = ModelClient(load_config(), {adapter.name: adapter}, DatabaseLedger(engine))
+        report = indicate_catalysts(sessionmaker(engine), store, client, limit=args.limit, now=_utc_now)
+    finally:
+        engine.dispose()
+    summary = report.summary()
+    print(json.dumps(summary, indent=2))
+    return 1 if summary["blocked"] or summary["stopped"] or summary["failed"] else 0
 
 
 def _sample_check(args: argparse.Namespace) -> int:

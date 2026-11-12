@@ -214,6 +214,13 @@ class GateDecision(StrEnum):
     REVIEW = "review"
 
 
+class IndicationResult(StrEnum):
+    """What one try at a published catalyst's indication gave (ADR 0053, decision 2)."""
+
+    FOUND = "found"
+    REFUSED = "refused"
+
+
 class SampleVerdict(StrEnum):
     """What the weekly sample checker concluded about one published catalyst (ADR 0041)."""
 

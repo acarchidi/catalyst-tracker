@@ -157,3 +157,20 @@ def test_hidden_sentences_naming_the_drug_cannot_make_the_search_slow() -> None:
     began = time.monotonic()
     assert candidates(text, visible, "zentocel") == []
     assert time.monotonic() - began < 3
+
+
+def test_a_disease_written_straight_before_another_disease_term_is_refused() -> None:
+    sentence = "Zentocel is in a Phase 3 trial for melanoma pain."
+    assert hard_check(_span(sentence), "melanoma", _index()) is IndicationMiss.NARROWER_IN_SENTENCE
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "Zentocel is in a Phase 3 trial in melanoma expected to read out in 2027.",
+        "Zentocel is in a Phase 3 trial in melanoma; pain scores were secondary endpoints.",
+        "Zentocel is in a Phase 3 trial in melanoma, and pain was mild.",
+    ],
+)
+def test_ordinary_words_or_a_break_after_the_disease_do_not_narrow_it(sentence: str) -> None:
+    assert isinstance(hard_check(_span(sentence), "melanoma", _index()), Found)
