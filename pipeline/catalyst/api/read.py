@@ -37,6 +37,7 @@ from catalyst.api.views import (
     WindowView,
 )
 from catalyst.db.tables import TABLES
+from catalyst.extract.agent import has_words
 from catalyst.logs import log_event
 from catalyst.schemas import (
     Catalyst,
@@ -408,9 +409,9 @@ def _shown_indication(indication: IndicationView | None, change: Row[Any] | None
     stored: object = change.claim_value
     value = cast(dict[str, object], stored) if isinstance(stored, dict) else {}
     words = value.get("words")
-    if isinstance(words, str) and words.strip():
+    if isinstance(words, str) and words.strip() and has_words(change.quote, words):
         return indication.model_copy(update={"name": words})
-    return indication
+    return indication  # words the cited quote does not hold are never shown
 
 
 def drugs_value(links: Sequence[Row[Any]]) -> list[JsonValue]:

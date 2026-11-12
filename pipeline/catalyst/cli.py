@@ -179,7 +179,9 @@ def _parser() -> argparse.ArgumentParser:
         "extract-catalysts",
         help="Ask the extractor for the catalysts in stored press releases (costs money).",
     )
-    extract.add_argument("--limit", type=int, default=50, help="Most documents to read in this run.")
+    extract.add_argument(
+        "--limit", type=_at_least_one, default=50, help="Most documents to read in this run."
+    )
     extract.add_argument(
         "--since", type=date.fromisoformat, default=None, help="Earliest publication date, YYYY-MM-DD."
     )
@@ -695,12 +697,21 @@ def _indications_after(
     """
     if "error" in published or "skipped" in published:
         return {"skipped": "publishing did not finish, so no indication was asked for"}
+    failures = (SQLAlchemyError, SnapshotStoreError, httpx.HTTPError, SyntaxError, ValueError, OSError)
+    result: dict[str, Any] = {}
     try:
-        read = indicate_catalysts(session_factory, store, client, limit=limit, now=_utc_now).summary()
-        written = publish_indications(session_factory, store, _utc_now).summary()
-    except (SQLAlchemyError, ValueError, OSError) as error:
-        return {"error": f"{type(error).__name__}: the indication step did not finish"}
-    return {"read": read, **written}
+        result["read"] = indicate_catalysts(
+            session_factory, store, client, limit=limit, now=_utc_now
+        ).summary()
+    except failures as error:
+        result["read"] = {"error": f"{type(error).__name__}: the indication readers did not finish"}
+    try:  # its own step, so finds stored by earlier runs are written even when the readers fail
+        result |= publish_indications(session_factory, store, _utc_now).summary()
+    except failures as error:
+        result["write"] = {"error": f"{type(error).__name__}: the indication pass did not finish"}
+    if "error" in result["read"] or "write" in result:
+        result["error"] = "the indication step did not finish"
+    return result
 
 
 def _resolve(_args: argparse.Namespace) -> int:

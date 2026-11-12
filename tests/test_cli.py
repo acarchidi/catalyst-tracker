@@ -1047,3 +1047,58 @@ def test_the_indication_job_prints_its_counts_and_fails_when_it_could_not_do_its
 def test_the_indication_job_refuses_a_limit_below_one(limit: str) -> None:
     with pytest.raises(SystemExit):
         main(["indicate-catalysts", "--limit", limit])
+
+
+def _extract_stands_in(monkeypatch: pytest.MonkeyPatch, published: Any) -> None:
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_kw: ExtractionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_kw: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "publish_claims", published)
+
+
+def test_a_failed_indication_read_keeps_every_summary_still_writes_and_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _extract_stands_in(monkeypatch, lambda *_args, **_kw: PublishReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    wrote: list[bool] = []
+
+    def broken(*_args: object, **_kw: object) -> IndicationReport:
+        raise SnapshotStoreError("Supabase Storage refused the MeSH file: HTTP 503")
+
+    def write(*_args: object, **_kw: object) -> IndicationWrites:
+        wrote.append(True)
+        return IndicationWrites(written=1)
+
+    monkeypatch.setattr(cli, "indicate_catalysts", broken)
+    monkeypatch.setattr(cli, "publish_indications", write)
+    assert main(["extract-catalysts", "--limit", "3", "--snapshot-store", "local"]) == 1
+    printed = json.loads(capsys.readouterr().out)
+    assert "error" in printed["indications"]["read"]
+    assert printed["indications"]["indications_written"] == 1
+    assert wrote == [True]
+    assert "published" in printed
+
+
+def test_no_indication_is_asked_for_when_publishing_did_not_finish(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def broken(*_args: object, **_kw: object) -> PublishReport:
+        raise ValueError("bad row")
+
+    _extract_stands_in(monkeypatch, broken)
+    asked: list[bool] = []
+    monkeypatch.setattr(cli, "indicate_catalysts", lambda *_args, **_kw: asked.append(True))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts", "--limit", "3", "--snapshot-store", "local"]) == 1
+    printed = json.loads(capsys.readouterr().out)
+    assert "skipped" in printed["indications"]
+    assert asked == []
+
+
+@pytest.mark.parametrize("limit", ["0", "-1"])
+def test_the_extract_run_refuses_a_limit_below_one(limit: str) -> None:
+    with pytest.raises(SystemExit):
+        main(["extract-catalysts", "--limit", limit])

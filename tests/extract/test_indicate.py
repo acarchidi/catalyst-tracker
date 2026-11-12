@@ -14,11 +14,14 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+import httpx
+import pytest
 from sqlalchemy import insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
+from catalyst.extract import indicate
 from catalyst.extract.indicate import CONFIRMED_CHECK, REDRAWN, claim_field, indicate_catalysts
 from catalyst.extract.text import document_text, find_quote
 from catalyst.llm.client import Completion, ModelClient
@@ -48,7 +51,7 @@ from catalyst.schemas import (
     SourceDocument,
     SourceTier,
 )
-from catalyst.snapshots import LocalSnapshotStore
+from catalyst.snapshots import LocalSnapshotStore, SnapshotStoreError
 
 FIXTURE = Path(__file__).parents[1] / "fixtures" / "mesh" / "desc2026_excerpt.xml.gz"
 EVENT = "Topline data from the Phase 3 RAINIER trial of zentocel are expected in the second half of 2027."
@@ -330,3 +333,49 @@ def test_a_later_try_that_names_another_disease_for_the_same_sentence_is_refused
     (attempt,) = all_rows(session_factory, IndicationAttempt)
     assert (attempt.outcome, attempt.reason, attempt.indication_claim_id) == ("refused", REDRAWN, None)
     assert not [c for c in all_rows(session_factory, ClaimCheck) if c.claim_id == earlier.id]
+
+
+def test_with_nothing_to_ask_about_the_mesh_file_is_not_read(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def never(*_args: object) -> None:
+        raise AssertionError("the MeSH file was read")
+
+    monkeypatch.setattr(indicate, "stored_index", never)
+    report = indicate_catalysts(
+        session_factory,
+        LocalSnapshotStore(tmp_path),
+        _client(FakeReaders()),
+        limit=10,
+        now=lambda: NOW,
+        gate=lambda: [],
+    )
+    assert (report.blocked, report.considered) == ([], 0)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        SnapshotStoreError("HTTP 503"),
+        httpx.ConnectError("refused"),
+        SyntaxError("not XML"),
+        ValueError("not gzip"),
+    ],
+)
+def test_a_mesh_file_that_cannot_be_read_blocks_the_run_and_asks_nothing(
+    session_factory: sessionmaker[Session], tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    seed_catalyst(session_factory, store)
+
+    def broken(*_args: object) -> None:
+        raise error
+
+    monkeypatch.setattr(indicate, "stored_index", broken)
+    fake = FakeReaders()
+    report = indicate_catalysts(
+        session_factory, store, _client(fake), limit=10, now=lambda: NOW, gate=lambda: []
+    )
+    assert report.blocked
+    assert "MeSH" in report.blocked[0]
+    assert fake.sent == []

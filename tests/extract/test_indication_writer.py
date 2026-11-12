@@ -16,12 +16,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.api.read import published, read_session
 from catalyst.db.tables import TABLES
 from catalyst.extract.disease import CHECKER_PROMPT, READER_PROMPT
-from catalyst.extract.indicate import CONFIRMED_CHECK
-from catalyst.publish.indication import NOT_CONFIRMED, publish_indications
+from catalyst.extract.indicate import CONFIRMED_CHECK, claim_field
+from catalyst.extract.text import document_text, find_quote
+from catalyst.publish.indication import NO_DISEASE, NOT_CONFIRMED, WORDS_NOT_IN_QUOTE, publish_indications
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
+    CheckOutcome,
+    Claim,
     ClaimCheck,
+    ClaimSubject,
     DrugRole,
     Indication,
     IndicationAttempt,
@@ -29,7 +33,7 @@ from catalyst.schemas import (
     SourceDocument,
 )
 from catalyst.snapshots import LocalSnapshotStore
-from extract.test_indicate import NOW, TARGET, FakeReaders, all_rows, run_readers, seed_catalyst
+from extract.test_indicate import NOW, RELEASE, TARGET, FakeReaders, all_rows, run_readers, seed_catalyst
 
 
 def _publish(factory: sessionmaker[Session], store: LocalSnapshotStore) -> dict[str, Any]:
@@ -154,3 +158,78 @@ def test_an_attempt_pointing_at_another_catalysts_claim_waits(
     summary = _publish(session_factory, store)
     assert summary["indications_written"] == 1
     assert summary["indications_held"] == {"the claim is not this catalyst's indication claim": 1}
+
+
+def _plant(factory: sessionmaker[Session], catalyst_id: Any, value: dict[str, Any]) -> None:
+    """Store a found try whose claim says `value`, as no reader would: to test the writer's own checks."""
+    span = find_quote(document_text(RELEASE, "text/html"), TARGET)
+    assert span is not None
+    with factory.begin() as session:
+        document = session.execute(select(TABLES[SourceDocument].c.id).limit(1)).scalar_one()
+        event = session.execute(
+            select(TABLES[Claim].c.id).where(TABLES[Claim].c.field == "catalyst:1").limit(1)
+        ).scalar_one()
+        claim = Claim(
+            source_document_id=document,
+            subject_type=ClaimSubject.CATALYST,
+            subject_id=catalyst_id,
+            field=claim_field(catalyst_id),
+            value={"text_version": "1"} | value,
+            quote=span.quote,
+            quote_start=span.start,
+            quote_end=span.end,
+            agent="extractor",
+            prompt_id=READER_PROMPT[0],
+            prompt_version=READER_PROMPT[1],
+            provider="fake",
+            model="planted",
+            extracted_at=NOW,
+        )
+        check = ClaimCheck(
+            claim_id=claim.id, check_name=CONFIRMED_CHECK, outcome=CheckOutcome.PASS, checked_at=NOW
+        )
+        attempt = IndicationAttempt(
+            catalyst_id=catalyst_id,
+            claim_id=event,
+            outcome=IndicationResult.FOUND,
+            indication_claim_id=claim.id,
+            reader_prompt_version=READER_PROMPT[1],
+            checker_prompt_version=CHECKER_PROMPT[1],
+            reader_model="planted",
+            checker_model="planted",
+            attempted_at=NOW,
+        )
+        for row in (claim, check, attempt):
+            session.execute(insert(TABLES[type(row)]).values(**row.model_dump()))
+
+
+def test_words_the_quote_does_not_hold_are_never_written(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    catalyst_id = seed_catalyst(session_factory, store)
+    _plant(
+        session_factory,
+        catalyst_id,
+        {"mesh_id": "D008545", "mesh_name": "Melanoma", "words": "heart failure"},
+    )
+    summary = _publish(session_factory, store)
+    assert summary == {"indications_written": 0, "indications_held": {WORDS_NOT_IN_QUOTE: 1}}
+
+
+def test_one_bad_row_is_held_and_the_rest_are_written(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    good = seed_catalyst(session_factory, store, n=1)
+    bad = seed_catalyst(
+        session_factory, store, n=2, role=DrugRole.IN_COMBINATION
+    )  # left alone by the readers
+    run_readers(session_factory, store, FakeReaders())
+    _plant(session_factory, bad, {"mesh_id": "not-a-mesh-id", "mesh_name": "Melanoma", "words": "melanoma"})
+    summary = _publish(session_factory, store)
+    assert summary["indications_written"] == 1
+    assert summary["indications_held"] == {NO_DISEASE: 1}
+    rows = {c.id: c.indication_id for c in all_rows(session_factory, Catalyst)}
+    assert rows[good] is not None
+    assert rows[bad] is None

@@ -301,6 +301,19 @@ def _tasks(session: Session, report: IndicationReport, models: tuple[str, str]) 
     return tasks
 
 
+def _load_index(session_factory: sessionmaker[Session], store: SnapshotStore) -> MeshIndex | str:
+    """Return the stored MeSH index, or why the job cannot read it, so the run stops asking."""
+    try:
+        with session_factory() as session:
+            index = stored_index(session, store)
+    except (SnapshotStoreError, httpx.HTTPError, SyntaxError, ValueError) as error:
+        # A storage error, a changed copy, or a file that is not MeSH XML (review of PR 128).
+        return f"the stored MeSH file could not be read ({type(error).__name__})"
+    if index is None:
+        return "no MeSH descriptor file is stored yet; run `catalyst collect --sources mesh`"
+    return index
+
+
 def indicate_catalysts(
     session_factory: sessionmaker[Session],
     store: SnapshotStore,
@@ -315,16 +328,16 @@ def indicate_catalysts(
     report = IndicationReport(blocked=gate())
     if report.blocked:
         return report  # no model is called without scores that meet their floors
-    if index is None:
-        with session_factory() as session:
-            index = stored_index(session, store)
-        if index is None:
-            report.blocked = ["no MeSH descriptor file is stored yet; run `catalyst collect --sources mesh`"]
-            return report
     models = (client.model_for(ROLE), client.model_for(VERIFIER_ROLE))
     provider = load_config().roles[ROLE].provider
     with read_session(session_factory) as session:
         tasks = _tasks(session, report, models)
+    if not tasks:
+        return report  # nothing to ask about, so the MeSH file is not read
+    loaded = index if index is not None else _load_index(session_factory, store)
+    if isinstance(loaded, str):
+        report.blocked = [loaded]
+        return report
     for task in tasks[:limit]:
         report.considered += 1
         try:
@@ -334,7 +347,7 @@ def indicate_catalysts(
             if page.differs:
                 outcome = Outcome(IndicationMiss.COPY_DIFFERS)  # such a copy's claims go to a person
             else:
-                outcome = find_indication(client, text, page.visible, task.drug, task.quote, index)
+                outcome = find_indication(client, text, page.visible, task.drug, task.quote, loaded)
         except SpendCapReachedError as error:
             report.considered -= 1
             report.stopped = str(error)

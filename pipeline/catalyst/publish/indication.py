@@ -24,11 +24,13 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
+from pydantic import ValidationError
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
+from catalyst.extract.agent import has_words
 from catalyst.extract.indicate import CONFIRMED_CHECK, claim_field
 from catalyst.logs import log_event
 from catalyst.publish import gate
@@ -53,6 +55,7 @@ _log = logging.getLogger(__name__)
 NOT_ITS_OWN = "the claim is not this catalyst's indication claim"
 NOT_CONFIRMED = "the second reader's pass is not stored beside the claim"
 NO_DISEASE = "the claim names no MeSH disease"
+WORDS_NOT_IN_QUOTE = "the words to print are not in the claim's quote"
 
 
 @dataclass
@@ -102,10 +105,10 @@ def _confirmed(session: Session, claim_id: UUID) -> bool:
     return outcome == CheckOutcome.PASS.value
 
 
-def _indication_id(session: Session, mesh_id: str, name: str) -> UUID:
+def _indication_id(session: Session, row: Indication) -> UUID:
     """Return the indication row for this MeSH disease with no line or biomarker, adding it once."""
     table = TABLES[Indication]
-    row = Indication(mesh_id=mesh_id, name=name)
+    mesh_id = row.mesh_id
     inserted = session.execute(
         insert(table).values(**row.model_dump()).on_conflict_do_nothing().returning(table.c.id)
     ).scalar_one_or_none()
@@ -118,34 +121,45 @@ def _indication_id(session: Session, mesh_id: str, name: str) -> UUID:
     ).scalar_one()
 
 
-def _why_not(session: Session, store: SnapshotStore, attempt: Any) -> tuple[str | None, Any]:
-    """Return why this found indication may not be written (None when it may), and its claim row."""
+def _why_not(
+    session: Session, store: SnapshotStore, attempt: Any
+) -> tuple[str | None, Any, Indication | None]:
+    """Return why this found indication may not be written (None when it may), its claim row, and its disease.
+
+    Every value to be written is checked again here, so one bad row is held on its own and never
+    stops the pass for the others (Opus review of PR 128).
+    """
     row = _claim_and_copy(session, attempt.indication_claim_id)
     if row.subject_id != attempt.catalyst_id or row.field != claim_field(attempt.catalyst_id):
-        return NOT_ITS_OWN, row
+        return NOT_ITS_OWN, row, None
     if not _confirmed(session, row.id):
-        return NOT_CONFIRMED, row
+        return NOT_CONFIRMED, row, None
     value = claim_value(row.value)
-    if not isinstance(value.get("mesh_id"), str) or not isinstance(value.get("mesh_name"), str):
-        return NO_DISEASE, row
+    try:
+        disease = Indication.model_validate({"mesh_id": value.get("mesh_id"), "name": value.get("mesh_name")})
+    except ValidationError:
+        return NO_DISEASE, row, None
+    words = value.get("words")
+    if not isinstance(words, str) or not has_words(row.quote, words):
+        return WORDS_NOT_IN_QUOTE, row, None
     claim = Claim.model_validate({k: getattr(row, k) for k in Claim.model_fields})
     quote = gate.match_quote(claim, gate.read_copy(store, row.snapshot_key, row.sha256, row.content_type))
     if quote.outcome is not CheckOutcome.PASS:
-        return quote.reason or "the quote check failed", row
-    return None, row
+        return quote.reason or "the quote check failed", row, None
+    return None, row, disease
 
 
 def write_indications(session: Session, store: SnapshotStore, at: datetime) -> IndicationWrites:
     """Write each catalyst's indication from its latest confirmed try, inside the caller's transaction."""
     report = IndicationWrites()
     for attempt in _latest_found(session):
-        reason, row = _why_not(session, store, attempt)
-        if reason is not None:
+        reason, row, disease = _why_not(session, store, attempt)
+        if reason is not None or disease is None:
+            reason = reason or NO_DISEASE
             report.held[reason] += 1
             log_event(_log, "indication_held", catalyst_id=str(attempt.catalyst_id), reason=reason)
             continue
-        value = claim_value(row.value)
-        indication_id = _indication_id(session, str(value["mesh_id"]), str(value["mesh_name"]))
+        indication_id = _indication_id(session, disease)
         table = TABLES[Catalyst]
         session.execute(
             update(table).where(table.c.id == attempt.catalyst_id).values(indication_id=indication_id)
