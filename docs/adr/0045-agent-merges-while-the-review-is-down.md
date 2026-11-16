@@ -1,6 +1,6 @@
 # 0045 — While the Claude review cannot run, the coding agent merges after a separate Opus review
 
-- **Status:** accepted (temporary)
+- **Status:** ended 2026-11-16 (ADR 0055); decision 4 amended by ADR 0055: the catch-up review of main runs on the owner's yes
 - **Date:** 2026-10-21
 - **Roadmap item:** none; a change to how work proceeds (owner decision, 2026-10-21)
 - **Overrides, while it lasts (owner's written OK, 2026-10-21):** AGENTS.md's "How work proceeds" lines that ordinary `claude/` pull requests go through the merge robot and that the agent merges only as ADR 0036 allows, and the "Protected main" practice that the Claude review must pass before a merge; ADR 0006 (decision 1), ADR 0007 (decision 1) and ADR 0036 (decision 5). Ordinary `claude/` pull requests may be merged by the coding agent under ADR 0036's rules. AGENTS.md itself is not changed.

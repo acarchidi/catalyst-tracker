@@ -2,7 +2,7 @@
 
 Run each Monday by a fresh coding session. It builds the free and paid Substack pages from the live data and gives them to the owner privately. Print counts only. Never commit, publish, upload as an artifact, or paste into a pull request, issue, or log: the export, the private key, or either page.
 
-Work in the session's scratchpad directory, written below as `$S`. Every file made here stays there with mode 600.
+Work in the session's scratchpad directory, written below as `$S`. Every file made here stays there; run `umask 077` first so each one is created readable by this session only.
 
 1. **Key pair.** `uv run --frozen catalyst seal-keygen --private-key $S/keys/week.pem > $S/keys/week.pub`, then `chmod 600 $S/keys/week.pem`. Only the public key leaves the session.
 2. **Sealed export.** Start `extract-live.yml` on `main` with inputs `mode=export` and `public_key=<contents of week.pub joined onto one line, line breaks removed>`. Through the REST API, send the dispatch body as JSON with `Content-Type: application/json`. Wait for the run to finish. The export makes no model call.
