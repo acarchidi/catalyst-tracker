@@ -5,7 +5,9 @@ reviewed like code (spec: Multi-provider model layer, item 3).
 """
 
 import tomllib
+from datetime import date
 from decimal import Decimal
+from itertools import pairwise
 from pathlib import Path
 from typing import Literal, Self
 
@@ -26,6 +28,29 @@ DEFAULT_MAX_INPUT_TOKENS: dict[str, int] = {"extractor": 40_000, "analyst": 30_0
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
+class RaisedCap(BaseModel):
+    """A higher daily cap the owner approved in writing, for the New York days from `first_day` to `last_day`.
+
+    Outside those days the role's usual `daily_cap_usd` applies again, with no change to the file,
+    so nobody has to remember to lower it (ADR 0065).
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    cap_usd: Decimal = Field(gt=0)
+    first_day: date
+    last_day: date
+    approved: str = Field(min_length=1, description="Who approved it in writing, when, and why.")
+
+    @model_validator(mode="after")
+    def _in_order(self) -> Self:
+        if self.last_day < self.first_day:
+            raise ValueError(
+                f"a raised cap's last_day {self.last_day} is before its first_day {self.first_day}"
+            )
+        return self
+
+
 class RoleConfig(BaseModel):
     """How one agent role calls a model."""
 
@@ -39,6 +64,24 @@ class RoleConfig(BaseModel):
     max_input_tokens: int | None = Field(
         default=None, gt=0, description="Largest document to send, in estimated tokens; None for the default."
     )
+    raised_caps: tuple[RaisedCap, ...] = ()
+
+    @model_validator(mode="after")
+    def _raised_caps_apart(self) -> Self:
+        ordered = sorted(self.raised_caps, key=lambda raised: raised.first_day)
+        for earlier, later in pairwise(ordered):
+            if later.first_day <= earlier.last_day:
+                raise ValueError(
+                    f"raised caps overlap: {earlier.first_day} to {earlier.last_day} and {later.first_day}"
+                )
+        return self
+
+    def cap_on(self, day: date) -> Decimal:
+        """Return the cap for the New York day `day`: a raised cap on its days, else the usual one."""
+        for raised in self.raised_caps:
+            if raised.first_day <= day <= raised.last_day:
+                return raised.cap_usd
+        return self.daily_cap_usd
 
 
 class ModelConfig(BaseModel):

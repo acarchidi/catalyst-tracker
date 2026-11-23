@@ -204,9 +204,9 @@ class ModelClient:
             self._config.pricing[settings.model],
             TokenUsage(input=math.ceil(characters / CHARS_PER_TOKEN_ESTIMATE), output=settings.max_tokens),
         )
-        spent = self._ledger.spent(role, new_york_day(at))
-        if spent + worst_case > settings.daily_cap_usd:
-            cap = settings.daily_cap_usd
+        day = new_york_day(at)
+        spent, cap = self._ledger.spent(role, day), settings.cap_on(day)  # a dated raise, or the usual cap
+        if spent + worst_case > cap:
             log_alert(_log, "spend_cap_reached", role=role, spent_usd=str(spent), cap_usd=str(cap))
             raise SpendCapReachedError(
                 f"{role} has spent ${spent} of its ${cap} daily cap; the next call could cost "

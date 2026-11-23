@@ -22,6 +22,8 @@ The Claude review failed from 2026-10-20 because the account's purchased credit 
 3. **Work runs in batches.** A coding session takes a stretch of roadmap work and finishes it in one go. It checks CI and reviews when its work is done instead of reacting to each GitHub event, so a long session is not re-read on every event. Model-using product jobs run at most once a day; the existing schedules already do.
 4. **ADR 0045 has ended.** Its decision 4 asks for one Claude review of main's state to look for anything the interim reviews missed, covering every pull request merged between 2026-10-20 and 2026-11-16. That review costs roughly $5 to $15 of the owner's credit, and the owner asked on 2026-11-16 to cut costs, so this ADR changes decision 4: the agent asks the owner whether to run it, and runs it as soon as the owner says yes. Until the owner answers, the question stays open in the agent's report to the owner.
 
+5. **Amended 2026-11-23: a private copy page instead of files.** The owner asked not to download files each week. The pages are handed over on one private artifact page, updated in place each Monday, with copy buttons for each title and issue. The page is private to the owner; the paid issue still appears nowhere else.
+
 ## Alternatives
 
 - **Wait for all four facts (ADR 0053's proposal).** Declined by the owner: several more weeks and four reviewed pull requests before any issue.

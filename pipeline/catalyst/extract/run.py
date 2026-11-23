@@ -15,7 +15,6 @@ higher limit reads them; each is counted only when first found with that reason 
 from __future__ import annotations
 
 import logging
-import time
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
@@ -52,6 +51,8 @@ TEXT_TYPES = frozenset({"text/html", "text/plain"})
 MIN_WORDS = 50
 # Skips that a later reader or limit can undo, so the document is checked again each run.
 RECHECKED = (ReadingSkip.NO_READABLE_TEXT, ReadingSkip.TOO_LARGE)
+# How a run that reached its time limit says so in `stopped_early` (ADR 0065).
+TIME_LIMIT_STOP = "time limit reached"
 
 _log = logging.getLogger(__name__)
 
@@ -104,19 +105,18 @@ def _utc_now() -> datetime:
     return datetime.now(UTC)
 
 
-def _candidates(
-    session: Session, document_types: Sequence[str], since: date | None, limit: int
-) -> tuple[list[Any], int]:
-    """Return the documents to work on, and how many are done.
+@dataclass(frozen=True)
+class _Queue:
+    """Which documents the extractor works on: the chosen ones, those done, and those to re-check."""
 
-    First the newest documents not yet extracted with this prompt and never skipped, up to `limit`;
-    then, up to `limit` more, those whose skip a fixed reader or a higher limit may undo, so those
-    re-checks never take the place of a new document. Re-checks go longest-unchecked first: each one
-    moves its skip's `read_at` to that run, so more than `limit` of them all come round in turn
-    (review of PR #79).
-    """
+    chosen: list[ColumnElement[bool]]
+    done: ColumnElement[bool]
+    recheck: ColumnElement[bool]
+    last_checked: Any  # the latest re-check of a document's undoable skip, as a scalar subquery
+
+
+def _queue(document_types: Sequence[str], since: date | None) -> _Queue:
     documents, claims, readings = TABLES[SourceDocument], TABLES[Claim], TABLES[DocumentReading]
-    links, companies = TABLES[CompanyDocument], TABLES[Company]
     claimed = exists().where(
         claims.c.source_document_id == documents.c.id,
         claims.c.agent == ROLE,
@@ -134,7 +134,6 @@ def _candidates(
         )
 
     undoable = [skip.value for skip in RECHECKED]
-    recheck = reading(readings.c.skipped.in_(undoable))
     last_checked = (
         select(func.max(readings.c.read_at))
         .where(
@@ -146,7 +145,39 @@ def _candidates(
         )
         .scalar_subquery()
     )
-    done = or_(claimed, reading(readings.c.skipped.is_(None) | readings.c.skipped.not_in(undoable)))
+    chosen: list[ColumnElement[bool]] = [documents.c.document_type.in_(document_types)]
+    if since is not None:
+        chosen.append(documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK))
+    return _Queue(
+        chosen=chosen,
+        done=or_(claimed, reading(readings.c.skipped.is_(None) | readings.c.skipped.not_in(undoable))),
+        recheck=reading(readings.c.skipped.in_(undoable)),
+        last_checked=last_checked,
+    )
+
+
+def waiting_documents(
+    session: Session, document_types: Sequence[str] = PRESS_RELEASE_TYPES, since: date | None = None
+) -> int:
+    """Count the documents no run has read yet, leaving out those only waiting for a re-check."""
+    queue, documents = _queue(document_types, since), TABLES[SourceDocument]
+    query = select(func.count()).select_from(documents).where(*queue.chosen, ~queue.done, ~queue.recheck)
+    return session.execute(query).scalar_one()
+
+
+def _candidates(
+    session: Session, document_types: Sequence[str], since: date | None, limit: int
+) -> tuple[list[Any], int]:
+    """Return the documents to work on, and how many are done.
+
+    First the newest documents not yet extracted with this prompt and never skipped, up to `limit`;
+    then, up to `limit` more, those whose skip a fixed reader or a higher limit may undo, so those
+    re-checks never take the place of a new document. Re-checks go longest-unchecked first: each one
+    moves its skip's `read_at` to that run, so more than `limit` of them all come round in turn
+    (review of PR #79).
+    """
+    documents, links, companies = TABLES[SourceDocument], TABLES[CompanyDocument], TABLES[Company]
+    queue = _queue(document_types, since)
     company = (
         select(companies.c.name)
         .join(links, links.c.company_id == companies.c.id)
@@ -155,16 +186,15 @@ def _candidates(
         .limit(1)
         .scalar_subquery()
     )
-    chosen: list[ColumnElement[bool]] = [documents.c.document_type.in_(document_types)]
-    if since is not None:
-        chosen.append(documents.c.published_at >= datetime.combine(since, datetime.min.time(), NEW_YORK))
-    query = select(documents, company.label("company")).where(*chosen)
-    finished = select(func.count()).select_from(documents).where(*chosen, done)
+    query = select(documents, company.label("company")).where(*queue.chosen)
+    finished = select(func.count()).select_from(documents).where(*queue.chosen, queue.done)
     skipped = session.execute(finished).scalar_one()
     newest = documents.c.published_at.desc()
-    fresh = session.execute(query.where(~done, ~recheck).order_by(newest).limit(limit)).all()
-    longest_unchecked = (last_checked.asc(), newest, documents.c.id)
-    again = session.execute(query.where(and_(~done, recheck)).order_by(*longest_unchecked).limit(limit)).all()
+    fresh = session.execute(query.where(~queue.done, ~queue.recheck).order_by(newest).limit(limit)).all()
+    longest_unchecked = (queue.last_checked.asc(), newest, documents.c.id)
+    again = session.execute(
+        query.where(and_(~queue.done, queue.recheck)).order_by(*longest_unchecked).limit(limit)
+    ).all()
     return [*fresh, *again], skipped
 
 
@@ -266,13 +296,14 @@ class _Skip:
         return new
 
 
-def _in_time(
-    rows: Sequence[Any], deadline: float | None, clock: Callable[[], float], report: ExtractionReport
+def _until(
+    deadline: datetime | None, now: Callable[[], datetime], report: ExtractionReport, rows: list[Any]
 ) -> Iterator[Any]:
-    """Yield the rows until `deadline` passes, then mark the report as stopped for time."""
+    """Yield `rows` until `deadline`; at the deadline, say so in the report and stop."""
     for row in rows:
-        if deadline is not None and clock() > deadline:
-            report.stopped_for_time = True
+        if deadline is not None and now() >= deadline:
+            report.stopped = f"{TIME_LIMIT_STOP}; the rest wait for the next run"
+            report.stopped_for_time = True  # the nightly time budget's stop too (ADR 0064)
             return
         yield row
 
@@ -286,18 +317,17 @@ def extract_documents(
     since: date | None = None,
     document_types: Sequence[str] = PRESS_RELEASE_TYPES,
     now: Callable[[], datetime] = _utc_now,
-    deadline: float | None = None,
-    clock: Callable[[], float] = time.monotonic,
+    deadline: datetime | None = None,
 ) -> ExtractionReport:
     """Extract catalysts from up to `limit` stored documents, newest first, and store the claims.
 
-    Past `deadline` (a `clock` reading) no further document is started; the documents left are
-    the next run's, since a document read is never read again (ADR 0064).
+    With a `deadline`, no document is started after it; the rest wait for the next run (ADR 0065).
+    The nightly run's time budget sets the same deadline (ADR 0064).
     """
     with session_factory() as session:
         rows, skipped = _candidates(session, document_types, since, limit)
     report = ExtractionReport(skipped=skipped)
-    for row in _in_time(rows, deadline, clock, report):
+    for row in _until(deadline, now, report, rows):
         published = row.published_at.astimezone(NEW_YORK).date()
         result = DocumentResult(row.source_key, row.url, row.company, published)
         report.documents.append(result)

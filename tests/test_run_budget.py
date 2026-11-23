@@ -4,6 +4,7 @@ Matching writes only what changed, each copy is read once, and a time budget sto
 cleanly so the next one picks up where it stopped.
 """
 
+import argparse
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -237,3 +238,24 @@ def test_no_decision_rests_on_a_check_that_ran_out_of_time() -> None:
     nothing: Any = None  # never reached: the decisions stop before reading anything
     decided = cli.decide_after_checks(nothing, nothing, checks)
     assert decided == {"skipped": "a check ran out of time, so nothing was decided; the next run goes on"}
+
+
+def _plan(max_minutes: int | None = None) -> cli.RunPlan:
+    args = argparse.Namespace(time_budget_minutes=cli.TIME_BUDGET_MINUTES, max_minutes=max_minutes)
+    return cli.RunPlan.of(args)
+
+
+def test_a_nightly_run_gives_each_step_its_share_of_the_budget() -> None:
+    plan = _plan()
+    assert plan.reading == pytest.approx(35 * 0.45)
+    assert plan.rest(0.7) == pytest.approx(35 * 0.7)
+    assert plan.rest(1.0) == pytest.approx(35.0)
+
+
+def test_a_backfill_reads_for_its_max_minutes_and_the_later_steps_keep_their_time() -> None:
+    """ADR 0065's --max-minutes sets when reading stops; the checks and the gate still get theirs."""
+    plan = _plan(max_minutes=170)
+    assert plan.reading == 170
+    assert plan.rest(0.7) == pytest.approx(170 + 35 * 0.25)
+    assert plan.rest(1.0) == pytest.approx(170 + 35 * 0.55)
+    assert plan.by(1.0) > plan.budget.at(170)

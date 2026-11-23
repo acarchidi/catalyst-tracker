@@ -1,9 +1,8 @@
 """The command line stops with a plain message when the SEC contact email is missing."""
 
 import json
-import time
 from collections import Counter
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -272,7 +271,7 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     (options,) = calls
     deadline = options.pop("deadline")  # ADR 0064: reading stops once its share of the time is spent
     assert options == {"limit": 3, "since": date(2026, 10, 1)}
-    assert deadline > time.monotonic()
+    assert deadline > datetime.now(UTC)
     printed = json.loads(capsys.readouterr().out)
     assert printed["claims_stored"] == 2
     assert printed["matches"]["claims"] == 2  # names in new claims are matched right after extraction

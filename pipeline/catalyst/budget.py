@@ -26,6 +26,10 @@ class TimeBudget:
             raise ValueError("a time budget must be more than zero minutes")
         self.started = self.clock()
 
+    def at(self, minutes: float) -> float:
+        """Return the `clock` reading `minutes` after the budget started."""
+        return self.started + minutes * 60
+
     def by(self, share: float = 1.0) -> float:
         """Return the `clock` reading at which `share` of the budget is spent."""
         return self.started + self.minutes * 60 * share

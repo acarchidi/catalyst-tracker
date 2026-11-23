@@ -4,6 +4,9 @@ It runs only when the verifier's prompt has its own scores (the caller passes th
 problems). Each release the extractor read is read once per verifier prompt version and model,
 and the reading is kept even when it found nothing, so a re-run spends nothing. Every
 extracted catalyst on a read release then gets a `second_reading_agrees` row.
+
+Every run compares every read release again from the stored readings, without a model call, so
+a change to the comparison rules reaches claims already held on the next run (ADR 0062).
 """
 
 from __future__ import annotations
@@ -37,7 +40,9 @@ from catalyst.schemas import Claim, ClaimCheck, CompanyDocument, DocumentReading
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
 from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import Outcome
-from catalyst.verify.second import CHECK, VERIFIER_PROMPT, VERIFIER_ROLE, Reading, compare
+from catalyst.verify.second import CHECK, VERIFIER_PROMPT, VERIFIER_ROLE, Reading, compare, outcome_kind
+
+OUTCOME_KINDS = ("agrees", "differs", "flagged", "no_second_events", "not_found")
 
 _log = logging.getLogger(__name__)
 
@@ -51,17 +56,20 @@ class SecondReadingReport:
     documents_failed: int = 0
     claims_compared: int = 0
     claims_agreeing: int = 0
+    # How each compared claim came out, by kind (`outcome_kind`): counts only, never what was read.
+    outcomes: dict[str, int] = field(default_factory=lambda: dict.fromkeys(OUTCOME_KINDS, 0))
     stopped: str | None = None
     stopped_for_time: bool = False  # the run's time ran out; the next run reads the rest (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
-        """Return the counts as plain JSON."""
+        """Return the counts as plain JSON; what either reader said stays out (ADR 0034, ADR 0062)."""
         counts = {
             "skipped": self.skipped,
             "documents_read": self.documents_read,
             "documents_failed": self.documents_failed,
             "claims_compared": self.claims_compared,
             "claims_agreeing": self.claims_agreeing,
+            "claims_by_outcome": dict(self.outcomes),
             "stopped_early": self.stopped,
         }
         return counts | ({"stopped_for_time": True} if self.stopped_for_time else {})
@@ -97,8 +105,14 @@ def _to_read(session: Session, model: str, limit: int) -> list[Any]:
     return list(session.execute(query).all())
 
 
-def _record(session: Session, document_id: UUID, model: str, claims: list[Claim], at: datetime) -> None:
-    """Store the verifier's claims and the reading itself, together."""
+def _record(
+    session: Session, document_id: UUID, model: str, claims: list[Claim], proposed: int, at: datetime
+) -> None:
+    """Store the verifier's claims and the reading itself, together.
+
+    The reading keeps how many events the verifier proposed; a proposal whose quote is not the
+    source's words makes no claim, so fewer claims than that means lost quotes (ADR 0062).
+    """
     if claims:
         session.execute(
             insert(TABLES[Claim]).values([c.model_dump() for c in claims]).on_conflict_do_nothing()
@@ -109,7 +123,7 @@ def _record(session: Session, document_id: UUID, model: str, claims: list[Claim]
         prompt_id=VERIFIER_PROMPT[0],
         prompt_version=VERIFIER_PROMPT[1],
         model=model,
-        catalysts=len(claims),
+        catalysts=proposed,
         read_at=at,
     )
     session.execute(insert(TABLES[DocumentReading]).values(**row.model_dump()).on_conflict_do_nothing())
@@ -123,13 +137,22 @@ def _reading(row: Any) -> Reading:
     value = _value(row.value)
     window = (value.get("window_start"), value.get("window_end"), value.get("window_precision"))
     return Reading(
-        row.id, str(value.get("catalyst_type")), value.get("drug"), window, row.quote_start, row.quote_end
+        row.id,
+        str(value.get("catalyst_type")),
+        value.get("drug"),
+        window,
+        row.quote_start,
+        row.quote_end,
+        _problems(value),
     )
 
 
-def _clean(row: Any) -> bool:
-    """Say whether a verifier proposal may vouch: only when its own checks found no problem."""
-    return _value(row.value).get("problems") == []
+def _problems(value: dict[str, Any]) -> tuple[str, ...]:
+    """Return the reader's own problems with a proposal; one with any, or no list at all, never vouches."""
+    problems = value.get("problems")
+    if not isinstance(problems, list):
+        return ("problems_not_listed",)
+    return tuple(str(problem) for problem in cast(list[object], problems))
 
 
 def same_drug_rule(references: ReferenceData, company: UUID | None) -> Callable[[str, str], bool]:
@@ -189,7 +212,7 @@ def _compare_all(session: Session, model: str, at: datetime, report: SecondReadi
             first[(row.source_document_id, row.prompt_id, row.prompt_version, row.model)].append(
                 _reading(row)
             )
-        elif _clean(row):
+        else:  # flagged proposals are compared too, so the reason says so; they never vouch
             second[row.source_document_id].append(_reading(row))
     companies: defaultdict[UUID, set[UUID]] = defaultdict(set)
     for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
@@ -205,6 +228,7 @@ def _compare_all(session: Session, model: str, at: datetime, report: SecondReadi
             found.append(Found(claim_id, result))
             report.claims_compared += 1
             report.claims_agreeing += result.outcome is Outcome.PASS
+            report.outcomes[outcome_kind(result, second[document])] += 1
     write_checks(session, found, at, load_stamps(session, [CHECK]))  # only what changed (ADR 0064)
 
 
@@ -264,7 +288,7 @@ def run_second_reading(
         at = now()
         claims = catalyst_claims(reading, UUID(str(row.id)), at, agent=VERIFIER_ROLE)
         with session_factory.begin() as session:
-            _record(session, UUID(str(row.id)), model, claims, at)
+            _record(session, UUID(str(row.id)), model, claims, len(reading.catalysts), at)
         report.documents_read += 1
     with session_factory.begin() as session:
         _compare_all(session, model, now(), report)

@@ -5,7 +5,7 @@ import inspect
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.collectors.documents import FetchedDocument, store_fetched
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import Problem, catalyst_claims, extract_catalysts
-from catalyst.extract.run import MIN_WORDS, extract_documents
+from catalyst.extract.run import MIN_WORDS, TIME_LIMIT_STOP, extract_documents
 from catalyst.extract.text import TEXT_VERSION, PageReading, find_quote
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
@@ -505,15 +505,12 @@ def test_past_its_deadline_the_job_starts_no_document_and_the_next_run_reads_it(
     _document(store, session_factory, "a", "8-K EX-99.1")
     fake = _Fake()
     client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
-    late = extract_documents(
-        session_factory, store, client, limit=10, now=lambda: NOW, deadline=0.0, clock=lambda: 1.0
-    )
+    late = extract_documents(session_factory, store, client, limit=10, now=lambda: NOW, deadline=NOW)
     assert fake.calls == []
-    assert late.summary()["stopped_for_time"] is True
-    assert late.summary()["stopped_early"] is None  # not a failure: no alert, no failed run
-    again = extract_documents(
-        session_factory, store, client, limit=10, now=lambda: NOW, deadline=2.0, clock=lambda: 1.0
-    )
+    assert late.summary()["stopped_for_time"] is True  # the command does not count it a failure
+    assert str(late.summary()["stopped_early"]).startswith(TIME_LIMIT_STOP)  # the same stop as ADR 0065's
+    later = NOW + timedelta(minutes=1)
+    again = extract_documents(session_factory, store, client, limit=10, now=lambda: NOW, deadline=later)
     assert len(fake.calls) == 1
     assert "stopped_for_time" not in again.summary()
     assert _claims(session_factory) == 1
