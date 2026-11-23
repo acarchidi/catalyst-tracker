@@ -14,9 +14,17 @@ from catalyst.db.tables import TABLES
 from catalyst.references import record_trial
 from catalyst.resolve_claims import resolve_claims
 from catalyst.schemas import (
+    Catalyst,
+    CatalystChange,
+    CatalystField,
+    CatalystStatus,
+    CatalystType,
     Claim,
     ClaimCheck,
     ClaimSubject,
+    Company,
+    DateConfidence,
+    DatePrecision,
     DocumentMatch,
     EntityMatch,
     SourceDocument,
@@ -67,6 +75,7 @@ def _claim(
     quote: str,
     *,
     extracted_at: datetime = PUBLISHED,
+    agent: str = "extractor",
     **value: Any,
 ) -> UUID:
     stored: dict[str, Any] = {
@@ -86,7 +95,7 @@ def _claim(
         quote=quote,
         quote_start=0,
         quote_end=len(quote),
-        agent="extractor",
+        agent=agent,
         prompt_id="extract_catalysts",
         prompt_version="1.0.0",
         provider="anthropic",
@@ -317,3 +326,135 @@ def test_an_older_reading_of_a_document_does_not_vouch(
     _deal(session_factory, site, "We now expect the acquisition to close in 2027.", date_text="2027")
     _run(session_factory)
     assert _checks(session_factory, claim)["independent_source"][0] == "fail"
+
+
+# --- ADR 0061: a claim held for its date is read again by today's date rules, with no model call ---
+
+NO_WINDOW: dict[str, Any] = {
+    "window_start": None,
+    "window_end": None,
+    "window_precision": None,
+    "problems": ["no_window"],
+}
+DATE_CHECKS = ("extractor_checks", "date_words_in_quote", "window_matches_words", "has_window")
+
+
+def _values(session_factory: sessionmaker[Session]) -> dict[UUID, dict[str, Any]]:
+    with session_factory() as session:
+        claim = TABLES[Claim]
+        return {row.id: row.value for row in session.execute(select(claim.c.id, claim.c.value))}
+
+
+def test_a_claim_stored_with_no_window_is_read_again_and_checked(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    quote = "Phase 2 AZURE-1 topline data are expected in December."
+    claim = _claim(session_factory, release["document"], quote, date_text="in December", **NO_WINDOW)
+    report = run_checks(session_factory, lambda: _now(date(2026, 10, 17)))
+    assert report.dates_reread == 1
+    value = _values(session_factory)[claim]
+    assert (value["date_text"], value["problems"]) == ("in December", [])
+    assert (value["window_start"], value["window_end"], value["window_precision"]) == (
+        "2026-12-01",
+        "2026-12-31",
+        "month",
+    )
+    outcomes = _outcomes(session_factory)
+    assert {name: outcomes[name][0] for name in DATE_CHECKS} == dict.fromkeys(DATE_CHECKS, "pass")
+    again = run_checks(session_factory, lambda: _now(date(2026, 10, 18)))
+    assert (again.dates_reread, again.summary()["dates_reread"]) == (0, 0)
+    assert _values(session_factory)[claim] == value
+
+
+def test_date_words_cut_from_a_longer_date_are_made_whole_in_the_stored_claim(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    quote = "Phase 2 AZURE-1 topline data are expected by mid-2027."
+    half: dict[str, Any] = {
+        "window_start": "2027-04-01",
+        "window_end": "2027-09-30",
+        "window_precision": "half",
+    }
+    claim = _claim(session_factory, release["document"], quote, date_text="mid-2027", **half)
+    assert run_checks(session_factory, lambda: _now(date(2026, 10, 17))).dates_reread == 1
+    value = _values(session_factory)[claim]
+    assert (value["date_text"], value["window_start"], value["window_end"]) == (
+        "by mid-2027",
+        "2026-10-01",
+        "2027-09-30",
+    )
+    assert _outcomes(session_factory)["date_words_in_quote"] == ("pass", None)
+
+
+def test_the_second_readers_claims_are_read_again_too(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    """Else the two readings would differ on the window only because one was stored earlier."""
+    quote = "Phase 2 AZURE-1 topline data are expected in December."
+    claim = _claim(
+        session_factory, release["document"], quote, agent="verifier", date_text="in December", **NO_WINDOW
+    )
+    assert run_checks(session_factory, lambda: _now(date(2026, 10, 17))).dates_reread == 1
+    assert _values(session_factory)[claim]["window_start"] == "2026-12-01"
+
+
+def test_a_stored_window_that_is_not_what_the_words_give_is_held_not_rewritten(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    """Reading again never repairs a changed window: `window_matches_words` still holds it."""
+    quote = "Phase 2 AZURE-1 topline data are expected in Q4 2026."
+    moved: dict[str, Any] = {"window_start": "2027-01-01", "window_end": "2027-03-31"}
+    claim = _claim(session_factory, release["document"], quote, **moved)
+    assert run_checks(session_factory, lambda: _now(date(2026, 10, 17))).dates_reread == 0
+    assert _values(session_factory)[claim]["window_start"] == "2027-01-01"
+    assert _outcomes(session_factory)["window_matches_words"][0] == "fail"
+
+
+def test_a_claim_whose_words_still_name_no_window_stays_held(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    quote = "Phase 2 AZURE-1 topline data are expected at ESMO 2026."
+    _claim(session_factory, release["document"], quote, date_text="ESMO 2026", **NO_WINDOW)
+    assert run_checks(session_factory, lambda: _now(date(2026, 10, 17))).dates_reread == 0
+    outcomes = _outcomes(session_factory)
+    assert {outcomes[name][0] for name in ("extractor_checks", "window_matches_words", "has_window")} == {
+        "fail"
+    }
+
+
+def test_a_claim_a_live_catalyst_cites_is_never_read_again(
+    session_factory: sessionmaker[Session], release: dict[str, UUID]
+) -> None:
+    """What was published stays as its claim states it, even with date words cut from a longer date."""
+    quote = "Phase 2 AZURE-1 topline data are expected by mid-2027."
+    half: dict[str, Any] = {
+        "window_start": "2027-04-01",
+        "window_end": "2027-09-30",
+        "window_precision": "half",
+    }
+    claim = _claim(session_factory, release["document"], quote, date_text="mid-2027", **half)
+    with session_factory.begin() as session:
+        company = session.execute(select(TABLES[Company].c.id)).scalar_one()
+        catalyst = Catalyst(
+            catalyst_type=CatalystType.TOPLINE_READOUT,
+            company_id=company,
+            title="Topline data: AZURE-1 trial",
+            window_start=date(2027, 4, 1),
+            window_end=date(2027, 9, 30),
+            window_precision=DatePrecision.HALF,
+            window_raw_text="mid-2027",
+            date_confidence=DateConfidence.COMPANY_CONFIRMED,
+            status=CatalystStatus.UPCOMING,
+        )
+        cited = CatalystChange(
+            catalyst_id=catalyst.id,
+            field=CatalystField.WINDOW_RAW_TEXT,
+            new_value="mid-2027",
+            claim_id=claim,
+            learned_at=PUBLISHED,
+        )
+        for record in (catalyst, cited):
+            session.execute(insert(TABLES[type(record)]).values(**record.model_dump()))
+    assert run_checks(session_factory, lambda: _now(date(2026, 10, 17))).dates_reread == 0
+    assert _values(session_factory)[claim]["date_text"] == "mid-2027"
+    assert _outcomes(session_factory)["date_words_in_quote"][0] == "fail"

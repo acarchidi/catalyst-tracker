@@ -311,12 +311,6 @@ FIRST_CASES = (
         publishes=(),
     ),
     Case(
-        "dropped-year.html",
-        ((TOPLINE | {"title": "Topline data in the second half", "date_text": "second half"}, CUT_SHORT),),
-        kept=(PDUFA,),
-        publishes=(PDUFA,),
-    ),
-    Case(
         "tag-characters.html",
         (
             (_pdufa(), STEERING),
@@ -393,80 +387,12 @@ CP4_CASES = (
         publishes=(PDUFA,),
     ),
     Case(
-        "date-range-year-at-end.html",
-        (
-            (
-                _conference(
-                    "RAINIER results at a medical meeting",
-                    "November 16",
-                    "Acme Bio will present RAINIER results at a medical meeting held November 16 to "
-                    "December 2, 2027.",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-    ),
-    Case(
-        "date-or-range.html",
-        (
-            (
-                _topline(
-                    TOPLINE_QUOTE.replace("second half of 2027", "late 2026 or early 2027"),
-                    date_text="late 2026",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-        kept=(PDUFA,),
-        publishes=(PDUFA,),
-    ),
-    Case(
-        "date-by-end-of-year.html",
-        (
-            (
-                _topline(
-                    TOPLINE_QUOTE.replace("in the second half of 2027", "by the end of 2027"),
-                    date_text="2027",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-        kept=(PDUFA,),
-        publishes=(PDUFA,),
-    ),
-    Case(
         "date-fiscal-quarter.html",
         (
             (
                 _topline(
                     TOPLINE_QUOTE.replace("second half of 2027", "fourth quarter of fiscal 2027"),
                     date_text="fourth quarter",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-        kept=(PDUFA,),
-        publishes=(PDUFA,),
-    ),
-    Case(
-        "date-day-range.html",
-        (
-            (
-                _conference(
-                    "RAINIER investor meetings",
-                    "December 1",
-                    "Acme Bio will host RAINIER investor meetings December 1-15, 2026.",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-    ),
-    Case(
-        "date-hyphen-quarters.html",
-        (
-            (
-                _topline(
-                    TOPLINE_QUOTE.replace("second half of 2027", "Q4 2026-Q1 2027"), date_text="Q4 2026"
                 ),
                 CUT_SHORT,
             ),
@@ -610,21 +536,6 @@ def _meeting(sentence: str) -> dict[str, Any]:
 
 
 YEAR_CASES = (
-    Case(
-        "year-calendar.html",
-        (
-            (
-                _topline(
-                    TOPLINE_QUOTE.replace("of 2027", "of calendar 2027"),
-                    title="Topline data in the second half",
-                    date_text="second half",
-                ),
-                CUT_SHORT,
-            ),
-        ),
-        kept=(PDUFA,),
-        publishes=(PDUFA,),
-    ),
     *(
         Case(fixture, ((_meeting(MEETING.format(year=year)), CUT_SHORT),))
         for fixture, year in (
@@ -771,6 +682,94 @@ RESIDUAL = (
         ((_pdufa(quote=MOVED), "second_reading_agrees"),),
         kept=(TOPLINE,),
         publishes=(TOPLINE,),
+    ),
+)
+# ADR 0061 (owner, 2026-11-23: no person in the loop for dates): date words cut from a longer date
+# are made whole by code, from the quote. Until then each of these seven pages was held (CP4 B2 and
+# B1, and the note that invites a reader to drop the year). Now the claim is stored with the whole
+# date and the window it gives, so the cut window can never publish, and nobody has to look.
+
+
+@dataclass(frozen=True)
+class Whole:
+    """One fixture whose obedient model copies part of a date, and the whole date its sentence states."""
+
+    fixture: str
+    event: dict[str, Any]  # as the obedient model answers, with the cut date words
+    words: str  # the whole date, in the quote's words
+    window: tuple[str, str]
+    kept: tuple[dict[str, Any], ...] = (PDUFA,)  # the true events the model still reports
+    same_event: bool = True  # the sentence is the release's topline sentence but for its date
+
+    def answer(self) -> list[dict[str, Any]]:
+        return [*self.kept, self.event]
+
+    def __str__(self) -> str:
+        """Name the case by its fixture, for test ids."""
+        return self.fixture.removesuffix(".html")
+
+
+def _cut_topline(old: str, new: str, date_text: str) -> dict[str, Any]:
+    return _topline(
+        TOPLINE_QUOTE.replace(old, new), title="Topline data (cut date words)", date_text=date_text
+    )
+
+
+WHOLE_CASES = (
+    Whole(
+        "dropped-year.html",
+        TOPLINE | {"title": "Topline data in the second half", "date_text": "second half"},
+        "second half of 2027",
+        ("2027-07-01", "2027-12-31"),
+    ),
+    Whole(
+        "year-calendar.html",
+        _cut_topline("of 2027", "of calendar 2027", "second half"),
+        "second half of calendar 2027",
+        ("2027-07-01", "2027-12-31"),
+    ),
+    Whole(
+        "date-or-range.html",
+        _cut_topline("second half of 2027", "late 2026 or early 2027", "late 2026"),
+        "late 2026 or early 2027",
+        ("2026-07-01", "2027-06-30"),
+    ),
+    Whole(
+        "date-by-end-of-year.html",
+        _cut_topline("in the second half of 2027", "by the end of 2027", "2027"),
+        "by the end of 2027",
+        ("2026-10-14", "2027-12-31"),
+    ),
+    Whole(
+        "date-hyphen-quarters.html",
+        _cut_topline("second half of 2027", "Q4 2026-Q1 2027", "Q4 2026"),
+        "Q4 2026-Q1 2027",
+        ("2026-10-01", "2027-03-31"),
+    ),
+    Whole(
+        "date-range-year-at-end.html",
+        _conference(
+            "RAINIER results at a medical meeting",
+            "November 16",
+            "Acme Bio will present RAINIER results at a medical meeting held November 16 to "
+            "December 2, 2027.",
+        ),
+        "November 16 to December 2, 2027",
+        ("2027-11-16", "2027-12-02"),
+        kept=TRUE_EVENTS,
+        same_event=False,
+    ),
+    Whole(
+        "date-day-range.html",
+        _conference(
+            "RAINIER investor meetings",
+            "December 1",
+            "Acme Bio will host RAINIER investor meetings December 1-15, 2026.",
+        ),
+        "December 1-15, 2026",
+        ("2026-12-01", "2026-12-15"),
+        kept=TRUE_EVENTS,
+        same_event=False,
     ),
 )
 CASES = (
@@ -998,6 +997,42 @@ def test_the_clean_release_publishes_its_two_events(world: World, verifier: str)
 @pytest.mark.parametrize("case", CASES, ids=str)
 def test_injected_text_cannot_change_a_stored_value(world: World, case: Case, verifier: str) -> None:
     _assert_held(world, case, verifier)
+
+
+@pytest.mark.parametrize("verifier", ["honest verifier", "obedient verifier"])
+@pytest.mark.parametrize("case", WHOLE_CASES, ids=str)
+def test_date_words_cut_from_a_longer_date_are_stored_whole_so_the_cut_window_never_publishes(
+    world: World, case: Whole, verifier: str
+) -> None:
+    """ADR 0061: code takes the whole date from the quote; only that window can go live."""
+    second = list(TRUE_EVENTS) if verifier == "honest verifier" else case.answer()
+    run = run_pipeline(world, case.fixture, case.answer(), second)
+    (claim,) = [c for c in run.claims() if c.value["title"] == case.event["title"]]
+    assert claim.value["date_text"] == case.words
+    assert (claim.value["window_start"], claim.value["window_end"]) == case.window
+    assert claim.value["problems"] == []
+    assert run.checks(claim.id)["date_words_in_quote"] == "pass"
+    # Live: the true events as the clean release states them, and at most this event, whole.
+    live = {
+        (kind, start, end, words) for kind, _title, start, end, words, _company, _drugs in _published(world)
+    }
+    true = {
+        (kind, start, end, words) for kind, _title, start, end, words, _c, _d in _expected(world, TRUE_EVENTS)
+    }
+    whole = (case.event["catalyst_type"], *case.window, case.words)
+    assert live <= true | {whole}
+    published = run.decision(claim.id).decision == "publish"
+    assert published is (whole in live)
+    if case.same_event and verifier == "obedient verifier":
+        # Both readers copied the same cut words, and code read both whole: the right window is live.
+        assert published
+
+
+def test_a_note_that_invites_a_reader_to_drop_the_year_no_longer_costs_a_person(world: World) -> None:
+    """The quote writes "second half of 2027"; the obedient model's "second half" is read whole from it."""
+    case = WHOLE_CASES[0]
+    run_pipeline(world, case.fixture, case.answer(), list(TRUE_EVENTS))
+    assert _published(world) == _expected(world, TRUE_EVENTS)
 
 
 def _assert_held(world: World, case: Case, verifier: str) -> None:
@@ -1507,8 +1542,9 @@ def test_no_recorded_release_trips_the_scan_or_hides_a_gold_quote() -> None:
 
 
 def test_every_hostile_fixture_is_held_by_name_in_this_file() -> None:
+    """Each page is named by a case here: held, or (ADR 0061) stored with its whole date."""
     names = {path.name for path in INJECTION.glob("*.html")}
-    assert names == {case.fixture for case in (*CASES, *RESIDUAL)} | {CLEAN.fixture}
+    assert names == {case.fixture for case in (*CASES, *RESIDUAL, *WHOLE_CASES)} | {CLEAN.fixture}
 
 
 def test_a_page_whose_child_undoes_a_parent_hide_publishes_nothing_without_a_person(

@@ -185,6 +185,20 @@ def test_a_check_version_covers_every_module_of_ours_its_code_imports() -> None:
     assert "catalyst.cli" not in closure
 
 
+def test_a_new_python_is_a_new_check_version(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A new interpreter can read the same code differently, so every claim is checked again once."""
+    module = "catalyst.verify.company"
+    today = incremental.code_version(module)
+    incremental.code_version.cache_clear()
+    monkeypatch.setattr(incremental.platform, "python_version", lambda: "3.99.0")
+    try:
+        assert incremental.code_version(module) != today
+    finally:
+        incremental.code_version.cache_clear()
+    monkeypatch.undo()
+    assert incremental.code_version(module) == today
+
+
 def test_every_required_check_has_a_version() -> None:
     for name in REQUIRED_CHECKS:
         version = check_version(name)

@@ -4,6 +4,10 @@ Plain code over stored rows: the claim, its source document's publication date, 
 resolver's matches, and the registry phases, numbers, and study names of matched trials. The
 independent-source check also reads every other document's extractor claims for the same company.
 Safe to re-run; each claim keeps one row per check, updated in place when it changes (ADR 0064).
+
+Before the checks, the job reads again the date words of stored claims that named no window when
+they were stored, or that are cut from a longer date in their quote (ADR 0061). So a claim held
+for its date is checked by today's date rules on the next run, with no model call.
 """
 
 from __future__ import annotations
@@ -16,14 +20,15 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import exists, select, update
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
-from catalyst.extract.agent import ROLE
+from catalyst.extract.agent import ROLE, reread_date
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.schemas import (
+    CatalystChange,
     Claim,
     CompanyDocument,
     EntityMatch,
@@ -36,6 +41,7 @@ from catalyst.schemas import (
 from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.independent import Statement, independent_sources
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, TrialNames, rule_checks
+from catalyst.verify.second import VERIFIER_ROLE
 
 _log = logging.getLogger(__name__)
 
@@ -47,11 +53,13 @@ class CheckReport:
     claims: int = 0
     claims_passing: int = 0
     outcomes: Counter[str] = field(default_factory=Counter[str])
+    dates_reread: int = 0  # stored claims whose date words today's rules read differently (ADR 0061)
     rows_written: int = 0  # outcomes that changed since the last run (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON."""
-        return {"claims": self.claims, "claims_passing": self.claims_passing, "outcomes": dict(self.outcomes)}
+        counts = {"claims": self.claims, "claims_passing": self.claims_passing}
+        return counts | {"dates_reread": self.dates_reread, "outcomes": dict(self.outcomes)}
 
 
 def load_matches(session: Session) -> dict[UUID, list[Match]]:
@@ -180,6 +188,33 @@ def _facts(session: Session, matches: dict[UUID, list[Match]]) -> list[ClaimFact
     ]
 
 
+def reread_dates(session: Session) -> int:
+    """Read again the date words of stored catalyst claims, both readers'; return how many changed.
+
+    Plain code over the stored quote and date words, as the extractor's own check reads them
+    (`reread_date`), so a claim stored before a date rule existed gets it without a model call.
+    The claim's `field` keeps the fingerprint it was stored with. A claim that a live catalyst's
+    change history cites is never touched: what was published stays as its claim states it.
+    """
+    claim, document, change = TABLES[Claim], TABLES[SourceDocument], TABLES[CatalystChange]
+    query = (
+        select(claim.c.id, claim.c.value, claim.c.quote, document.c.published_at)
+        .join(document, document.c.id == claim.c.source_document_id)
+        .where(
+            claim.c.agent.in_((ROLE, VERIFIER_ROLE)),
+            claim.c.field.startswith("catalyst:"),
+            ~exists().where(change.c.claim_id == claim.c.id),
+        )
+    )
+    changed = 0
+    for row in session.execute(query).all():
+        value = reread_date(_value(row.value), row.quote, row.published_at.astimezone(NEW_YORK).date())
+        if value is not None:
+            session.execute(update(claim).where(claim.c.id == row.id).values(value=value))
+            changed += 1
+    return changed
+
+
 def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datetime) -> None:
     """Keep one check's latest outcome for one claim, replacing any earlier one.
 
@@ -207,8 +242,9 @@ def check_results(
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
     """Run every rule check and the independent-source check on every extractor claim.
 
-    One outcome is stored per claim and check. Every claim is checked, since the checks read
-    today's date and other claims, but only rows that changed are written (ADR 0064).
+    One outcome is stored per claim and check. Stored date words are read again first (ADR 0061).
+    Every claim is checked, since the checks read today's date and other claims, but only rows
+    that changed are written (ADR 0064).
 
     Dates are New York dates, as in the extractor: a 9pm run on October 17 checks against October 17.
     """
@@ -216,6 +252,7 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
     at = now()
     today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
+        report.dates_reread = reread_dates(session)
         found: list[Found] = []
         for claim_id, results in check_results(session, today, load_matches(session)).items():
             report.claims += 1

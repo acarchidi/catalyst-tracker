@@ -19,6 +19,8 @@ import ast
 import hashlib
 import importlib.util
 import json
+import platform
+import sys
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from datetime import date, datetime
@@ -95,10 +97,19 @@ def module_closure(module: str) -> frozenset[str]:
     return frozenset(seen)
 
 
+def _interpreter() -> str:
+    """Name the Python that runs the checks: implementation and full version."""
+    return f"{sys.implementation.name} {platform.python_version()}"
+
+
 @cache
 def code_version(module: str) -> str:
-    """Return a short hash of the source of `module` and of every module of ours it imports."""
-    digest = hashlib.sha256()
+    """Return a short hash of the source of `module`, of every module of ours it imports, and of Python.
+
+    The interpreter's version counts too: a new Python can read the same code differently (its
+    regular expressions, its Unicode tables), so it checks every claim again once.
+    """
+    digest = hashlib.sha256(_interpreter().encode() + b"\0")
     for name in sorted(module_closure(module)):
         path = _source(name)
         if path is not None:
