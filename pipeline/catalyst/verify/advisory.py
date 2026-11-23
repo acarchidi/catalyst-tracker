@@ -41,8 +41,8 @@ from catalyst.verify.fedreg_notice import (
     load_notices,
     notices_in,
 )
+from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import CheckResult, Outcome
-from catalyst.verify.run import store_check
 from catalyst.verify.second import name_key
 
 CHECK = "advisory_meeting_noticed"
@@ -329,14 +329,19 @@ def advisory_results(
 def check_advisory_meetings(
     session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
 ) -> AdvisoryReport:
-    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run."""
+    """Store `advisory_meeting_noticed` for every extractor claim; safe to re-run.
+
+    Every claim is checked; only outcomes that changed are written (ADR 0064).
+    """
     report = AdvisoryReport()
     at = now()
     with session_factory.begin() as session:
+        found: list[Found] = []
         for claim_id, result in advisory_results(session, store).items():
-            store_check(session, claim_id, result, at)
+            found.append(Found(claim_id, result))
             report.claims += 1
             key = f"{result.check}:{result.outcome.value}"
             report.outcomes[key] = report.outcomes.get(key, 0) + 1
+        write_checks(session, found, at, load_stamps(session, [CHECK]))
     log_event(_log, "advisory_meetings_checked", **report.summary())
     return report

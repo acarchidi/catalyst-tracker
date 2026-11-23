@@ -5,6 +5,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
+from sqlalchemy.exc import OperationalError
 
 from catalyst import cli
 from catalyst.cli import main
@@ -30,6 +31,10 @@ NOW = datetime(2026, 11, 25, 2, tzinfo=UTC)
 class _FakeEngine:
     def dispose(self) -> None:
         pass
+
+    def connect(self) -> None:
+        """Refuse to connect: the copy prefetch (ADR 0064) finds no database in these tests."""
+        raise OperationalError("connect", {}, Exception("no database in this test"))
 
 
 def _stand_in_for_the_pipeline(monkeypatch: pytest.MonkeyPatch, stopped: str | None) -> list[dict[str, Any]]:

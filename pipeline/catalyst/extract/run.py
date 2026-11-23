@@ -80,6 +80,7 @@ class ExtractionReport:
     documents: list[DocumentResult] = field(default_factory=list[DocumentResult])
     skipped: int = 0
     stopped: str | None = None
+    stopped_for_time: bool = False  # the run's time ran out; the next run reads the rest (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
         """Return the counts the owner reads in the job summary."""
@@ -97,7 +98,7 @@ class ExtractionReport:
             "catalysts_passing_every_check": sum(not c["problems"] for c in catalysts),
             "claims_stored": sum(d.claims_stored for d in self.documents),
             "stopped_early": self.stopped,
-        }
+        } | ({"stopped_for_time": True} if self.stopped_for_time else {})
 
 
 def _utc_now() -> datetime:
@@ -302,6 +303,7 @@ def _until(
     for row in rows:
         if deadline is not None and now() >= deadline:
             report.stopped = f"{TIME_LIMIT_STOP}; the rest wait for the next run"
+            report.stopped_for_time = True  # the nightly time budget's stop too (ADR 0064)
             return
         yield row
 
@@ -320,6 +322,7 @@ def extract_documents(
     """Extract catalysts from up to `limit` stored documents, newest first, and store the claims.
 
     With a `deadline`, no document is started after it; the rest wait for the next run (ADR 0065).
+    The nightly run's time budget sets the same deadline (ADR 0064).
     """
     with session_factory() as session:
         rows, skipped = _candidates(session, document_types, since, limit)

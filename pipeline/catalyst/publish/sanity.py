@@ -55,8 +55,9 @@ from catalyst.publish.live import (
     ranks_above,
 )
 from catalyst.schemas import CheckOutcome, Claim, Drug, DrugName, DrugRole, SourceDocument, SourceTier
+from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import CheckResult, Match, months_after
-from catalyst.verify.run import load_matches, store_check
+from catalyst.verify.run import load_matches
 
 MOVE_MONTHS = 6  # spec, Change sanity: a date that moves more than 6 months always goes to review
 NO_EVENT = "the claim names no single company and type"
@@ -397,13 +398,18 @@ class SafeReport:
 
 
 def check_safe_to_write(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> SafeReport:
-    """Store `safe_to_write` for every extractor claim; safe to re-run."""
+    """Store `safe_to_write` for every extractor claim; safe to re-run.
+
+    Every claim is checked; only outcomes that changed are written (ADR 0064).
+    """
     report = SafeReport()
     at = now()
     with session_factory.begin() as session:
+        found: list[Found] = []
         for claim_id, result in safe_results(session, at.astimezone(NEW_YORK).date()).items():
-            store_check(session, claim_id, result, at)
+            found.append(Found(claim_id, result))
             report.claims += 1
             report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
+        write_checks(session, found, at, load_stamps(session, [WRITER_CHECK]))
     log_event(_log, "safe_to_write_checked", **report.summary())
     return report

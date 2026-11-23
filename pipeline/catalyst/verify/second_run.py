@@ -12,6 +12,7 @@ a change to the comparison rules reaches claims already held on the next run (AD
 from __future__ import annotations
 
 import logging
+import time
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -37,8 +38,8 @@ from catalyst.references import load_reference_data
 from catalyst.resolve import ReferenceData, Status
 from catalyst.schemas import Claim, ClaimCheck, CompanyDocument, DocumentReading, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
+from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import Outcome
-from catalyst.verify.run import store_check
 from catalyst.verify.second import CHECK, VERIFIER_PROMPT, VERIFIER_ROLE, Reading, compare, outcome_kind
 
 OUTCOME_KINDS = ("agrees", "differs", "flagged", "no_second_events", "not_found")
@@ -58,10 +59,11 @@ class SecondReadingReport:
     # How each compared claim came out, by kind (`outcome_kind`): counts only, never what was read.
     outcomes: dict[str, int] = field(default_factory=lambda: dict.fromkeys(OUTCOME_KINDS, 0))
     stopped: str | None = None
+    stopped_for_time: bool = False  # the run's time ran out; the next run reads the rest (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON; what either reader said stays out (ADR 0034, ADR 0062)."""
-        return {
+        counts = {
             "skipped": self.skipped,
             "documents_read": self.documents_read,
             "documents_failed": self.documents_failed,
@@ -70,6 +72,7 @@ class SecondReadingReport:
             "claims_by_outcome": dict(self.outcomes),
             "stopped_early": self.stopped,
         }
+        return counts | ({"stopped_for_time": True} if self.stopped_for_time else {})
 
 
 def second_reading_problems(config: ModelConfig) -> list[str]:
@@ -215,16 +218,18 @@ def _compare_all(session: Session, model: str, at: datetime, report: SecondReadi
     for row in session.execute(select(links.c.source_document_id, links.c.company_id)):
         companies[row.source_document_id].add(row.company_id)
     references = load_reference_data(session)
+    found: list[Found] = []
     for (document, *_), readings in first.items():
         owners = companies.get(document, set())
         company = next(iter(owners)) if len(owners) == 1 else None
         for claim_id, result in compare(
             readings, second[document], same_drug_rule(references, company)
         ).items():
-            store_check(session, claim_id, result, at)
+            found.append(Found(claim_id, result))
             report.claims_compared += 1
             report.claims_agreeing += result.outcome is Outcome.PASS
             report.outcomes[outcome_kind(result, second[document])] += 1
+    write_checks(session, found, at, load_stamps(session, [CHECK]))  # only what changed (ADR 0064)
 
 
 def run_second_reading(
@@ -236,11 +241,15 @@ def run_second_reading(
     limit: int,
     now: Callable[[], datetime],
     gate: Callable[[ModelConfig], list[str]] = second_reading_problems,
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> SecondReadingReport:
     """Read up to `limit` extracted releases a second time, then compare every read release.
 
     The verifier's model and gate come from `config`, the same config `client` calls with. When
     the gate reports a problem, nothing is read, and outcomes from older readings are removed.
+    Past `deadline` (a `clock` reading) no further release is read; the comparison still runs,
+    and the next run reads the rest (ADR 0064).
     """
     model = config.roles[VERIFIER_ROLE].model
     problems = gate(config)
@@ -253,6 +262,9 @@ def run_second_reading(
     with session_factory() as session:
         documents = _to_read(session, model, limit)
     for row in documents:
+        if deadline is not None and clock() > deadline:
+            report.stopped_for_time = True
+            break
         published = row.published_at.astimezone(NEW_YORK).date()
         try:
             content = store.get(row.snapshot_key)

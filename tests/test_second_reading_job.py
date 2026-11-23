@@ -208,6 +208,31 @@ def test_a_re_run_reads_nothing_again_and_keeps_one_row_per_claim(
     assert _checks(session_factory) == [("pass", None)]
 
 
+def test_past_its_deadline_the_second_reading_reads_nothing_more_and_the_next_run_goes_on(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """ADR 0064: no further release is read once the run's share of time is spent."""
+    fake = _Fake()
+    store, client, config = _extracted(session_factory, tmp_path, fake)
+    late = run_second_reading(
+        session_factory,
+        store,
+        client,
+        config,
+        limit=10,
+        now=lambda: NOW,
+        gate=_open,
+        deadline=0.0,
+        clock=lambda: 1.0,
+    )
+    assert fake.calls == ["extract_catalysts"]
+    assert late.summary()["stopped_for_time"] is True
+    assert late.summary()["stopped_early"] is None
+    summary = _run(session_factory, (store, client, config))
+    assert fake.calls == ["extract_catalysts", "verify_catalysts"]
+    assert summary["claims_agreeing"] == 1
+
+
 def test_a_second_reading_that_finds_nothing_is_kept_and_fails_the_claim(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:

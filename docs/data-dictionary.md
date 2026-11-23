@@ -344,6 +344,8 @@ One verification check's outcome for one claim (spec: Verification; ADR 0018). A
 | `outcome` | one of: `pass`, `fail`, `not_applicable` | yes | Pass, fail, or not applicable. |
 | `reason` | text, up to 300 characters | no | Why it failed or did not apply, in plain words. |
 | `checked_at` | date and time (with time zone) | yes | When the check first found its current outcome; a re-run with the same result keeps it. |
+| `rule_version` | text, up to 16 characters | no | Version of the check's code that found the outcome (ADR 0064); new code checks the claim again. Empty on rows from before versions were kept. |
+| `input_digest` | text, up to 64 characters | no | SHA-256 of everything else the check read for this claim (ADR 0064); a run skips the claim only while this and the code version are unchanged. Empty when the claim must be checked every run. |
 
 Rules:
 

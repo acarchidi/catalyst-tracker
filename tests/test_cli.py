@@ -2,7 +2,7 @@
 
 import json
 from collections import Counter
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -130,6 +130,10 @@ def _indication_jobs_stand_in(monkeypatch: pytest.MonkeyPatch) -> None:
 class _FakeEngine:
     def dispose(self) -> None:
         pass
+
+    def connect(self) -> None:
+        """Refuse to connect: the copy prefetch (ADR 0064) finds no database in these tests."""
+        raise OperationalError("connect", {}, Exception("no database in this test"))
 
 
 def test_coverage_build_needs_the_sec_contact_email(
@@ -264,7 +268,10 @@ def test_extract_catalysts_writes_the_results_and_prints_the_counts(
     monkeypatch.setattr(cli, "publish_claims", lambda *_args, **_kw: PublishReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     out = tmp_path / "found.json"
     assert main(["extract-catalysts", "--limit", "3", "--since", "2026-10-01", "--out", str(out)]) == 0
-    assert calls == [{"limit": 3, "since": date(2026, 10, 1)}]
+    (options,) = calls
+    deadline = options.pop("deadline")  # ADR 0064: reading stops once its share of the time is spent
+    assert options == {"limit": 3, "since": date(2026, 10, 1)}
+    assert deadline > datetime.now(UTC)
     printed = json.loads(capsys.readouterr().out)
     assert printed["claims_stored"] == 2
     assert printed["matches"]["claims"] == 2  # names in new claims are matched right after extraction
