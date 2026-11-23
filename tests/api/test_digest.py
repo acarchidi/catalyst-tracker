@@ -750,7 +750,8 @@ def test_the_next_issue_lists_the_calendar(
     out = tmp_path / "digest.json"
     assert cli.main(["digest", "--issue-date", "2026-10-12", "--out", str(out)]) == 0
     written = json.loads(out.read_text(encoding="utf-8"))
-    assert [UUID(c["id"]) for c in written["upcoming"]] == [seed.slipped, seed.adcom]
+    # The 5 November adcom is due; the 4Q26 readout is an open window, listed after it (ADR 0063).
+    assert [UUID(c["id"]) for c in written["upcoming"]] == [seed.adcom, seed.slipped]
     assert written["moved"] == []
 
 
