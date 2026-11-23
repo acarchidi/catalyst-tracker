@@ -30,7 +30,7 @@ from zoneinfo import ZoneInfo
 
 from pydantic import Field, JsonValue, model_validator
 
-from catalyst.api.access import NOTICE, Access, calendar_window, shape
+from catalyst.api.access import FREE_HORIZON_DAYS, NOTICE, Access, calendar_window, shape
 from catalyst.api.read import DATE_FIELDS, OPEN_STATUSES
 from catalyst.api.views import CatalystDetail, CatalystSummary, ChangeView, Shaped, SourceView, View
 from catalyst.schemas import CatalystType, DateConfidence
@@ -176,6 +176,9 @@ class DigestCounts(View):
     new: int = Field(description="Newly published catalysts listed.")
     upcoming: int = Field(description="Other catalysts listed from the issue's calendar.")
     upcoming_not_listed: int = Field(description="Catalysts on the issue's calendar past the list limit.")
+    due: int = Field(description="Listed calendar entries whose window ends within 30 days (ADR 0063).")
+    open_windows: int = Field(description="Listed entries whose window starts within 30 days, ends later.")
+    later: int = Field(description="Paid issue: listed entries whose window starts after 30 days.")
     moved_outside_free_calendar: int = Field(description="Free issue: date moves past the next 30 days.")
     new_outside_free_calendar: int = Field(description="Free issue: new catalysts past the next 30 days.")
 
@@ -331,6 +334,7 @@ def build_digest(
         else:
             calendar.append(shape(detail, access))
     upcoming = calendar[:calendar_limit]
+    due, open_windows, later = _split(upcoming, issue_date)
     return Digest(
         notice=NOTICE,
         access=access.value,
@@ -346,10 +350,27 @@ def build_digest(
             new=len(new),
             upcoming=len(upcoming),
             upcoming_not_listed=len(calendar) - len(upcoming),
+            due=len(due),
+            open_windows=len(open_windows),
+            later=len(later),
             moved_outside_free_calendar=outside["moved"],
             new_outside_free_calendar=outside["new"],
         ),
     )
+
+
+def horizon(issue_date: date) -> date:
+    """Return the last day of the next 30 days, the line the calendar is split on (ADR 0063)."""
+    return issue_date + timedelta(days=FREE_HORIZON_DAYS)
+
+
+def _split(listed: Sequence[Shaped], issue_date: date) -> tuple[list[Shaped], list[Shaped], list[Shaped]]:
+    """Split calendar entries into due (ends by the horizon), open windows, and later (ADR 0063)."""
+    last = horizon(issue_date)
+    due = [c for c in listed if c.window.end <= last]
+    open_windows = [c for c in listed if c.window.start <= last < c.window.end]
+    later = [c for c in listed if c.window.start > last]
+    return due, open_windows, later
 
 
 def _order(detail: CatalystDetail) -> tuple[date, str, str]:
@@ -402,7 +423,8 @@ def render_html(digest: Digest) -> str:
     """Return the issue as an HTML fragment with no styles, scripts, or attributes but link addresses.
 
     The layout is the owner's (owner decision 2026-11-10; ADR 0053): a key to the catalyst
-    categories at the top, three sections, and the notice last in small print. Every word that
+    categories at the top, the sections, and the notice last in small print. The calendar is
+    split into due, open windows, and (paid) later (owner decision 2026-11-23; ADR 0063). Every word that
     comes from a record is escaped: source text is untrusted. The only links are source addresses
     that are plain https addresses; the quote reaches the reader as a text fragment on that link,
     percent-encoded, so it can never add a tag or an attribute.
@@ -419,9 +441,25 @@ def render_html(digest: Digest) -> str:
         f"<h2>New ({digest.counts.new})</h2>",
         _list([_item(catalyst) for catalyst in digest.new])
         or f"<p>No catalyst was added to {where} this week.</p>",
-        f"<h2>{_upcoming_heading(digest)} ({digest.counts.upcoming})</h2>",
-        _list([_item(catalyst) for catalyst in digest.upcoming]) or "<p>Nothing else is listed.</p>",
     ]
+    last = _day(horizon(digest.issue_date))
+    due, open_windows, later = _split(digest.upcoming, digest.issue_date)
+    parts += [
+        f"<h2>Due by {last} ({len(due)})</h2>",
+        _list([_item(catalyst) for catalyst in due]) or "<p>Nothing is due by then.</p>",
+    ]
+    if open_windows:
+        parts += [
+            f"<h2>Open windows ({len(open_windows)})</h2>",
+            f"<p>Windows that start by {last} and end later.</p>",
+            _list([_item(catalyst) for catalyst in open_windows]),
+        ]
+    if later:
+        parts += [
+            f"<h2>Later ({len(later)})</h2>",
+            f"<p>Windows that start after {last}.</p>",
+            _list([_item(catalyst) for catalyst in later]),
+        ]
     # Records left out are counted in the JSON only, never in the issue (owner decision 2026-11-23; ADR 0057).
     parts.append(f"<p><small>{escape(digest.notice)}</small></p>")
     return "\n".join(parts) + "\n"
@@ -433,12 +471,6 @@ def render_page(digest: Digest) -> str:
     title = escape(f"Catalyst digest: week of {week} ({digest.access} issue)")
     head = f'<head>\n<meta charset="utf-8">\n<title>{title}</title>\n</head>'
     return f'<!doctype html>\n<html lang="en">\n{head}\n<body>\n{render_html(digest)}</body>\n</html>\n'
-
-
-def _upcoming_heading(digest: Digest) -> str:
-    """Name the calendar section by its last day: the free calendar's end, else the latest listed day."""
-    last = digest.calendar_to or max((catalyst.window.end for catalyst in digest.upcoming), default=None)
-    return f"Upcoming Catalysts through {_day(last)}" if last else "Upcoming Catalysts"
 
 
 def _list(items: list[str]) -> str:

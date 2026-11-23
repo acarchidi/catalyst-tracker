@@ -325,6 +325,9 @@ def test_a_long_calendar_is_cut_to_the_limit_and_the_rest_counted() -> None:
         "new": 0,
         "upcoming": 5,
         "upcoming_not_listed": 2,
+        "due": 5,
+        "open_windows": 0,
+        "later": 0,
         "moved_outside_free_calendar": 0,
         "new_outside_free_calendar": 0,
     }
@@ -393,7 +396,7 @@ def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     assert text.count(NOTICE) == 1
     assert html.rstrip().endswith(f"<p><small>{NOTICE}</small></p>")
     assert text.index("Key: ") < text.index("Rescheduled Catalysts (1)") < text.index("New (1)")
-    assert "Upcoming Catalysts through 4 November 2026 (0)" in text
+    assert "Due by 4 November 2026 (0)" in text  # the calendar is split (ADR 0063)
     for name in ("Clinical data", "Conference presentation", "Regulatory", "Trial progress"):
         assert name in text
     assert "Example Bio, Inc. (EXB)" in text
@@ -414,11 +417,39 @@ def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     assert set(page.tags) <= ALLOWED_TAGS
 
 
-def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
-    records = [_detail(start=date(2026, 11, 1), end=date(2027, 6, 30), raw="1H27")]
-    text = _text(render_html(build_digest(records, ISSUE, access=Access.PAID)))
-    assert "Upcoming Catalysts through 30 June 2027 (1)" in text
-    assert "Upcoming Catalysts (0)" in _text(render_html(build_digest([], ISSUE, access=Access.PAID)))
+def test_the_calendar_splits_into_due_open_windows_and_later() -> None:
+    # Owner decision 2026-11-23 (ADR 0063): a window that ends within 30 days is "due"; one that
+    # starts by then but ends later is an "open window"; the paid issue adds what starts later.
+    due = _detail(start=date(2026, 10, 10), end=date(2026, 11, 4), raw="by 4 November", name="Due Bio")
+    wide = _detail(start=date(2026, 10, 1), end=date(2027, 12, 31), raw="by the end of 2027", name="Wide Bio")
+    later = _detail(start=date(2027, 1, 1), end=date(2027, 3, 31), raw="1Q27", name="Later Bio")
+    free = build_digest([due, wide, later], ISSUE)
+    assert [c.id for c in free.upcoming] == [wide.id, due.id]  # earliest start first, as before
+    assert (free.counts.due, free.counts.open_windows, free.counts.later) == (1, 1, 0)
+    text = _text(render_html(free))
+    assert "Due by 4 November 2026 (1)" in text
+    assert "Open windows (1)" in text
+    assert "Windows that start by 4 November 2026 and end later." in text
+    assert "Later (" not in text
+    assert "Later Bio" not in text  # never named in the free issue
+    assert text.index("Due Bio") < text.index("Open windows (1)") < text.index("Wide Bio")
+    paid = build_digest([due, wide, later], ISSUE, access=Access.PAID)
+    assert (paid.counts.due, paid.counts.open_windows, paid.counts.later) == (1, 1, 1)
+    paid_text = _text(render_html(paid))
+    assert "Due by 4 November 2026 (1)" in paid_text
+    assert "Open windows (1)" in paid_text
+    assert "Later (1)" in paid_text
+    assert "Windows that start after 4 November 2026." in paid_text
+    assert paid_text.index("Wide Bio") < paid_text.index("Later (1)") < paid_text.index("Later Bio")
+
+
+def test_empty_open_window_and_later_sections_are_left_out() -> None:
+    text = _text(render_html(build_digest([], ISSUE, access=Access.PAID)))
+    assert "Due by 4 November 2026 (0)" in text
+    assert "Nothing is due by then." in text
+    assert "Open windows" not in text
+    assert "Later (" not in text
+    assert "Upcoming Catalysts" not in text
 
 
 @pytest.mark.parametrize(
