@@ -38,4 +38,4 @@ The 13-series filings differ in timing and reach:
 
 - More SEC requests per company: Form 4, 13D and 13G are all read through EDGAR within the 10-requests-per-second limit. The 13F data sets are one quarterly download each.
 - No model cost: every value is a field in a filing.
-- Phase 7 stays where it is on the roadmap unless the owner moves it.
+- Phase 7 is built next after the first newsletter issue, ahead of Phases 3 to 6 (owner decision 2026-11-23).

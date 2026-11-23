@@ -149,6 +149,8 @@ The owner asked for four monthly newsletters, each sold on its own or as an add-
 
 ## Phase 7 — Insider purchases before catalysts (owner request 2026-10-17; ADR 0026)
 
+Built next after the first newsletter issue, ahead of Phases 3 to 6 (owner decision 2026-11-23; ADR 0056).
+
 - [ ] Insider purchases before catalysts, from SEC Form 4 filings (plain code, no model):
   - every insider transaction for covered companies, each with its filing link: name, role, date, code (P is a purchase), shares, price, value, and pre-set trading plan where marked;
   - for each upcoming catalyst, the purchases in the 90 days before its window opens (or since the company's previous catalyst, if shorter), with sales beside them for context;
