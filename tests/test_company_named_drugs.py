@@ -85,14 +85,18 @@ class World:
                 link_company_document(session, company, document.id, DocumentMatch.SEC_CIK)
         return document.id, document_text(html.encode(), "text/html")
 
-    def claim(self, release: tuple[UUID, str], drug: str, quote: str = QUOTE) -> UUID:
+    def claim(
+        self, release: tuple[UUID, str], drug: str, quote: str = QUOTE, indication: str | None = None
+    ) -> UUID:
         document, text = release
         self._n += 1
+        value: dict[str, Any] = {"catalyst_type": "topline_readout", "drug": drug, "title": "t"}
+        value |= {"problems": list[str](), "indication": indication}
         claim = Claim(
             source_document_id=document,
             subject_type=ClaimSubject.CATALYST,
             field=f"catalyst:{self._n:016x}",
-            value={"catalyst_type": "topline_readout", "drug": drug, "title": "t", "problems": []},
+            value=value,
             quote=quote,
             quote_start=text.index(quote),
             quote_end=text.index(quote) + len(quote),
@@ -242,6 +246,8 @@ def test_a_held_claim_is_released_by_the_next_run_without_a_new_reading(world: W
         "January",
         "QRX",
         "zetamab cell therapy",
+        "FGF Receptor",
+        "Taxane",
         "Zetamabolinumab" * 5,
     ],
 )
@@ -324,6 +330,34 @@ def test_a_study_name_or_a_company_name_is_not_a_drug(world: World) -> None:
     assert world.resolve()["drugs_created"] == 0
     assert world.matches(study) == {"SUMMIT": ("unknown", None, None)}
     assert world.matches(company) == {"Borealis Pharma": ("unknown", None, None)}
+
+
+def test_the_words_of_the_claim_s_own_indication_are_not_a_drug(world: World) -> None:
+    """A disease no word list has, read as the drug: the claim's own indication gives it away."""
+    quote = "Topline data in Clostridium difficile are expected in the fourth quarter of 2027."
+    release = world.release(quote)
+    claim = world.claim(release, "Clostridium difficile", quote, "recurrent Clostridium difficile infection")
+    world.resolve()
+    _held(world, claim, "Clostridium difficile")
+
+
+@pytest.mark.parametrize("drug", ["Shingrix", "Yescarta", "FLUZONE"])
+def test_a_vaccine_or_cell_therapy_licensed_to_another_company_is_not_the_company_s_drug(
+    world: World, drug: str
+) -> None:
+    """ADR 0035's fifth review: a rival's licensed product named in a release must wait for review."""
+    claim = world.stated(drug, f"{drug} in adults with a rare disease", QUOTE)
+    world.resolve()
+    _held(world, claim, drug)
+
+
+def test_the_licence_holder_s_own_product_is_its_drug(world: World) -> None:
+    with world.factory.begin() as session:
+        kite = upsert_company(session, 1003, "Kite Pharma, Inc.", "2834").id
+    release = world.release("Yescarta in adults with a rare disease", QUOTE, companies=(kite,))
+    claim = world.claim(release, "Yescarta")
+    assert world.resolve()["drugs_created"] == 1
+    assert world.matches(claim)["Yescarta"][0] == "resolved"
 
 
 @pytest.mark.parametrize("linked", [0, 2])

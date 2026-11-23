@@ -90,6 +90,8 @@ def test_a_name_with_a_digit_is_a_code_and_one_in_capitals_a_brand() -> None:
         "standard of care",
         "chemotherapy",
         "zetamab cell therapy",
+        "FGF Receptor",
+        "Taxane",
         "ASCO 2027",
         "FDA 2027",
         "QRX-2027",

@@ -35,9 +35,7 @@ class MatchedBy(StrEnum):
     STUDY_NAME = "study_name"
     DOCUMENT_LINK = "document_link"  # a company linked to the document by registry or FDA sponsor
     NEW_CODE_NAME = "new_code_name"  # the company's own code name, first seen in its release
-    COMPANY_NAMED = (
-        "company_named"  # a name no list gives, which the company's own document writes (ADR 0060)
-    )
+    COMPANY_NAMED = "company_named"  # a name no list has, written in the company's document (ADR 0060)
 
 
 _KIND_RULE = {

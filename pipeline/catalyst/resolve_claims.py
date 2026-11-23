@@ -34,7 +34,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.company_drugs import NOT_DRUG_PREFIXES, Stated, stated_drugs
 from catalyst.db.tables import TABLES
-from catalyst.drug_list import ListedName
+from catalyst.drug_list import ListedName, cber_records
 from catalyst.extract.agent import ROLE
 from catalyst.extract.text import document_text
 from catalyst.logs import log_alert, log_event
@@ -103,11 +103,12 @@ class _Claim:
     drug: str | None
     start: int = 0
     end: int = 0
+    indication: str | None = None
 
 
-def _drug_name(value: object) -> str | None:
-    drug = cast(dict[str, object], value).get("drug") if isinstance(value, dict) else None
-    return drug if isinstance(drug, str) and drug.strip() else None
+def _text_value(value: object, key: str) -> str | None:
+    text = cast(dict[str, object], value).get(key) if isinstance(value, dict) else None
+    return text if isinstance(text, str) and text.strip() else None
 
 
 def _claims(session: Session) -> list[_Claim]:
@@ -118,7 +119,13 @@ def _claims(session: Session) -> list[_Claim]:
     )
     return [
         _Claim(
-            row.id, row.source_document_id, row.quote, _drug_name(row.value), row.quote_start, row.quote_end
+            row.id,
+            row.source_document_id,
+            row.quote,
+            _text_value(row.value, "drug"),
+            row.quote_start,
+            row.quote_end,
+            _text_value(row.value, "indication"),
         )
         for row in session.execute(query.order_by(claim.c.extracted_at, claim.c.id))
     ]
@@ -128,8 +135,9 @@ class _CompanyNamed:
     """The rule that names a drug for its company from its own document (ADR 0060).
 
     Reads, besides the reference tables: the stored copy of a claim's document (at most once a
-    run, None when it cannot be read), the drugs each document's claims name, and the names
-    withheld as shared by two companies' records.
+    run, None when it cannot be read), the drugs each document's claims name, the names withheld
+    as shared by two companies' records, and the CBER list's licensed products with their owners
+    (ADR 0035: vaccines, cell therapies, and plasma products, which Drugs@FDA does not list).
     """
 
     def __init__(
@@ -142,6 +150,7 @@ class _CompanyNamed:
             self._beside.setdefault(claim.source_document_id, []).append((claim.id, claim.drug))
         withheld = TABLES[WithheldDrugName]
         self._withheld = frozenset(name_key(row.name) for row in session.execute(select(withheld.c.name)))
+        self._licensed = {name_key(n): r.sponsor for r in cber_records() for n in r.other_names}
 
     def _text(self, document_id: UUID) -> str | None:
         if document_id not in self._texts:
@@ -185,10 +194,18 @@ class _CompanyNamed:
             )
         )
 
-    def free(self, name: str) -> bool:
-        """Say whether nothing else on file goes by the name: no withheld name, study, company, or ticker."""
+    def free(self, name: str, company_id: UUID, indication: str | None) -> bool:
+        """Say whether nothing else goes by the name.
+
+        Not a name withheld as shared, a study, a company, or a ticker on file; not a product (or
+        the first word of one, as in "Fluzone High-Dose") that CBER licenses to another company;
+        and not words of the claim's own indication, which name the disease.
+        """
+        owner = self._licensed.get(name_key(name)) or self._licensed.get(name_key(name.split()[0]))
         return (
             name_key(name) not in self._withheld
+            and name_key(name) not in name_key(indication or "")
+            and (owner is None or self._references.resolve_company(name=owner).id == company_id)
             and self._references.resolve_trial(name).status is Status.UNKNOWN
             and self._references.resolve_company(ticker=name, name=name).status is Status.UNKNOWN
         )
@@ -381,7 +398,7 @@ def _stated_drug(
     owned = all(i is not None and references.drug_company(i) == company_id for i in ids)
     if named is None or company_id is None or len(ids) > 2 or not owned:
         return held  # another company's drug, a drug with no known company, or more than a pair
-    if (len(ids) == 2 and new) or not all(named.free(name.name) for name in new):
+    if (len(ids) == 2 and new) or not all(named.free(n.name, company_id, claim.indication) for n in new):
         return held
     if not named.written(claim, company_id, [name.name for name in names]):
         return held

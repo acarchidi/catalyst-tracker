@@ -37,11 +37,13 @@ AGENTS.md requires tests first for entity matching, and that no check is weakene
 
 2. **What never becomes a drug.** Each case has a test that shows the claim stays held.
    - **Words that name no drug** (`catalyst.company_drugs`). The claim's drug words are read by the drug list's own rules for a registry name (ADR 0035, rule 3: stand-ins such as "placebo", descriptions such as "cell therapy" or "inhibitor", ordinary words, trial names, targets, isotopes, short forms of fewer than five letters without a digit, more than six words), and by four more:
-     - a word of a phrase (`CLAIM_STOP_WORDS`: "our", "lead", "program", "candidate", "combination", "pipeline", "platform", "novel", "molecule", and others), so "the drug", "our lead program", and "the combination" name nothing;
+     - a word of a phrase or of a class (`CLAIM_STOP_WORDS`: "our", "lead", "program", "candidate", "combination", "pipeline", "platform", "novel", "molecule", "receptor", "kinase", "taxane", and others), so "the drug", "our lead program", "the combination", and "FGF Receptor" name nothing;
      - a date: a year, a half or a quarter, or a month ("QRX-2027", "2H26", "January");
      - a congress, agency, filing, or advice word before a number ("ASCO 2027", "FDA 2027", "BUY 100"), the list ADR 0015 already uses;
      - more than 60 characters in one name, or more than eight drugs in one field.
    - **A name on file elsewhere.** A name of another company's drug, or of two records, is ambiguous as before (ADR 0015, ADR 0037) and never reaches this rule. A name the drug list withheld because two companies' records give it (ADR 0035, rule 4) stays held. So does a name that is a study name, a company name, or a ticker on file.
+   - **Another company's licensed vaccine, cell therapy, or plasma product.** Drugs@FDA does not list these, so the CBER list of ADR 0035 (`catalyst.drug_list_cber`) is read here too: a product on it, or the first word of one, is the claim's company's drug only when the licence holder's name is that company's. So "Shingrix" or "Yescarta" in another company's release stays held, as ADR 0035's fifth review required.
+   - **The words of the claim's own indication.** A disease read as the drug ("Clostridium difficile" on a claim whose indication is "recurrent Clostridium difficile infection") stays held.
    - **A name the document does not write at the quote**, or a stored copy that cannot be read.
    - **A document linked to no company or to several.**
 3. **Name forms.**
@@ -68,6 +70,7 @@ Offline, on the private export of 2026-11-23, with this pull request's name rule
   - 99 more would probably match: a plain name not in the paragraph, on a claim whose `drug_named_near_quote` already passes on the full copy;
   - 41 depend on the full copy: 13 two-name claims with one name at the quote, whose pair must be written together somewhere in the copy, and 28 whose names are not in the paragraph;
   - 44 are not names by the rules and stay held: descriptions and programmes, names with "cell therapy" or "therapy", names joined by a slash, codes with a decimal point or a year, short forms, a combination with a bracket;
+  - none is held by the CBER list or by its own indication;
   - 17 plain names are not written at the quote and stay held.
 - Of the 241 that would or probably would match, 122 would have no other reason left.
 - Names withheld as shared, and study or company names, could not be counted offline; they lower these numbers a little.
@@ -75,7 +78,7 @@ Offline, on the private export of 2026-11-23, with this pull request's name rule
 ## Alternatives
 
 - **Only code names, as the owner's words say literally.** About 60 claims. The same evidence (the company's own document writes the name at the quote) holds for a generic or brand name, and most held names are those.
-- **Require a generic-name ending or capitals for a name without a digit**, as the drug list does for registry words (ADR 0035, fifth review). The registry's main-name field is free text that often holds a class or a disease. A claim's drug field is the extractor's reading of one drug, the second reading must agree with it, and the quote must name it. The ending list would hold real names such as those ADR 0035 lists as lost.
+- **Require a generic-name ending or capitals for a name without a digit**, as the drug list does for registry words (ADR 0035, fifth review). The registry's main-name field is free text that often holds a class or a disease. A claim's drug field is the extractor's reading of one drug, the second reading must agree with it, and the quote must name it. Measured on the export, the requirement would hold about 130 of the 320 names the rules read (generic names whose ending is not on the list, short forms such as "xxx-cel", and brands in mixed case), every one of them a real name, and the 343 claims hold no class or disease word that it would have stopped. The fifth review's own examples stay held by other means: licensed products by the CBER list, "FGF Receptor" and "Taxane" by the class words, a disease by the claim's indication.
 - **A model decides whether a name is a drug.** It costs a call per name and cannot be pinned by a test (ADR 0015).
 - **A new `named_by_company` column, or a new name source.** The existing source `claim` already means "found in a claim's document", and the claim reference is the provenance. A column would need a migration and say nothing more.
 - **Drop "Cell Therapy" and similar words from the end of a name.** It would release about 8 claims, but then an ordinary adjective before those words ("engineered cell therapy") would become a drug.
@@ -86,7 +89,8 @@ Offline, on the private export of 2026-11-23, with this pull request's name rule
 
 - A claim through this path still faces every check of the gate. `names_matched` and `drug_named_near_quote` are both required, so a drug the document does not name at the quote cannot publish.
 - A release can name a partner's or another company's drug that no list has. This rule then files that drug under the release's company. The catalyst's words and dates are still the release's own, but the drug's owner on file is then wrong until an official list gives the name. A name that Drugs@FDA, the registry, or the CBER list gives another company never gets this far (ADR 0035, ADR 0037).
-- A non-drug name that the lists do not catch (a platform or a programme named like a product) can become a drug record if the extractor reads it as the claim's drug and the document writes it at the quote. The weekly sample and the review of new stop words are how we would notice.
+- A non-drug word that no list catches (a platform or a programme named like a product, or a class word that is not on the list and not in the claim's indication) can become a drug record if the extractor reads it as the claim's drug, the second reading agrees, and the document writes it at the quote. Plain code has no dictionary to tell such a word from a coined name. The weekly sample is how we would notice, and a word found there joins `CLAIM_STOP_WORDS`. If this proves common, the stricter rule in Alternatives is the fallback.
+- An approved drug of a sponsor we do not cover is on no list of ours (Drugs@FDA products are stored only for covered companies). Named in a covered company's release as the claim's drug, or as one drug of a combination, it is filed under that company.
 - A provisional name of one company makes another company's claim of the same generic or brand name wait for review (ADR 0037), and makes a later drug-list record of that name for another company wait as shared (ADR 0035, rule 4).
 - Two provisional records of one drug stay apart until a claim's words give both names and the copy writes them together. A drug-list run that would join two of a company's records still leaves them for a person (ADR 0035, rule 5).
 - In one run, claims are matched in turn, so a claim read before the claim that names its drug can wait one more run.
