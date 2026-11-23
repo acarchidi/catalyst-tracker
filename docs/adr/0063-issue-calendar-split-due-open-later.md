@@ -16,7 +16,8 @@ The first issue's "Upcoming Catalysts through 23 December 2026" listed entries w
    - **Open windows:** the window starts on or before the horizon and ends after it. Shown when not empty, on the free and the paid issue, with the line "Windows that start by <horizon> and end later."
    - **Later (paid only):** the window starts after the horizon. The free issue never holds these (ADR 0047, decision 3). Shown when not empty, with the line "Windows that start after <horizon>."
 2. The calendar is ordered due, then open windows, then later, each earliest start first, before the list limit (25 free, 200 paid) cuts it. A wide window that started long ago never pushes a due entry off the list. Found when rebuilding the 2026-11-23 issue: cutting first left the free issue with 0 due entries where the paid issue had 3.
-3. The digest JSON keeps `upcoming` and adds the counts `due`, `open_windows` and `later`.
+3. The digest JSON keeps `upcoming` and adds the counts `due`, `open_windows`, `later`, `due_total` and `open_windows_total`.
+4. When the free list is cut, the free issue says how many the paid issue lists, without naming any: "The paid issue lists all N open windows." and, if due entries were cut, "The paid issue lists all N catalysts due by <horizon>." (owner decision 2026-11-23, after ADR 0057 removed the bare "And N more" line).
 
 ## Alternatives
 

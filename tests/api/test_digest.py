@@ -329,6 +329,8 @@ def test_a_long_calendar_is_cut_to_the_limit_and_the_rest_counted() -> None:
         "due": 5,
         "open_windows": 0,
         "later": 0,
+        "due_total": 7,
+        "open_windows_total": 0,
         "moved_outside_free_calendar": 0,
         "new_outside_free_calendar": 0,
     }
@@ -451,6 +453,25 @@ def test_the_list_limit_keeps_due_entries_before_open_windows() -> None:
     digest = build_digest([*wide, due], ISSUE, calendar_limit=2)
     assert digest.upcoming[0].id == due.id
     assert (digest.counts.due, digest.counts.open_windows, digest.counts.upcoming_not_listed) == (1, 1, 2)
+
+
+def test_a_cut_free_list_says_the_paid_issue_lists_them_all() -> None:
+    # Owner decision 2026-11-23 (ADR 0063): when the free list is cut, one line says how many the
+    # paid issue lists; nothing cut is named.
+    wide = [_detail(start=date(2026, 1, 1), end=date(2027, 12, 31), raw="by 2027") for _ in range(3)]
+    due = _detail(start=date(2026, 10, 20), raw="October 20, 2026", name="Due Bio")
+    free = build_digest([*wide, due], ISSUE, calendar_limit=2)
+    assert (free.counts.due_total, free.counts.open_windows_total) == (1, 3)
+    text = _text(render_html(free))
+    assert "The paid issue lists all 3 open windows." in text
+    assert "catalysts due by" not in text  # no due entry was cut
+    whole = _text(render_html(build_digest([*wide, due], ISSUE)))
+    assert "The paid issue lists" not in whole  # nothing cut, nothing said
+    paid = _text(render_html(build_digest([*wide, due], ISSUE, access=Access.PAID, calendar_limit=2)))
+    assert "The paid issue lists" not in paid
+    many_due = [_detail(start=date(2026, 10, 10 + n), raw="October 2026") for n in range(3)]
+    cut_due = _text(render_html(build_digest(many_due, ISSUE, calendar_limit=2)))
+    assert "The paid issue lists all 3 catalysts due by 4 November 2026." in cut_due
 
 
 def test_empty_open_window_and_later_sections_are_left_out() -> None:

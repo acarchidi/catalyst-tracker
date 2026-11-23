@@ -179,6 +179,8 @@ class DigestCounts(View):
     due: int = Field(description="Listed calendar entries whose window ends within 30 days (ADR 0063).")
     open_windows: int = Field(description="Listed entries whose window starts within 30 days, ends later.")
     later: int = Field(description="Paid issue: listed entries whose window starts after 30 days.")
+    due_total: int = Field(description="Calendar entries due within 30 days, listed or not.")
+    open_windows_total: int = Field(description="Calendar open windows, listed or not.")
     moved_outside_free_calendar: int = Field(description="Free issue: date moves past the next 30 days.")
     new_outside_free_calendar: int = Field(description="Free issue: new catalysts past the next 30 days.")
 
@@ -335,7 +337,8 @@ def build_digest(
             calendar.append(shape(detail, access))
     # Due entries first, then open windows, then later ones, so the list limit never cuts a due
     # entry to make room for a wide window that started long ago (ADR 0063).
-    upcoming = [*(part for section in _split(calendar, issue_date) for part in section)][:calendar_limit]
+    sections = _split(calendar, issue_date)
+    upcoming = [*(part for section in sections for part in section)][:calendar_limit]
     due, open_windows, later = _split(upcoming, issue_date)
     return Digest(
         notice=NOTICE,
@@ -355,6 +358,8 @@ def build_digest(
             due=len(due),
             open_windows=len(open_windows),
             later=len(later),
+            due_total=len(sections[0]),
+            open_windows_total=len(sections[1]),
             moved_outside_free_calendar=outside["moved"],
             new_outside_free_calendar=outside["new"],
         ),
@@ -456,6 +461,14 @@ def render_html(digest: Digest) -> str:
             f"<p>Windows that start by {last} and end later.</p>",
             _list([_item(catalyst) for catalyst in open_windows]),
         ]
+    if not paid:
+        # A cut free list says how many the paid issue lists, never which (ADR 0063).
+        if digest.counts.due_total > len(due):
+            parts.append(
+                f"<p>The paid issue lists all {digest.counts.due_total} catalysts due by {last}.</p>"
+            )
+        if digest.counts.open_windows_total > len(open_windows):
+            parts.append(f"<p>The paid issue lists all {digest.counts.open_windows_total} open windows.</p>")
     if later:
         parts += [
             f"<h2>Later ({len(later)})</h2>",
