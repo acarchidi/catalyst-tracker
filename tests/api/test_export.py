@@ -1,7 +1,7 @@
 """The prototype export (ADR 0034): published catalysts as the read API shows them; held claims apart."""
 
 import json
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -27,11 +27,14 @@ from catalyst.schemas import (
     ClaimSubject,
     DateConfidence,
     DatePrecision,
+    DocumentReading,
     Entity,
     EntityMatch,
     GateDecision,
     MatchedEntity,
     MatchStatus,
+    ReviewAction,
+    ReviewDecision,
     SourceDocument,
     SourceTier,
 )
@@ -337,7 +340,9 @@ RELEASE = (
 HELD_QUOTE = "expects to submit the NDA in 2H26"
 
 
-def _held_on_a_real_copy(factory: sessionmaker[Session], store: LocalSnapshotStore, quote: str) -> UUID:
+def _held_on_a_real_copy(
+    factory: sessionmaker[Session], store: LocalSnapshotStore, quote: str, reasons: tuple[str, ...] = ("x",)
+) -> UUID:
     """Store RELEASE, a document for it, and a held claim quoting it at its place in the text."""
     snapshot = store.put(RELEASE)
     text = document_text(RELEASE, "text/html")
@@ -369,7 +374,9 @@ def _held_on_a_real_copy(factory: sessionmaker[Session], store: LocalSnapshotSto
         model="m",
         extracted_at=FIRST,
     )
-    decision = ClaimDecision(claim_id=claim.id, decision=GateDecision.REVIEW, reasons=["x"], decided_at=FIRST)
+    decision = ClaimDecision(
+        claim_id=claim.id, decision=GateDecision.REVIEW, reasons=list(reasons), decided_at=FIRST
+    )
     with factory.begin() as session:
         _add(session, doc)
         _add(session, claim)
@@ -475,3 +482,160 @@ def test_the_command_without_supabase_settings_names_them(
     assert cli.main(args) == 2
     assert "SUPABASE" in capsys.readouterr().err
     assert not out.exists()
+
+
+# --- What the second reader said, for held claims it did not confirm (ADR 0062) ---
+
+NOT_CONFIRMED = "second_reading_agrees: the second reading did not find this event"
+OTHER_SENTENCE = "It also plans a meeting with the FDA."
+
+
+def _second_read(
+    factory: sessionmaker[Session], claim_id: UUID, quote: str, value: dict[str, Any], version: str = "1.0.0"
+) -> None:
+    """Store one of the verifier's claims on the held claim's document, quoting `quote`."""
+    claim = TABLES[Claim]
+    start = document_text(RELEASE, "text/html").find(quote)
+    with factory.begin() as session:
+        document = session.execute(
+            select(claim.c.source_document_id).where(claim.c.id == claim_id)
+        ).scalar_one()
+        _add(
+            session,
+            Claim(
+                source_document_id=document,
+                subject_type=ClaimSubject.CATALYST,
+                field=f"catalyst:{uuid4().hex[:16]}",
+                value=value,
+                quote=quote,
+                quote_start=start,
+                quote_end=start + len(quote),
+                agent="verifier",
+                prompt_id="verify_catalysts",
+                prompt_version=version,
+                provider="anthropic",
+                model="m",
+                extracted_at=FIRST,
+            ),
+        )
+
+
+def _reading_kept(factory: sessionmaker[Session], claim_id: UUID, proposed: int) -> None:
+    claim = TABLES[Claim]
+    with factory.begin() as session:
+        document = session.execute(
+            select(claim.c.source_document_id).where(claim.c.id == claim_id)
+        ).scalar_one()
+        _add(
+            session,
+            DocumentReading(
+                source_document_id=document,
+                agent="verifier",
+                prompt_id="verify_catalysts",
+                prompt_version="1.0.0",
+                model="m",
+                catalysts=proposed,
+                read_at=FIRST,
+            ),
+        )
+
+
+SAME_EVENT: dict[str, Any] = {
+    "catalyst_type": "regulatory_submission",
+    "drug": "ZEN-101",
+    "problems": ["no_window"],
+}
+OTHER_EVENT: dict[str, Any] = {"catalyst_type": "advisory_committee", "drug": None, "problems": []}
+
+
+def test_a_held_claim_the_second_reading_did_not_confirm_carries_what_the_second_reader_said(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    claim_id = _held_on_a_real_copy(session_factory, store, HELD_QUOTE, ("x", NOT_CONFIRMED))
+    _second_read(session_factory, claim_id, OTHER_SENTENCE, OTHER_EVENT)
+    _second_read(session_factory, claim_id, "submit the NDA in 2H26", SAME_EVENT)
+    _second_read(session_factory, claim_id, OTHER_SENTENCE, {"drug": "old"}, version="0.9.0")
+    _reading_kept(session_factory, claim_id, proposed=3)
+    item = _held_item(_export(session_factory, include_held=True), claim_id)
+    assert item["second_reading"] == {
+        "read_at": FIRST.isoformat(),
+        "proposed": 3,  # one more than the events below: one quote was not the release's words
+        "events": [  # in the order of the text; values only, never the second reader's quote
+            {"values": SAME_EVENT, "overlaps_quote": True},
+            {"values": OTHER_EVENT, "overlaps_quote": False},
+        ],
+    }
+
+
+def test_a_held_claim_with_no_second_reading_reason_carries_no_second_reading(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(tmp_path), HELD_QUOTE)
+    _second_read(session_factory, claim_id, OTHER_SENTENCE, OTHER_EVENT)
+    _reading_kept(session_factory, claim_id, proposed=1)
+    export = _export(session_factory, include_held=True)
+    assert _held_item(export, claim_id)["second_reading"] is None
+    assert "advisory_committee" not in json.dumps(export["held"])
+
+
+def test_a_document_the_second_reader_never_read_says_so(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    reasons = ("check second_reading_agrees has not run",)
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(tmp_path), HELD_QUOTE, reasons)
+    item = _held_item(_export(session_factory, include_held=True), claim_id)
+    assert item["second_reading"] == {"read_at": None, "proposed": None, "events": []}
+
+
+def test_what_the_second_reader_said_stays_in_the_held_list_only(
+    session_factory: sessionmaker[Session],
+    seed: Seed,
+    database_url: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Counts on standard output; nothing of it in the published list or a file without the held list."""
+    copies = tmp_path / "copies"
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(copies), HELD_QUOTE, (NOT_CONFIRMED,))
+    _second_read(session_factory, claim_id, OTHER_SENTENCE, {"drug": "verifier-only-name", "problems": []})
+    _reading_kept(session_factory, claim_id, proposed=1)
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    sealed, plain = tmp_path / "held.json", tmp_path / "plain.json"
+    args = ["export-catalysts", "--snapshot-dir", str(copies), "--out"]
+    assert cli.main([*args, str(sealed), "--include-held"]) == 0
+    assert cli.main([*args, str(plain)]) == 0
+    assert "verifier-only-name" not in capsys.readouterr().out
+    assert "verifier-only-name" not in plain.read_text(encoding="utf-8")
+    written = json.loads(sealed.read_text(encoding="utf-8"))
+    assert "verifier-only-name" not in json.dumps(written["catalysts"])
+    assert _held_item(written, claim_id)["second_reading"]["events"][0]["values"]["drug"] == (
+        "verifier-only-name"
+    )
+
+
+def test_a_held_claim_carries_its_latest_review_decision(
+    session_factory: sessionmaker[Session], seed: Seed, tmp_path: Path
+) -> None:
+    claim_id = _held_on_a_real_copy(session_factory, LocalSnapshotStore(tmp_path), HELD_QUOTE)
+    later = FIRST + timedelta(hours=2)
+    with session_factory.begin() as session:
+        for action, at in ((ReviewAction.APPROVE, FIRST), (ReviewAction.REJECT, later)):
+            _add(
+                session,
+                ReviewDecision(
+                    claim_id=claim_id, action=action, reviewer="acarchidi", reasons_seen=["x"], decided_at=at
+                ),
+            )
+    export = _export(session_factory, include_held=True)
+    assert _held_item(export, claim_id)["review_decision"] == {
+        "action": "reject",
+        "reviewer": "acarchidi",
+        "decided_at": later.isoformat(),
+        "reasons_seen": ["x"],
+    }
+    # A claim nobody decided keeps the empty slot.
+    _hold(session_factory, seed)
+    again = _export(session_factory, include_held=True)
+    assert _held_item(again, seed.unpublished_claim)["review_decision"] is None

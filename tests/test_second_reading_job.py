@@ -5,6 +5,7 @@ plain code stores whether each extracted catalyst agrees with the second reading
 """
 
 import json
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -13,6 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+import pytest
 from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -25,6 +27,7 @@ from catalyst.llm.config import ModelConfig, RoleConfig
 from catalyst.llm.ledger import InMemoryLedger
 from catalyst.llm.pricing import Price, TokenUsage
 from catalyst.llm.prompts import Prompt
+from catalyst.logs import JsonFormatter
 from catalyst.schemas import (
     Claim,
     ClaimCheck,
@@ -37,7 +40,12 @@ from catalyst.schemas import (
     SourceTier,
 )
 from catalyst.snapshots import LocalSnapshotStore
+from catalyst.verify.rules import CheckResult, Outcome
+from catalyst.verify.run import store_check
+from catalyst.verify.second import CHECK
 from catalyst.verify.second_run import run_second_reading
+
+_NO_OUTCOMES = {"agrees": 0, "differs": 0, "flagged": 0, "no_second_events": 0, "not_found": 0}
 
 SENTENCE = "Topline data from the Phase 3 RAINIER trial of zentocel are expected in the second half of 2027."
 # A release has more than a headline: the extractor sends no copy with fewer than 50 readable words.
@@ -180,6 +188,7 @@ def test_an_agreeing_second_reading_passes_the_extracted_claim(
         "documents_failed": 0,
         "claims_compared": 1,
         "claims_agreeing": 1,
+        "claims_by_outcome": _NO_OUTCOMES | {"agrees": 1},
         "stopped_early": None,
     }
     assert _checks(session_factory) == [("pass", None)]
@@ -241,8 +250,11 @@ def test_a_second_reading_proposal_with_a_problem_does_not_vouch(
 ) -> None:
     fake = _Fake(verifier=[_event(date_text="first half of 2027")])  # date words not in the quote
     setup = _extracted(session_factory, tmp_path, fake)
-    _run(session_factory, setup)
-    assert _checks(session_factory) == [("fail", "the second reading did not find this event")]
+    summary = _run(session_factory, setup)
+    # It is paired, so the reason says what stopped it from vouching (ADR 0062); it still fails.
+    flagged = "the second reading found this event, but its own checks flagged it: date_not_in_quote"
+    assert _checks(session_factory) == [("fail", flagged)]
+    assert summary["claims_by_outcome"] == _NO_OUTCOMES | {"flagged": 1}
 
 
 def test_drugs_the_reference_tables_call_the_same_agree(
@@ -366,3 +378,62 @@ def test_the_second_reader_sees_the_new_york_publication_date(
     extract_documents(session_factory, store, client, limit=10, now=lambda: NOW)
     _run(session_factory, (store, client, _config()))
     assert fake.dates == ["Publication date: 2026-10-14", "Publication date: 2026-10-14"]
+
+
+# --- ADR 0062: stored readings are compared again for free; summaries and logs carry counts only ---
+
+
+def test_a_stored_outcome_is_compared_again_without_a_new_reading(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """A claim held under an earlier pairing rule gets the current rule's outcome on the next run."""
+    fake = _Fake(verifier=[_event(drug="Zentra (zentocel)")])
+    setup = _extracted(session_factory, tmp_path, fake)
+    _run(session_factory, setup)
+    claim = TABLES[Claim]
+    earlier = "the second reading differs: drug zentocel, second reading Zentra (zentocel)"
+    with session_factory.begin() as session:
+        claim_id = session.execute(select(claim.c.id).where(claim.c.agent == "extractor")).scalar_one()
+        store_check(session, claim_id, CheckResult(CHECK, Outcome.FAIL, earlier), NOW)
+    assert _checks(session_factory) == [("fail", earlier)]
+    summary = _run(session_factory, setup)
+    assert fake.calls.count("verify_catalysts") == 1  # nothing was read, or paid for, again
+    assert summary["documents_read"] == 0
+    assert _checks(session_factory) == [("pass", None)]
+
+
+def test_a_reading_keeps_how_many_events_were_proposed_even_when_a_quote_is_lost(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    fake = _Fake(verifier=[_event(), _event(quote="Words the release never says in 2027.")])
+    setup = _extracted(session_factory, tmp_path, fake)
+    _run(session_factory, setup)
+    assert _count(session_factory, Claim, agent="verifier") == 1  # no claim without its quote
+    assert _count(session_factory, DocumentReading, agent="verifier", catalysts=2) == 1
+
+
+@pytest.mark.parametrize(
+    ("verifier", "kind"),
+    [
+        ([_event(drug="otherumab", title="Otherumab filing")], "differs"),
+        ([_event(date_text="first half of 2027", title="Otherumab filing")], "flagged"),
+        ([], "no_second_events"),
+    ],
+)
+def test_the_summary_and_the_log_carry_counts_only(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    verifier: list[dict[str, Any]],
+    kind: str,
+) -> None:
+    """What either reader said stays in the database and the sealed export (ADR 0034)."""
+    setup = _extracted(session_factory, tmp_path, _Fake(verifier=verifier))
+    caplog.set_level(logging.DEBUG)
+    caplog.clear()
+    summary = _run(session_factory, setup)
+    assert summary["claims_by_outcome"] == _NO_OUTCOMES | {kind: 1}
+    said = json.dumps(summary) + "".join(JsonFormatter().format(record) for record in caplog.records)
+    assert "second_reading_done" in said
+    for private in ("zentocel", "otherumab", "Otherumab filing", "RAINIER", "half of 2027", "Topline"):
+        assert private not in said

@@ -9,14 +9,19 @@ size, labelled as registry data with the record they come from, since no quote s
 read API never returns them (ADR 0039). Prices and returns are never read (spec: data license).
 
 Each held claim also carries the paragraph its quote sits in, read from the stored copy, so the
-owner's review queue can judge it without the database (ADR 0034, amended 2026-10-20), and a
-`review_decision` slot that the review queue (PR #84) fills; until then it is always null.
+owner's review queue can judge it without the database (ADR 0034, amended 2026-10-20), and its
+latest `review_decision` by a person, null when nobody has decided it (ADR 0042).
+
+A held claim the second reading did not confirm also carries `second_reading`: the values of
+every event the second reader listed in that document, so the cause can be found without the
+database (ADR 0062). It is in the held list only, which leaves a job only sealed (ADR 0034).
 """
 
 import json
 import os
 import tempfile
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -35,16 +40,20 @@ from catalyst.publish.live import claim_value
 from catalyst.schemas import (
     Claim,
     ClaimDecision,
+    DocumentReading,
     EntityMatch,
     GateDecision,
     MatchedEntity,
     MatchStatus,
+    ReviewAction,
+    ReviewDecision,
     SourceDocument,
     SourceTier,
     Trial,
 )
 from catalyst.snapshots import SnapshotStore
-from catalyst.verify.second import VERIFIER_PROMPT
+from catalyst.verify.second import CHECK as SECOND_CHECK
+from catalyst.verify.second import VERIFIER_PROMPT, VERIFIER_ROLE
 
 HELD_STATUS = "held for review"
 REGISTRY_NOTE = (
@@ -96,6 +105,7 @@ def held_claims(session: Session, store: SnapshotStore | None = None) -> list[di
     rows = session.execute(
         select(
             claim.c.id,
+            claim.c.source_document_id,
             claim.c.value,
             claim.c.quote,
             claim.c.quote_start,
@@ -120,6 +130,7 @@ def held_claims(session: Session, store: SnapshotStore | None = None) -> list[di
     companies = _held_companies(session, [row.id for row in rows])
     trials = _held_trials(session, [row.id for row in rows])
     reviews = review_decisions(session, [row.id for row in rows])
+    readings = second_readings(session, rows)
     copies: dict[str, str | UnreadableCopy] = {}
 
     def copy_of(row: Any) -> str | UnreadableCopy:
@@ -149,6 +160,7 @@ def held_claims(session: Session, store: SnapshotStore | None = None) -> list[di
             "decided_at": row.decided_at.isoformat(),
             "prompt": f"{row.prompt_id}/{row.prompt_version}",
             "review_decision": reviews.get(row.id),
+            "second_reading": readings.get(row.id),
         }
         for row in rows
     ]
@@ -183,14 +195,78 @@ def _paragraph_fields(copy: str | UnreadableCopy, quote: str, start: int, end: i
 
 
 def review_decisions(session: Session, claim_ids: list[UUID]) -> dict[UUID, dict[str, Any]]:
-    """Return each held claim's latest review decision: action, who, when, and reasons code.
+    """Return each held claim's latest decision by a person: action, who, when, and the reasons seen.
 
-    Hook for the review queue (PR #84), which adds the `review_decision` table. Until it is
-    merged there is no such table, so every held claim's `review_decision` is null. #84 fills
-    this in, reading the newest row per claim, and the export's shape does not change.
+    The review queue adds rows and never edits one, so a claim's newest row counts (ADR 0042). A
+    claim nobody has decided is not in the result, and its `review_decision` is null.
     """
-    del session, claim_ids
-    return {}
+    review = TABLES[ReviewDecision]
+    query = select(review).where(review.c.claim_id.in_(claim_ids)).order_by(review.c.decided_at, review.c.id)
+    latest: dict[UUID, dict[str, Any]] = {}
+    for row in session.execute(query):  # oldest first, so each claim's newest decision wins
+        latest[row.claim_id] = {
+            "action": ReviewAction(row.action).value,
+            "reviewer": row.reviewer,
+            "decided_at": row.decided_at.isoformat(),
+            "reasons_seen": list(row.reasons_seen),
+        }
+    return latest
+
+
+def second_readings(session: Session, held: Sequence[Any]) -> dict[UUID, dict[str, Any]]:
+    """Return what the second reader said about the document of each held claim it did not confirm.
+
+    Only for a claim with a `second_reading_agrees` reason. `events` are the values of every claim
+    the second reader's current prompt made on that document with the model of its newest reading,
+    in the order of the text, each with whether its quote overlaps the held claim's; never its
+    quote. `proposed` is how many events that reading listed: more than `events` holds means some
+    quotes were not the document's words (a reading made before ADR 0062 kept the number of claims
+    instead, so the two are equal there). A document it never read has no `read_at`.
+    """
+    wanted = [row for row in held if any(SECOND_CHECK in reason for reason in row.reasons)]
+    documents = {row.source_document_id for row in wanted}
+    reading, claim = TABLES[DocumentReading], TABLES[Claim]
+    newest: dict[UUID, Any] = {}
+    read = select(reading).where(
+        reading.c.source_document_id.in_(documents),
+        reading.c.agent == VERIFIER_ROLE,
+        reading.c.prompt_id == VERIFIER_PROMPT[0],
+        reading.c.prompt_version == VERIFIER_PROMPT[1],
+    )
+    for row in session.execute(read.order_by(reading.c.read_at, reading.c.id)):
+        newest[row.source_document_id] = row
+    events: defaultdict[UUID, list[Any]] = defaultdict(list)
+    columns = (
+        claim.c.source_document_id,
+        claim.c.value,
+        claim.c.quote_start,
+        claim.c.quote_end,
+        claim.c.model,
+    )
+    said = select(*columns).where(
+        claim.c.source_document_id.in_(list(newest)),
+        claim.c.agent == VERIFIER_ROLE,
+        claim.c.prompt_id == VERIFIER_PROMPT[0],
+        claim.c.prompt_version == VERIFIER_PROMPT[1],
+    )
+    for row in session.execute(said.order_by(claim.c.quote_start, claim.c.quote_end, claim.c.id)):
+        if row.model == newest[row.source_document_id].model:
+            events[row.source_document_id].append(row)
+    found: dict[UUID, dict[str, Any]] = {}
+    for row in wanted:
+        last = newest.get(row.source_document_id)
+        found[row.id] = {
+            "read_at": last.read_at.isoformat() if last else None,
+            "proposed": last.catalysts if last else None,
+            "events": [
+                {
+                    "values": event.value,
+                    "overlaps_quote": event.quote_start < row.quote_end and row.quote_start < event.quote_end,
+                }
+                for event in events[row.source_document_id]
+            ],
+        }
+    return found
 
 
 def _company(view: CompanyView | None) -> dict[str, Any] | None:
