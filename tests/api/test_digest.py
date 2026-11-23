@@ -722,6 +722,11 @@ def test_the_command_writes_the_digest_and_prints_only_counts(
         "new": 0,
         "upcoming": 0,
         "upcoming_not_listed": 0,
+        "due": 0,
+        "open_windows": 0,
+        "later": 0,
+        "due_total": 0,
+        "open_windows_total": 0,
         "moved_outside_free_calendar": 0,
         "new_outside_free_calendar": 0,
     }
