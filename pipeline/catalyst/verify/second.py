@@ -164,9 +164,14 @@ def _same_name(a: str, b: str, same_drug: SameDrug) -> bool:
     """Say whether two names are one drug: the same main name, or one's main name in the other's brackets.
 
     Two names that share only a name in brackets do not agree: brackets also hold form words.
+    A combination's brackets name one of its drugs, not the combination ("X with Keytruda
+    (pembrolizumab)" is not pembrolizumab), so bracketed names count only between single drugs;
+    a combination's parts are matched one by one in `_drugs_agree`.
     """
     if name_key(a) == name_key(b) or same_drug(a, b):
         return True
+    if len(_parts(a)) > 1 or len(_parts(b)) > 1:
+        return False
     (main_a, others_a), (main_b, others_b) = _names(a), _names(b)
     tries = [(main_a, main_b)]
     tries += [(main_a, other) for other in others_b] + [(other, main_b) for other in others_a]

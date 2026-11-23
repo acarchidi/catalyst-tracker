@@ -244,7 +244,7 @@ def second_readings(session: Session, held: Sequence[Any]) -> dict[UUID, dict[st
         claim.c.model,
     )
     said = select(*columns).where(
-        claim.c.source_document_id.in_(newest),
+        claim.c.source_document_id.in_(list(newest)),
         claim.c.agent == VERIFIER_ROLE,
         claim.c.prompt_id == VERIFIER_PROMPT[0],
         claim.c.prompt_version == VERIFIER_PROMPT[1],

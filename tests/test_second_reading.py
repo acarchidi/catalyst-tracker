@@ -253,6 +253,10 @@ def test_one_drug_written_in_two_ways_agrees(first: str, second: str) -> None:
         ("zentocel", "RAINIER \u2013 zentocel"),
         ("ZENTRA", "ZENTRA HF II"),  # more words that are not form words
         ("oral", "tablets"),  # form words alone name nothing
+        # A bracketed name inside a combination names one of its drugs, not the combination.
+        ("otherumab", "zentocel with Otra (otherumab)"),
+        ("pembrolizumab", "zentocel with Keytruda (pembrolizumab)"),
+        ("ZEN-101", "zentocel (ZEN-101) plus otherumab"),
     ],
 )
 def test_names_that_may_be_two_drugs_still_disagree(first: str, second: str) -> None:
