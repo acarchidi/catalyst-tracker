@@ -378,7 +378,7 @@ def spend_today(engine: Engine, config: ModelConfig, day: date) -> dict[str, Rol
     return {
         name: RoleSpend(
             ledger.spent(name, day),
-            role.daily_cap_usd,
+            role.cap_on(day),  # the day's cap: a dated raise (ADR 0065), or the usual one
             cost_usd(config.pricing[role.model], TokenUsage(output=role.max_tokens)),
         )
         for name, role in config.roles.items()
