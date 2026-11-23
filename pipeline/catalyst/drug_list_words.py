@@ -142,6 +142,103 @@ FORM_WORDS = frozenset(
     ]
 )
 
+# More form and route words a claim's drug words may carry, read only for claims (ADR 0060, part 3):
+# "X foam 0.3%", "X (y) sublingual film", "Nebulized X", "X ER". The registry rules keep `FORM_WORDS`.
+CLAIM_FORM_WORDS = FORM_WORDS | frozenset(
+    [
+        "autoinjector",
+        "buccal",
+        "er",
+        "extended-release",
+        "film",
+        "foam",
+        "lotion",
+        "nasal",
+        "nebulized",
+        "ophthalmic",
+        "spray",
+        "sublingual",
+        "xr",
+    ]
+)
+
+# Words of a phrase that names no drug, in a claim's drug words (ADR 0060, part 2): "our lead
+# program", "the combination", "novel oral small molecule", "next-generation degrader"; months,
+# which name a date; and advice words, which must never reach a title (spec: no buy or sell ratings).
+CLAIM_STOP_WORDS = frozenset(
+    [
+        "all",
+        "asset",
+        "assets",
+        "both",
+        "buy",
+        "candidate",
+        "candidates",
+        "class",
+        "clinical",
+        "combination",
+        "combinations",
+        "compound",
+        "compounds",
+        "degrader",
+        "degraders",
+        "development",
+        "device",
+        "directed",
+        "discovery",
+        "first",
+        "franchise",
+        "her",
+        "his",
+        "hold",
+        "its",
+        "lead",
+        "medicine",
+        "medicines",
+        "molecule",
+        "molecules",
+        "next",
+        "novel",
+        "our",
+        "pipeline",
+        "platform",
+        "platforms",
+        "portfolio",
+        "preclinical",
+        "program",
+        "programme",
+        "programmes",
+        "programs",
+        "second",
+        "sell",
+        "several",
+        "small",
+        "targeted",
+        "targeting",
+        "technology",
+        "that",
+        "their",
+        "these",
+        "third",
+        "this",
+        "those",
+        "undisclosed",
+        "unnamed",
+        "january",
+        "february",
+        "march",
+        "april",
+        "may",
+        "june",
+        "july",
+        "august",
+        "september",
+        "october",
+        "november",
+        "december",
+    ]
+)
+
 # Ordinary words never in a drug's name ("if necessary", "until May", "in FOLFOX", "brand name").
 ORDINARY_WORDS = frozenset(
     [
