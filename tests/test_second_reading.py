@@ -257,6 +257,16 @@ def test_one_drug_written_in_two_ways_agrees(first: str, second: str) -> None:
         ("otherumab", "zentocel with Otra (otherumab)"),
         ("pembrolizumab", "zentocel with Keytruda (pembrolizumab)"),
         ("ZEN-101", "zentocel (ZEN-101) plus otherumab"),
+        # Nor when the drugs are listed with "and", "/", ",", "&", or ";".
+        ("pembrolizumab", "zentocel and Keytruda (pembrolizumab)"),
+        ("pembrolizumab", "zentocel/Keytruda (pembrolizumab)"),
+        ("pembrolizumab", "zentocel, Keytruda (pembrolizumab)"),
+        ("pembrolizumab", "zentocel & Keytruda (pembrolizumab)"),
+        ("pembrolizumab", "zentocel; Keytruda (pembrolizumab)"),
+        ("ZEN-101", "zentocel (ZEN-101) and otherumab"),
+        ("ZEN-101", "zentocel (ZEN-101) / otherumab"),
+        ("ZEN-101", "zentocel (ZEN-101) or otherumab"),
+        ("pembrolizumab", "Keytruda (pembrolizumab) (MK-3475)"),  # two bracket groups
     ],
 )
 def test_names_that_may_be_two_drugs_still_disagree(first: str, second: str) -> None:

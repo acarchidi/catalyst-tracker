@@ -44,6 +44,9 @@ _ASIDE = re.compile(r"(?<=\S)\s+\(([^()]*)\)")
 _BRACKETS = re.compile(r"\([^()]*\)")
 # Words that join the drugs of a combination. "and" is left out: it may list two events' drugs.
 _JOIN = re.compile(r"\s+(?:in\s+combination\s+with|combined\s+with|with|plus)\s+|\s*\+\s*", re.IGNORECASE)
+# Marks and words that list or join two drugs; a string with one outside its brackets is never one
+# name, so its bracketed names never stand for it (`_one_name`).
+_LISTING = re.compile(r"[,/&;+]|\b(?:and|or|with|plus|combined|combination|versus|vs)\b", re.IGNORECASE)
 # Words at either end of a name that say its form or route, or that a name follows, never which
 # drug it is. A drug's forms share its one drug record. No short forms ("IV", "SC"): "collagen IV".
 _DESCRIBING = frozenset(
@@ -160,17 +163,29 @@ def _names(drug: str) -> tuple[str, list[str]]:
     return _bare(_ASIDE.sub(" ", drug)), others
 
 
+def _one_name(drug: str) -> bool:
+    """Say whether a string is one name, at most with one bracketed name after it ("NAME (OTHER)").
+
+    Outside its brackets it may hold form words and marks, but no listing mark or word, and no
+    joining word: "X and Y (Z)", "X/Y (Z)", "X, Y (Z)", "X & Y (Z)", "X with Y (Z)" are lists.
+    """
+    groups = _BRACKETS.findall(drug)
+    if len(groups) > 1 or (groups and len(_ASIDE.findall(drug)) != 1):
+        return False
+    return _LISTING.search(_BRACKETS.sub(" ", drug)) is None
+
+
 def _same_name(a: str, b: str, same_drug: SameDrug) -> bool:
     """Say whether two names are one drug: the same main name, or one's main name in the other's brackets.
 
     Two names that share only a name in brackets do not agree: brackets also hold form words.
-    A combination's brackets name one of its drugs, not the combination ("X with Keytruda
-    (pembrolizumab)" is not pembrolizumab), so bracketed names count only between single drugs;
-    a combination's parts are matched one by one in `_drugs_agree`.
+    A list's or combination's brackets name one of its drugs, not the whole ("X and Keytruda
+    (pembrolizumab)" is not pembrolizumab), so bracketed names count only when both are one name
+    (`_one_name`); a combination's parts are matched one by one in `_drugs_agree`.
     """
     if name_key(a) == name_key(b) or same_drug(a, b):
         return True
-    if len(_parts(a)) > 1 or len(_parts(b)) > 1:
+    if not (_one_name(a) and _one_name(b)):
         return False
     (main_a, others_a), (main_b, others_b) = _names(a), _names(b)
     tries = [(main_a, main_b)]
