@@ -15,13 +15,14 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, cast
 from uuid import UUID
 
-from catalyst.extract.dates import DateWindow, parse_window
+from catalyst.extract.dates import DateWindow, parse_window, whole_date
 from catalyst.extract.injection import hidden_letters, instruction_markers, invisible_characters
 from catalyst.extract.text import TEXT_VERSION, QuoteSpan, find_quote
 from catalyst.llm.client import ModelClient
@@ -131,14 +132,9 @@ def check_proposal(
         problems.append(Problem.NON_ASCII_DIGITS)
     if span is None:
         problems.append(Problem.QUOTE_NOT_FOUND)
-    elif not has_words(span.quote, date_text):
-        problems.append(Problem.DATE_NOT_IN_QUOTE)
     else:
-        window = parse_window(date_text, published)
-        if window is None:
-            problems.append(Problem.NO_WINDOW)
-        elif window.end < published:
-            problems.append(Problem.DATE_PASSED)
+        date_text, window, found = read_date(span.quote, date_text, published)
+        problems.extend(found)
     regulator = catalyst_type in _REGULATOR_SET
     return ExtractedCatalyst(
         catalyst_type=catalyst_type,
@@ -151,6 +147,48 @@ def check_proposal(
         date_confidence=DateConfidence.REGULATOR_SCHEDULED if regulator else DateConfidence.COMPANY_CONFIRMED,
         problems=tuple(problems),
     )
+
+
+def read_date(quote: str, date_text: str, published: date) -> tuple[str, DateWindow | None, list[Problem]]:
+    """Read a proposal's date words in its quote: the words to keep, their window, and what is wrong.
+
+    Words cut from a longer date in the quote are kept whole, in the quote's own characters, when
+    code can tell which date is meant (`whole_date`; ADR 0061).
+    """
+    if not has_words(quote, date_text):
+        return date_text, None, [Problem.DATE_NOT_IN_QUOTE]
+    words = whole_date(quote, date_text, published)
+    window = parse_window(words, published)
+    if window is None:
+        return words, None, [Problem.NO_WINDOW]
+    return words, window, [Problem.DATE_PASSED] if window.end < published else []
+
+
+_DATE_PROBLEMS = (Problem.NO_WINDOW.name.lower(), Problem.DATE_PASSED.name.lower())
+
+
+def reread_date(value: Mapping[str, Any], quote: str, published: date) -> dict[str, Any] | None:
+    """Return a stored claim's value with its date read by today's rules, or None when nothing changes.
+
+    Only two kinds of claim are read again (ADR 0061): one stored with no window because its date
+    words named none then, and one whose date words are cut from a longer date in its quote. A
+    stored window is never replaced for the same words; `window_matches_words` checks that one.
+    """
+    words, listed = value.get("date_text"), value.get("problems")
+    if not isinstance(words, str) or not isinstance(listed, list) or not has_words(quote, words):
+        return None
+    problems = [str(problem) for problem in cast(list[object], listed)]
+    no_window = _DATE_PROBLEMS[0] in problems and not (value.get("window_start") or value.get("window_end"))
+    kept, window, found = read_date(quote, words, published)
+    if kept == words and not (no_window and window is not None):
+        return None
+    return dict(value) | {
+        "date_text": kept,
+        "window_start": window.start.isoformat() if window else None,
+        "window_end": window.end.isoformat() if window else None,
+        "window_precision": window.precision.value if window else None,
+        "problems": [p for p in problems if p not in _DATE_PROBLEMS] + [p.name.lower() for p in found],
+    }
 
 
 def extract_catalysts(
