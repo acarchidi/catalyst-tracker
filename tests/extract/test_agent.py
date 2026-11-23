@@ -16,6 +16,7 @@ from catalyst.extract.agent import (
     catalyst_claims,
     extract_catalysts,
     model_input,
+    reread_date,
 )
 from catalyst.llm.client import Completion, ModelClient
 from catalyst.llm.config import ModelConfig, RoleConfig
@@ -213,3 +214,95 @@ def test_a_release_with_no_events_gives_none(answer: dict[str, object]) -> None:
     fake = _Fake(answer)
     client = ModelClient(CONFIG, {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
     assert extract_catalysts(client, TEXT, PUBLISHED).catalysts == ()
+
+
+# --- ADR 0061: code reads the date again, whole, and for stored claims too ---
+
+
+def test_date_words_cut_from_a_longer_date_are_stored_whole() -> None:
+    """The model copied "2027" of "the second half of 2027"; code keeps the whole date from the quote."""
+    _, extraction = _extract(_item(date_text="2027"))
+    (catalyst,) = extraction.catalysts
+    assert catalyst.problems == ()
+    assert catalyst.date_text == "second half of 2027"
+    assert catalyst.window is not None
+    assert (catalyst.window.start, catalyst.window.end) == (date(2027, 7, 1), date(2027, 12, 31))
+    (claim,) = catalyst_claims(extraction, uuid4(), NOW)
+    assert isinstance(claim.value, dict)
+    assert claim.value["date_text"] == catalyst.window.raw_text == "second half of 2027"
+
+
+def _stored(**changes: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "catalyst_type": "topline_readout",
+        "date_text": "in December",
+        "window_start": None,
+        "window_end": None,
+        "window_precision": None,
+        "problems": ["no_window"],
+    }
+    return value | changes
+
+
+DECEMBER = "Topline data from the RAINIER trial are expected in December."
+
+
+def test_a_stored_claim_whose_words_gave_no_window_is_read_again() -> None:
+    value = reread_date(_stored(problems=["no_window", "source_hides_text"]), DECEMBER, PUBLISHED)
+    assert value == _stored(
+        window_start="2026-12-01",
+        window_end="2026-12-31",
+        window_precision="month",
+        problems=["source_hides_text"],
+    )
+    assert value is not None
+    assert reread_date(value, DECEMBER, PUBLISHED) is None  # a second run changes nothing
+
+
+def test_a_stored_claim_read_again_may_have_a_window_already_past() -> None:
+    quote = "Results were presented on October 9th, 2026."
+    value = reread_date(_stored(date_text="October 9th, 2026"), quote, PUBLISHED)
+    assert value is not None
+    assert (value["window_start"], value["window_end"]) == ("2026-10-09", "2026-10-09")
+    assert value["problems"] == ["date_passed"]
+
+
+def test_a_stored_claim_with_words_cut_from_a_longer_date_takes_the_whole_date() -> None:
+    cut = _stored(
+        date_text="mid-2027",
+        window_start="2027-04-01",
+        window_end="2027-09-30",
+        window_precision="half",
+        problems=[],
+    )
+    value = reread_date(cut, "Topline data from the RAINIER trial are expected by mid-2027.", PUBLISHED)
+    assert value == cut | {"date_text": "by mid-2027", "window_start": "2026-10-14"}
+
+
+@pytest.mark.parametrize(
+    ("value", "quote"),
+    [
+        # A stored window is never replaced for the same words, right or wrong: `window_matches_words`
+        # holds a wrong one, as it did before.
+        (
+            _stored(
+                date_text="Q4 2026",
+                window_start="2027-01-01",
+                window_end="2027-03-31",
+                window_precision="quarter",
+                problems=[],
+            ),
+            "Topline data are expected in Q4 2026.",
+        ),
+        (_stored(date_text="soon"), "Topline data are expected soon."),  # still no window
+        (_stored(date_text="in December", problems=["date_not_in_quote"]), "Data are expected soon."),
+        (_stored(date_text=None), DECEMBER),
+        (_stored(problems="no_window"), DECEMBER),
+        ({}, DECEMBER),
+    ],
+    ids=["a stored window", "still no window", "not in the quote", "no words", "no list", "empty"],
+)
+def test_a_stored_claim_code_has_no_reason_to_read_again_is_left_alone(
+    value: dict[str, object], quote: str
+) -> None:
+    assert reread_date(value, quote, PUBLISHED) is None
