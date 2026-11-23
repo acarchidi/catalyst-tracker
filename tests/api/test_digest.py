@@ -565,14 +565,14 @@ def test_the_html_leaves_out_the_counts_of_unlisted_records_and_states_an_empty_
     far_move = _slipped(start=date(2027, 4, 1), end=date(2027, 6, 30), raw="2Q27")
     text = " ".join(" ".join(_parsed(render_html(build_digest([far_move], ISSUE))).text).split())
     assert "No date on the next 30 days of the calendar moved this week." in text
-    assert "Outside the next 30 days" not in text  # counted in the JSON only (ADR 0056)
+    assert "Outside the next 30 days" not in text  # counted in the JSON only (ADR 0057)
     assert "2Q27" not in text
     empty = " ".join(" ".join(_parsed(render_html(build_digest([], ISSUE))).text).split())
     assert "Outside the next 30 days" not in empty
     assert "And " not in empty
     many = [_detail(start=ISSUE + timedelta(days=n)) for n in range(1, 4)]
     cut = " ".join(" ".join(_parsed(render_html(build_digest(many, ISSUE, calendar_limit=1))).text).split())
-    assert "more in the next 30 days" not in cut  # counted in the JSON only (ADR 0056)
+    assert "more in the next 30 days" not in cut  # counted in the JSON only (ADR 0057)
     assert build_digest(many, ISSUE, calendar_limit=1).counts.upcoming_not_listed == 2
 
 

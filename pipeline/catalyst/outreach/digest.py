@@ -422,7 +422,7 @@ def render_html(digest: Digest) -> str:
         f"<h2>{_upcoming_heading(digest)} ({digest.counts.upcoming})</h2>",
         _list([_item(catalyst) for catalyst in digest.upcoming]) or "<p>Nothing else is listed.</p>",
     ]
-    # Records left out are counted in the JSON only, never in the issue (owner decision 2026-11-23; ADR 0056).
+    # Records left out are counted in the JSON only, never in the issue (owner decision 2026-11-23; ADR 0057).
     parts.append(f"<p><small>{escape(digest.notice)}</small></p>")
     return "\n".join(parts) + "\n"
 

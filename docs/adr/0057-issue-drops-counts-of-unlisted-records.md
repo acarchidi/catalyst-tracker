@@ -1,4 +1,4 @@
-# 0056 — The issue no longer prints the counts of records it leaves out
+# 0057 — The issue no longer prints the counts of records it leaves out
 
 - **Status:** accepted
 - **Date:** 2026-11-23
