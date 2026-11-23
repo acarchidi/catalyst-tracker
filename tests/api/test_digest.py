@@ -286,7 +286,8 @@ def test_the_calendar_is_the_next_30_days_in_date_order_and_only_open_catalysts(
     first = _detail(start=ISSUE, name="First Day Bio")
     overlapping = _detail(start=date(2026, 7, 1), end=date(2026, 12, 31), raw="2H26", name="Half Year Bio")
     digest = build_digest([last_day, past_horizon, already_past, resolved, first, overlapping], ISSUE)
-    assert [c.id for c in digest.upcoming] == [overlapping.id, first.id, last_day.id]
+    # Due entries first, then open windows, each in date order (ADR 0063).
+    assert [c.id for c in digest.upcoming] == [first.id, last_day.id, overlapping.id]
     assert digest.calendar_to == ISSUE + timedelta(days=30)
     assert calendar_window(Access.FREE, ISSUE, None, None) == (
         ISSUE,
@@ -424,7 +425,7 @@ def test_the_calendar_splits_into_due_open_windows_and_later() -> None:
     wide = _detail(start=date(2026, 10, 1), end=date(2027, 12, 31), raw="by the end of 2027", name="Wide Bio")
     later = _detail(start=date(2027, 1, 1), end=date(2027, 3, 31), raw="1Q27", name="Later Bio")
     free = build_digest([due, wide, later], ISSUE)
-    assert [c.id for c in free.upcoming] == [wide.id, due.id]  # earliest start first, as before
+    assert [c.id for c in free.upcoming] == [due.id, wide.id]  # due first, then open windows
     assert (free.counts.due, free.counts.open_windows, free.counts.later) == (1, 1, 0)
     text = _text(render_html(free))
     assert "Due by 4 November 2026 (1)" in text
@@ -441,6 +442,15 @@ def test_the_calendar_splits_into_due_open_windows_and_later() -> None:
     assert "Later (1)" in paid_text
     assert "Windows that start after 4 November 2026." in paid_text
     assert paid_text.index("Wide Bio") < paid_text.index("Later (1)") < paid_text.index("Later Bio")
+
+
+def test_the_list_limit_keeps_due_entries_before_open_windows() -> None:
+    # A wide window that started long ago must not push a due entry off a cut list (ADR 0063).
+    wide = [_detail(start=date(2026, 1, 1), end=date(2027, 12, 31), raw="by 2027") for _ in range(3)]
+    due = _detail(start=date(2026, 10, 20), raw="October 20, 2026", name="Due Bio")
+    digest = build_digest([*wide, due], ISSUE, calendar_limit=2)
+    assert digest.upcoming[0].id == due.id
+    assert (digest.counts.due, digest.counts.open_windows, digest.counts.upcoming_not_listed) == (1, 1, 2)
 
 
 def test_empty_open_window_and_later_sections_are_left_out() -> None:

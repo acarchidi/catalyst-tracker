@@ -333,7 +333,9 @@ def build_digest(
             new.append(shape(detail, access))
         else:
             calendar.append(shape(detail, access))
-    upcoming = calendar[:calendar_limit]
+    # Due entries first, then open windows, then later ones, so the list limit never cuts a due
+    # entry to make room for a wide window that started long ago (ADR 0063).
+    upcoming = [*(part for section in _split(calendar, issue_date) for part in section)][:calendar_limit]
     due, open_windows, later = _split(upcoming, issue_date)
     return Digest(
         notice=NOTICE,

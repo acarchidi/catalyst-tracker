@@ -15,7 +15,7 @@ The first issue's "Upcoming Catalysts through 23 December 2026" listed entries w
    - **Due by <horizon>:** the window ends on or before the horizon. Always shown; when empty it says "Nothing is due by then."
    - **Open windows:** the window starts on or before the horizon and ends after it. Shown when not empty, on the free and the paid issue, with the line "Windows that start by <horizon> and end later."
    - **Later (paid only):** the window starts after the horizon. The free issue never holds these (ADR 0047, decision 3). Shown when not empty, with the line "Windows that start after <horizon>."
-2. Entries keep their order (earliest start first) inside each section. The list limit (25 free, 200 paid) still applies to the calendar as a whole.
+2. The calendar is ordered due, then open windows, then later, each earliest start first, before the list limit (25 free, 200 paid) cuts it. A wide window that started long ago never pushes a due entry off the list. Found when rebuilding the 2026-11-23 issue: cutting first left the free issue with 0 due entries where the paid issue had 3.
 3. The digest JSON keeps `upcoming` and adds the counts `due`, `open_windows` and `later`.
 
 ## Alternatives
@@ -26,4 +26,5 @@ The first issue's "Upcoming Catalysts through 23 December 2026" listed entries w
 ## Consequences
 
 - Readers see which entries are due within 30 days and which only have a wide window.
+- `test_the_calendar_is_the_next_30_days_in_date_order_and_only_open_catalysts` now expects due entries before the open window; the records it checks are unchanged.
 - One existing test now expects "Due by 4 November 2026 (0)" where it expected "Upcoming Catalysts through 4 November 2026 (0)"; the paid-heading test is replaced by a test of the split.
