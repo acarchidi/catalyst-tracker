@@ -422,15 +422,7 @@ def render_html(digest: Digest) -> str:
         f"<h2>{_upcoming_heading(digest)} ({digest.counts.upcoming})</h2>",
         _list([_item(catalyst) for catalyst in digest.upcoming]) or "<p>Nothing else is listed.</p>",
     ]
-    if digest.counts.upcoming_not_listed:
-        rest = "on the calendar" if paid else "in the next 30 days"
-        parts.append(f"<p>And {digest.counts.upcoming_not_listed} more {rest}.</p>")
-    moved, added = digest.counts.moved_outside_free_calendar, digest.counts.new_outside_free_calendar
-    if moved or added:
-        parts.append(
-            f"<p>Outside the next 30 days: {moved} date{'' if moved == 1 else 's'} moved and "
-            f"{added} catalyst{' was' if added == 1 else 's were'} added.</p>"
-        )
+    # Records left out are counted in the JSON only, never in the issue (owner decision 2026-11-23; ADR 0057).
     parts.append(f"<p><small>{escape(digest.notice)}</small></p>")
     return "\n".join(parts) + "\n"
 
