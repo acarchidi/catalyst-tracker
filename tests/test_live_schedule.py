@@ -57,7 +57,7 @@ def test_a_scheduled_collection_collects_sec_filings_for_every_company() -> None
     assert "SINCE=$(date -u -d '10 days ago' +%F)" in body
 
 
-def test_a_scheduled_extraction_reads_at_most_20_releases_and_nothing_private() -> None:
+def test_a_scheduled_extraction_reads_at_most_60_releases_and_nothing_private() -> None:
     workflow = _load("extract-live.yml")
     steps = _steps(workflow, "extract")
     # The steps checked below exist, so "not in ran" cannot pass because one was renamed.
@@ -69,7 +69,7 @@ def test_a_scheduled_extraction_reads_at_most_20_releases_and_nothing_private() 
     assert "Export published and held catalysts" not in ran
     assert "Score a reader on the gold set" not in ran
     body = (WORKFLOWS / "extract-live.yml").read_text(encoding="utf-8")
-    assert "LIMIT: ${{ inputs.limit || 20 }}" in body
+    assert "LIMIT: ${{ inputs.limit || 60 }}" in body  # ADR 0064: 20 before the time budget
 
 
 def test_the_live_jobs_never_overlap() -> None:

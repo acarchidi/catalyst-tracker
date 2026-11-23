@@ -17,7 +17,7 @@ name: Extract catalysts (live)
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
 # After an extraction, plain code turns the run's summary and today's spend into alert issues
 # for the owner (ADR 0023); a separate job, the only one that may write issues, posts them.
-# A weekday schedule (ADR 0051) reads up to 20 new releases after each day's collection, inside
+# A weekday schedule (ADR 0051) reads up to 60 new releases (ADR 0064) after each day's collection, inside
 # the same daily caps. Scheduled runs have no inputs, so each input falls back to its default.
 
 on:
@@ -62,6 +62,7 @@ jobs:
     # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
     # the long step has its own, lower limit: a step that times out fails, and the alert says so.
     # Step limits add up to 10 + 45 + 5 = 60, under the job's 70 with setup.
+    # Inside its 45 minutes, the extraction stops starting new work after 35 (its time budget, ADR 0064).
     timeout-minutes: 70
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -92,7 +93,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
           CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
-          LIMIT: ${{ inputs.limit || 20 }}
+          LIMIT: ${{ inputs.limit || 60 }}
           PUBLIC_KEY: ${{ inputs.public_key }}
         run: |
           set +e
