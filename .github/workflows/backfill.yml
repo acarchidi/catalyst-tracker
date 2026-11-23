@@ -1,0 +1,171 @@
+name: Backfill press releases (live)
+
+# Reads covered companies' older press releases (8-K Exhibit 99.1 filed from 2025-01-01) with
+# the owner's promotional API credit, until 2026-12-08 (ADR 0065). Each run:
+# - collects the releases not stored yet (free: no model call; SEC EDGAR at 8 requests a second
+#   with the SEC_CONTACT_EMAIL User-Agent, inside the collector). Filings of the last 10 days are
+#   left to the weekday collection. Safe to re-run and to stop: nothing is stored twice, and a
+#   run that reaches its time limit leaves the remaining companies to the next run;
+# - asks `catalyst backfill-status` whether the model reads may run: not after 2026-12-08, not
+#   when nothing is left to read, and not when another whole day of spending could take every
+#   model call since 2026-11-24 past the $96 credit;
+# - if they may, reads the waiting releases newest first through the same chain as the nightly
+#   job (extraction, matching, checks, second reading, publish gate), until a role's daily cap
+#   in config/models.toml or the time limit stops it. A role at its cap stops; it never switches
+#   to another model. Stopping there is this run's normal end, not a failure.
+# After each run, plain code turns its summary and today's spend into alert issues for the owner
+# (ADR 0023); a separate job, the only one that may write issues, posts them.
+# Started by hand from the Actions tab, or once a day by the schedule below. Scheduled runs have
+# no inputs, so each input falls back to its default.
+
+on:
+  schedule:
+    # 05:23 UTC is 00:23 in New York (winter time): the run starts and ends inside one New York
+    # day, so it uses only that day's caps. November and December only; the code itself does
+    # nothing after 2026-12-08.
+    - cron: "23 5 * 11,12 *"
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Most press releases to read in this run (a daily cap usually stops it first)"
+        type: number
+        required: true
+        default: 500
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-database
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Backfill press releases
+    runs-on: ubuntu-latest
+    # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
+    # each step has its own, lower limit: 10 + 70 + 5 + 240 + 5 = 330, under the job's 345 with
+    # setup, and under GitHub's 360. The collection starts no new company after 60 minutes. In the
+    # reading step only the first reading has a time limit (120 minutes): the second reading, the
+    # publish decisions, the publish gate and the indication readers run after it with none, and
+    # the remaining 120 minutes are left for them (the second reading is about half the first).
+    timeout-minutes: 345
+    outputs:
+      alerts: ${{ steps.alerts.outputs.plan }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Bring the live database up to date
+        id: migrate
+        timeout-minutes: 10
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: uv run alembic upgrade head
+
+      # Free: no model call.
+      - name: Collect older press releases
+        id: collect
+        timeout-minutes: 70
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
+        run: |
+          set +e
+          uv run catalyst backfill-collect --companies config/coverage_companies.toml --max-minutes 60 \
+            --snapshot-store supabase > "$RUNNER_TEMP/collect.json"
+          status=$?
+          { echo "## Collection"; echo '```json'; cat "$RUNNER_TEMP/collect.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # Free: no model call. Runs even when the collection had errors: what is stored can be read.
+      - name: Decide whether to read
+        id: status
+        if: ${{ !cancelled() && steps.migrate.outcome == 'success' }}
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+        run: |
+          set -euo pipefail
+          uv run catalyst backfill-status > "$RUNNER_TEMP/status.json"
+          { echo "## Status"; echo '```json'; cat "$RUNNER_TEMP/status.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "active=$(jq -r '.active' "$RUNNER_TEMP/status.json")" >> "$GITHUB_OUTPUT"
+
+      - name: Read the waiting press releases, newest first
+        id: extract
+        if: ${{ !cancelled() && steps.status.outputs.active == 'true' }}
+        timeout-minutes: 240
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          CATALYST_ANTHROPIC_API_KEY: ${{ secrets.CATALYST_ANTHROPIC_API_KEY }}
+          LIMIT: ${{ inputs.limit || 500 }}
+        run: |
+          set +e
+          # The full results (unchecked proposals with their quotes) are not printed: the log is public.
+          uv run catalyst extract-catalysts --since 2025-01-01 --limit "$LIMIT" --max-minutes 120 \
+            --stop-is-expected --snapshot-store supabase > "$RUNNER_TEMP/extract.json"
+          status=$?
+          { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/extract.json"; echo '```'; } \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+
+      # Free: no model call. Runs even when a step failed, so the failure is reported.
+      - name: Build alerts from this run
+        id: alerts
+        if: ${{ !cancelled() }}
+        timeout-minutes: 5
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          MIGRATE: ${{ steps.migrate.outcome }}
+          COLLECT: ${{ steps.collect.outcome }}
+          STATUS: ${{ steps.status.outcome }}
+          EXTRACT: ${{ steps.extract.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -o pipefail
+          { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
+            --run "backfill-collect:$COLLECT:$RUNNER_TEMP/collect.json" \
+            --run "backfill-status:$STATUS" \
+            --run "backfill-extract:$EXTRACT:$RUNNER_TEMP/extract.json" \
+            --spend --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          delimiter="plan_$(openssl rand -hex 16)"
+          { echo "plan<<$delimiter"; cat "$RUNNER_TEMP/alerts.json"; echo "$delimiter"; } >> "$GITHUB_OUTPUT"
+
+  post-alerts:
+    name: Post alerts
+    needs: backfill
+    if: ${{ !cancelled() && needs.backfill.outputs.alerts != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Install locked dependencies
+        run: uv sync --locked
+      - name: Open, update, or close alert issues
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PLAN: ${{ needs.backfill.outputs.alerts }}
+        run: |
+          printf '%s\n' "$PLAN" > "$RUNNER_TEMP/alerts.json"
+          uv run catalyst post-issues --from "$RUNNER_TEMP/alerts.json"
