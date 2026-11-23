@@ -53,6 +53,8 @@ from catalyst.schemas.identifiers import (
 
 Name = Annotated[str, Field(min_length=1, max_length=300)]
 ShortText = Annotated[str, Field(min_length=1, max_length=100)]
+CodeVersion = Annotated[str, Field(pattern=r"^[0-9a-f]{16}$", max_length=16)]
+Sha256Hex = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$", max_length=64)]
 MAX_QUOTE_CHARS = 1000
 
 
@@ -469,6 +471,20 @@ class ClaimCheck(Entity):
     reason: Name | None = Field(default=None, description="Why it failed or did not apply, in plain words.")
     checked_at: AwareDatetime = Field(
         description="When the check first found its current outcome; a re-run with the same result keeps it."
+    )
+    rule_version: CodeVersion | None = Field(
+        default=None,
+        description=(
+            "Version of the check's code that found the outcome (ADR 0064); new code checks the claim again. "
+            "Empty on rows from before versions were kept."
+        ),
+    )
+    input_digest: Sha256Hex | None = Field(
+        default=None,
+        description=(
+            "SHA-256 of everything else the check read for this claim (ADR 0064); a run skips the claim only "
+            "while this and the code version are unchanged. Empty when the claim must be checked every run."
+        ),
     )
 
 

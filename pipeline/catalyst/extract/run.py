@@ -15,7 +15,8 @@ higher limit reads them; each is counted only when first found with that reason 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Sequence
+import time
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from typing import Any
@@ -78,6 +79,7 @@ class ExtractionReport:
     documents: list[DocumentResult] = field(default_factory=list[DocumentResult])
     skipped: int = 0
     stopped: str | None = None
+    stopped_for_time: bool = False  # the run's time ran out; the next run reads the rest (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
         """Return the counts the owner reads in the job summary."""
@@ -95,7 +97,7 @@ class ExtractionReport:
             "catalysts_passing_every_check": sum(not c["problems"] for c in catalysts),
             "claims_stored": sum(d.claims_stored for d in self.documents),
             "stopped_early": self.stopped,
-        }
+        } | ({"stopped_for_time": True} if self.stopped_for_time else {})
 
 
 def _utc_now() -> datetime:
@@ -264,6 +266,17 @@ class _Skip:
         return new
 
 
+def _in_time(
+    rows: Sequence[Any], deadline: float | None, clock: Callable[[], float], report: ExtractionReport
+) -> Iterator[Any]:
+    """Yield the rows until `deadline` passes, then mark the report as stopped for time."""
+    for row in rows:
+        if deadline is not None and clock() > deadline:
+            report.stopped_for_time = True
+            return
+        yield row
+
+
 def extract_documents(
     session_factory: sessionmaker[Session],
     store: SnapshotStore,
@@ -273,12 +286,18 @@ def extract_documents(
     since: date | None = None,
     document_types: Sequence[str] = PRESS_RELEASE_TYPES,
     now: Callable[[], datetime] = _utc_now,
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> ExtractionReport:
-    """Extract catalysts from up to `limit` stored documents, newest first, and store the claims."""
+    """Extract catalysts from up to `limit` stored documents, newest first, and store the claims.
+
+    Past `deadline` (a `clock` reading) no further document is started; the documents left are
+    the next run's, since a document read is never read again (ADR 0064).
+    """
     with session_factory() as session:
         rows, skipped = _candidates(session, document_types, since, limit)
     report = ExtractionReport(skipped=skipped)
-    for row in rows:
+    for row in _in_time(rows, deadline, clock, report):
         published = row.published_at.astimezone(NEW_YORK).date()
         result = DocumentResult(row.source_key, row.url, row.company, published)
         report.documents.append(result)

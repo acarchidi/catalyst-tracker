@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections import Counter
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -42,12 +43,19 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
-from catalyst.extract.text import document_text
+from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.logs import log_event
 from catalyst.schemas import CatalystType, Claim, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
+from catalyst.verify.incremental import (
+    Found,
+    incremental_counts,
+    input_digest,
+    load_stamps,
+    unchanged,
+    write_checks,
+)
 from catalyst.verify.rules import CheckResult, Outcome
-from catalyst.verify.run import store_check
 
 CHECK = "type_named_near_quote"
 # How far before a quote that names no kind of event its type's words may be. The gold set's one
@@ -291,6 +299,8 @@ class TypeReport:
     documents_read: int = 0
     documents_unreadable: int = 0
     outcomes: dict[str, int] = field(default_factory=dict[str, int])
+    claims_unchanged: int = 0  # skipped: same code, same inputs as their stored row (ADR 0064)
+    stopped_for_time: bool = False  # the run's time ran out; the next run checks the rest
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON."""
@@ -299,7 +309,7 @@ class TypeReport:
             "documents_read": self.documents_read,
             "documents_unreadable": self.documents_unreadable,
             "outcomes": self.outcomes,
-        }
+        } | incremental_counts(self.claims_unchanged, self.stopped_for_time)
 
 
 def _read(
@@ -320,17 +330,24 @@ def _kind(value: object) -> object:
 
 
 def check_type_named(
-    session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    now: Callable[[], datetime],
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> TypeReport:
-    """Store `type_named_near_quote` for every extractor claim; safe to re-run.
+    """Store `type_named_near_quote` for every new or changed extractor claim; safe to re-run.
 
-    A document is read once per run, and only when one of its quotes names no kind of event.
+    A document is read at most once per run, only when one of its quotes names no kind of event,
+    and not at all while none of those claims changed (ADR 0064). Past `deadline` (a `clock`
+    reading) no further claim is checked: the next run checks the rest.
     """
     claim, document = TABLES[Claim], TABLES[SourceDocument]
     report = TypeReport()
     outcomes: Counter[str] = Counter()
     at = now()
     with session_factory.begin() as session:
+        stamps = load_stamps(session, [CHECK])
         query = (
             select(
                 claim.c.id,
@@ -340,6 +357,7 @@ def check_type_named(
                 claim.c.quote_start,
                 claim.c.quote_end,
                 document.c.snapshot_key,
+                document.c.sha256,
                 document.c.content_type,
             )
             .join(document, document.c.id == claim.c.source_document_id)
@@ -347,19 +365,33 @@ def check_type_named(
             .order_by(claim.c.extracted_at, claim.c.id)
         )
         texts: dict[Any, str | CheckResult] = {}
+        found: list[Found] = []
         for row in session.execute(query).all():
+            kind = _kind(row.value)
+            span = (row.quote, row.quote_start, row.quote_end)
+            digest: str | None = input_digest(row.sha256, row.content_type, TEXT_VERSION, span, kind)
+            stamp = stamps.get((row.id, CHECK))
+            if stamp is not None and unchanged(stamp, CHECK, digest):
+                report.claims += 1
+                report.claims_unchanged += 1
+                outcomes[f"{CHECK}:{stamp.outcome}"] += 1
+                continue
+            if deadline is not None and clock() > deadline:
+                report.stopped_for_time = True
+                break
             text: str | CheckResult | None = None
             if needs_copy(row.quote):
                 if row.source_document_id not in texts:
                     texts[row.source_document_id] = _read(store, row.snapshot_key, row.content_type, report)
                 text = texts[row.source_document_id]
             if isinstance(text, CheckResult):
-                result = text
+                result, digest = text, None  # the copy could not be read: try it again next run
             else:
-                result = type_named(text, row.quote, row.quote_start, row.quote_end, _kind(row.value))
-            store_check(session, row.id, result, at)
+                result = type_named(text, row.quote, row.quote_start, row.quote_end, kind)
+            found.append(Found(row.id, result, digest))
             report.claims += 1
             outcomes[f"{result.check}:{result.outcome.value}"] += 1
+        write_checks(session, found, at, stamps)
     report.outcomes = dict(outcomes)
     log_event(_log, "type_named_checked", **report.summary())
     return report

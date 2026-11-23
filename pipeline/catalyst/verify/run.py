@@ -3,7 +3,7 @@
 Plain code over stored rows: the claim, its source document's publication date, the entity
 resolver's matches, and the registry phases, numbers, and study names of matched trials. The
 independent-source check also reads every other document's extractor claims for the same company.
-Safe to re-run; each claim keeps one row per check, updated in place.
+Safe to re-run; each claim keeps one row per check, updated in place when it changes (ADR 0064).
 """
 
 from __future__ import annotations
@@ -16,8 +16,7 @@ from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import case, or_, select
-from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
@@ -26,7 +25,6 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.schemas import (
     Claim,
-    ClaimCheck,
     CompanyDocument,
     EntityMatch,
     MatchedEntity,
@@ -35,11 +33,11 @@ from catalyst.schemas import (
     Trial,
     TrialPhase,
 )
+from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.independent import Statement, independent_sources
 from catalyst.verify.rules import CheckResult, ClaimFacts, Match, Outcome, TrialNames, rule_checks
 
 _log = logging.getLogger(__name__)
-_CHECK = TABLES[ClaimCheck]
 
 
 @dataclass
@@ -49,6 +47,7 @@ class CheckReport:
     claims: int = 0
     claims_passing: int = 0
     outcomes: Counter[str] = field(default_factory=Counter[str])
+    rows_written: int = 0  # outcomes that changed since the last run (ADR 0064)
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON."""
@@ -186,26 +185,9 @@ def store_check(session: Session, claim_id: UUID, result: CheckResult, at: datet
 
     `checked_at` moves only when the outcome or its reason changes, so it says since when the
     claim has had this outcome: a review approval excuses a failure only when it is no newer than
-    the approval (ADR 0042).
+    the approval (ADR 0042). The row records the code version that found it (ADR 0064).
     """
-    row = ClaimCheck(
-        claim_id=claim_id,
-        check_name=result.check,
-        outcome=result.outcome,
-        reason=result.reason[:300] if result.reason else None,
-        checked_at=at,
-    ).model_dump()
-    statement = insert(_CHECK).values(**row)
-    changed = or_(
-        _CHECK.c.outcome.is_distinct_from(statement.excluded.outcome),
-        _CHECK.c.reason.is_distinct_from(statement.excluded.reason),
-    )
-    changes: dict[str, Any] = {
-        "outcome": statement.excluded.outcome,
-        "reason": statement.excluded.reason,
-        "checked_at": case((changed, statement.excluded.checked_at), else_=_CHECK.c.checked_at),
-    }
-    session.execute(statement.on_conflict_do_update(index_elements=["claim_id", "check_name"], set_=changes))
+    write_checks(session, [Found(claim_id, result)], at, None)
 
 
 def check_results(
@@ -225,7 +207,8 @@ def check_results(
 def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetime]) -> CheckReport:
     """Run every rule check and the independent-source check on every extractor claim.
 
-    One outcome is stored per claim and check.
+    One outcome is stored per claim and check. Every claim is checked, since the checks read
+    today's date and other claims, but only rows that changed are written (ADR 0064).
 
     Dates are New York dates, as in the extractor: a 9pm run on October 17 checks against October 17.
     """
@@ -233,12 +216,15 @@ def run_checks(session_factory: sessionmaker[Session], now: Callable[[], datetim
     at = now()
     today = at.astimezone(NEW_YORK).date()
     with session_factory.begin() as session:
+        found: list[Found] = []
         for claim_id, results in check_results(session, today, load_matches(session)).items():
             report.claims += 1
             for result in results:
-                store_check(session, claim_id, result, at)
+                found.append(Found(claim_id, result))
                 report.outcomes[f"{result.check}:{result.outcome.value}"] += 1
             if all(result.outcome is not Outcome.FAIL for result in results):
                 report.claims_passing += 1
-    log_event(_log, "claims_checked", **report.summary())
+        names = {item.result.check for item in found}
+        report.rows_written = write_checks(session, found, at, load_stamps(session, names))
+    log_event(_log, "claims_checked", **report.summary(), rows_written=report.rows_written)
     return report

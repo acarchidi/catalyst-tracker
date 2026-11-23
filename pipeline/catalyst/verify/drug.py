@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
@@ -40,14 +41,21 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE
-from catalyst.extract.text import document_text
+from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.logs import log_event
 from catalyst.references import drug_refs
 from catalyst.resolve import DrugRef, name_key
 from catalyst.schemas import Claim, CompanyDocument, EntityMatch, MatchedEntity, MatchStatus, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
+from catalyst.verify.incremental import (
+    Found,
+    incremental_counts,
+    input_digest,
+    load_stamps,
+    unchanged,
+    write_checks,
+)
 from catalyst.verify.rules import CheckResult, Outcome
-from catalyst.verify.run import store_check
 
 CHECK = "drug_named_near_quote"
 # How far before the quote the drug may be named. The gold set's longest gap is 655 characters
@@ -253,6 +261,8 @@ class DrugReport:
     documents_read: int = 0
     documents_unreadable: int = 0
     outcomes: dict[str, int] = field(default_factory=dict[str, int])
+    claims_unchanged: int = 0  # skipped: same code, same inputs as their stored row (ADR 0064)
+    stopped_for_time: bool = False  # the run's time ran out; the next run checks the rest
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON."""
@@ -261,7 +271,7 @@ class DrugReport:
             "documents_read": self.documents_read,
             "documents_unreadable": self.documents_unreadable,
             "outcomes": self.outcomes,
-        }
+        } | incremental_counts(self.claims_unchanged, self.stopped_for_time)
 
 
 def _read(
@@ -300,6 +310,13 @@ class DrugFacts:
     def names(self, claim_id: UUID, value: object) -> DrugNames | None:
         """Return the claim's drug and every name its matched drug goes by; None when it names none."""
         return drug_names(_drug(value), self.matched.get(claim_id, ()))
+
+    def inputs(self, claim_id: UUID, document_id: UUID, value: object) -> tuple[object, ...]:
+        """Return everything `check` reads for one claim besides the copy and the quote (ADR 0064)."""
+        names = self.names(claim_id, value)
+        beside = [drug for other, drug in self.named.get(document_id, ()) if other != claim_id]
+        others = other_drugs(self.drugs, self.owners.get(document_id, frozenset()), names, beside)
+        return names, others, self.matched.get(claim_id, ())
 
     def check(
         self, claim_id: UUID, document_id: UUID, value: object, span: tuple[str, int, int], text: str
@@ -355,11 +372,17 @@ def load_drug_facts(session: Session) -> DrugFacts:
 
 
 def check_drug_named(
-    session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    now: Callable[[], datetime],
+    deadline: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> DrugReport:
-    """Store `drug_named_near_quote` for every extractor claim; safe to re-run.
+    """Store `drug_named_near_quote` for every new or changed extractor claim; safe to re-run.
 
-    Each document is read once per run, and only when one of its claims names a drug.
+    Each document is read at most once per run, only when one of its claims names a drug, and
+    not at all while none of those claims changed (ADR 0064). Past `deadline` (a `clock`
+    reading) no further claim is checked: the next run checks the rest.
     """
     claim, document = TABLES[Claim], TABLES[SourceDocument]
     report = DrugReport()
@@ -367,6 +390,7 @@ def check_drug_named(
     at = now()
     with session_factory.begin() as session:
         facts = load_drug_facts(session)
+        stamps = load_stamps(session, [CHECK])
         query = (
             select(
                 claim.c.id,
@@ -376,6 +400,7 @@ def check_drug_named(
                 claim.c.quote_start,
                 claim.c.quote_end,
                 document.c.snapshot_key,
+                document.c.sha256,
                 document.c.content_type,
             )
             .join(document, document.c.id == claim.c.source_document_id)
@@ -383,22 +408,36 @@ def check_drug_named(
             .order_by(claim.c.extracted_at, claim.c.id)
         )
         texts: dict[UUID, str | CheckResult] = {}
+        found: list[Found] = []
         for row in session.execute(query).all():
             span = (row.quote, row.quote_start, row.quote_end)
+            inputs = facts.inputs(row.id, row.source_document_id, row.value)
+            digest: str | None = input_digest(
+                row.sha256, row.content_type, TEXT_VERSION, LOOK_BACK, NEAR, span, inputs
+            )
+            stamp = stamps.get((row.id, CHECK))
+            if stamp is not None and unchanged(stamp, CHECK, digest):
+                report.claims += 1
+                report.claims_unchanged += 1
+                outcomes[f"{CHECK}:{stamp.outcome}"] += 1
+                continue
+            if deadline is not None and clock() > deadline:
+                report.stopped_for_time = True
+                break
             if facts.names(row.id, row.value) is None:
                 result = drug_named("", *span, None, ())
             else:
                 if row.source_document_id not in texts:
                     texts[row.source_document_id] = _read(store, row.snapshot_key, row.content_type, report)
                 text = texts[row.source_document_id]
-                result = (
-                    text
-                    if isinstance(text, CheckResult)
-                    else facts.check(row.id, row.source_document_id, row.value, span, text)
-                )
-            store_check(session, row.id, result, at)
+                if isinstance(text, CheckResult):
+                    result, digest = text, None  # the copy could not be read: try it again next run
+                else:
+                    result = facts.check(row.id, row.source_document_id, row.value, span, text)
+            found.append(Found(row.id, result, digest))
             report.claims += 1
             outcomes[f"{result.check}:{result.outcome.value}"] += 1
+        write_checks(session, found, at, stamps)
     report.outcomes = dict(outcomes)
     log_event(_log, "drug_named_checked", **report.summary())
     return report

@@ -20,6 +20,7 @@ import logging
 import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
+from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import Any, cast
@@ -151,12 +152,18 @@ class _CompanyNamed:
         withheld = TABLES[WithheldDrugName]
         self._withheld = frozenset(name_key(row.name) for row in session.execute(select(withheld.c.name)))
         self._licensed = {name_key(n): r.sponsor for r in cber_records() for n in r.other_names}
+        # Where each claim's document is stored, read in one query rather than one a document (ADR 0064).
+        document = TABLES[SourceDocument]
+        query = select(document.c.id, document.c.snapshot_key, document.c.content_type)
+        wanted = list(self._beside)
+        self._copies: dict[UUID, Any] = {}
+        for start in range(0, len(wanted), 1000):
+            chunk = query.where(document.c.id.in_(wanted[start : start + 1000]))
+            self._copies |= {row.id: row for row in session.execute(chunk)}
 
     def _text(self, document_id: UUID) -> str | None:
         if document_id not in self._texts:
-            document = TABLES[SourceDocument]
-            query = select(document.c.snapshot_key, document.c.content_type)
-            row = self._session.execute(query.where(document.c.id == document_id)).one()
+            row = self._copies[document_id]
             try:
                 self._texts[document_id] = document_text(self._store.get(row.snapshot_key), row.content_type)
             except (SnapshotStoreError, httpx.HTTPError, OSError, ValueError) as error:
@@ -215,6 +222,7 @@ class _CompanyNamed:
 
         Each name is marked as found in a claim's document, with that claim as its record.
         """
+        _no_write_while_dry()
         if drug_id is None:
             drug = Drug(company_id=company_id, preferred_name=new[0].name)
             self._session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
@@ -265,6 +273,7 @@ class _CompanyNamed:
         or target linked to it, so no published row changes. Its names and its claims' matches
         move to the record that stays.
         """
+        _no_write_while_dry()
         spare = sorted(drug for drug in (first, second) if self._spare(drug))
         if not spare:
             return None
@@ -314,6 +323,7 @@ def _is_new_code_name(name: str, quote: str) -> bool:
 
 
 def _create_drug(session: Session, references: ReferenceData, name: str, company_id: UUID) -> UUID:
+    _no_write_while_dry()
     drug = Drug(company_id=company_id, preferred_name=name.strip())
     session.execute(insert(TABLES[Drug]).values(**drug.model_dump()))
     code = DrugName(drug_id=drug.id, name=drug.preferred_name, kind=DrugNameKind.CODE)
@@ -510,6 +520,83 @@ def _resolve_one(
     session.execute(stale)
 
 
+class _WouldWrite(Exception):
+    """Raised, while a claim is matched without writing, where matching would first write a record."""
+
+
+_DRY: ContextVar[bool] = ContextVar("resolve_without_writing", default=False)
+_Stored = dict[tuple[str, str], tuple[str, UUID | None, list[str], str | None]]
+
+
+def _no_write_while_dry() -> None:
+    if _DRY.get():
+        raise _WouldWrite
+
+
+def _stored_matches(session: Session) -> dict[UUID, _Stored]:
+    """Every claim's stored matches: status, record, candidates, and rule, by entity and name."""
+    stored: dict[UUID, _Stored] = {}
+    query = select(
+        _MATCH.c.claim_id,
+        _MATCH.c.entity_type,
+        _MATCH.c.name,
+        _MATCH.c.status,
+        _MATCH.c.matched_id,
+        _MATCH.c.candidates,
+        _MATCH.c.matched_by,
+    )
+    for row in session.execute(query):
+        found = (row.status, row.matched_id, list(row.candidates or []), row.matched_by)
+        stored.setdefault(row.claim_id, {})[(row.entity_type, row.name)] = found
+    return stored
+
+
+def _same(stored: tuple[str, UUID | None, list[str], str | None], result: Resolution) -> bool:
+    """Say whether `_store` would leave the stored row as it is, but for its time."""
+    status, matched_id, candidates, matched_by = stored
+    new_by = result.matched_by.value if result.matched_by else None
+    kept_by = matched_by if matched_by in _CREATED and matched_id == result.id else new_by
+    return (status, matched_id, candidates, matched_by) == (
+        result.status.value,
+        result.id,
+        [str(c) for c in result.candidates],
+        kept_by,
+    )
+
+
+def _unchanged(
+    session: Session,
+    references: ReferenceData,
+    claim: _Claim,
+    links: list[tuple[UUID, str]],
+    named: _CompanyNamed | None,
+    stored: _Stored,
+) -> list[tuple[MatchedEntity, Resolution]] | None:
+    """Match one claim without writing; return its matches if they equal the stored ones, else None.
+
+    None also when matching would create or change a drug record: the claim is then matched
+    again the usual way, inside its own savepoint (ADR 0064).
+    """
+    token = _DRY.set(True)
+    try:
+        produced = list(_matches(session, references, claim, links, MatchReport(), named))
+    except (_WouldWrite, ValidationError):
+        return None
+    finally:
+        _DRY.reset(token)
+    latest = {(entity.value, name[:_NAME_CHARS]): result for entity, name, result in produced}
+    if latest.keys() != stored.keys() or not all(_same(stored[k], r) for k, r in latest.items()):
+        return None
+    return [(entity, result) for entity, _, result in produced]
+
+
+def _made_again(session: Session, claims: Sequence[UUID], at: datetime) -> None:
+    """Mark the unchanged matches of `claims` as made at `at`, a thousand claims to a statement."""
+    for start in range(0, len(claims), 1000):
+        chunk = claims[start : start + 1000]
+        session.execute(update(_MATCH).where(_MATCH.c.claim_id.in_(chunk)).values(resolved_at=at))
+
+
 def resolve_claims(
     session_factory: sessionmaker[Session], now: Callable[[], datetime], store: SnapshotStore | None = None
 ) -> MatchReport:
@@ -518,6 +605,8 @@ def resolve_claims(
     Every run matches every claim again, held ones too. With a `store`, a name no record has may
     become a drug named by the company (ADR 0060), which needs the stored copy of its document.
     A claim that fails (for example a malformed name) is logged and skipped; the rest still match.
+    A claim whose matches come out as stored is not written again; one statement marks all of
+    them as made at this run's time (ADR 0064).
     """
     report = MatchReport()
     with session_factory.begin() as session:
@@ -526,13 +615,19 @@ def resolve_claims(
         at = now()
         claims = _claims(session)
         named = _CompanyNamed(session, store, references, claims) if store is not None else None
+        stored = _stored_matches(session)
+        again: list[UUID] = []
         for claim in claims:
             report.claims += 1
+            mine = links.get(claim.source_document_id, [])
+            same = _unchanged(session, references, claim, mine, named, stored.get(claim.id, {}))
+            if same is not None:
+                again.append(claim.id)
+                report.statuses.update(f"{entity.value}:{result.status.value}" for entity, result in same)
+                continue
             try:
                 with session.begin_nested():
-                    _resolve_one(
-                        session, references, claim, links.get(claim.source_document_id, []), at, report, named
-                    )
+                    _resolve_one(session, references, claim, mine, at, report, named)
             except (ValidationError, SQLAlchemyError) as error:
                 report.failed += 1
                 log_alert(
@@ -541,5 +636,6 @@ def resolve_claims(
                     claim=str(claim.id),
                     error=f"{type(error).__name__}"[:100],
                 )
+        _made_again(session, again, at)
     log_event(_log, "claims_resolved", **report.summary())
     return report

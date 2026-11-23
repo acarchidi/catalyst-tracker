@@ -497,6 +497,28 @@ def test_a_cloaked_release_is_read_but_held_for_a_person(
     assert any("hides words" in problem for problem in catalyst["problems"])
 
 
+def test_past_its_deadline_the_job_starts_no_document_and_the_next_run_reads_it(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    """ADR 0064: a run out of time stops cleanly; nothing is lost, and the next run carries on."""
+    store = LocalSnapshotStore(tmp_path)
+    _document(store, session_factory, "a", "8-K EX-99.1")
+    fake = _Fake()
+    client = ModelClient(_config(), {"fake": fake}, InMemoryLedger(), now=lambda: NOW)
+    late = extract_documents(
+        session_factory, store, client, limit=10, now=lambda: NOW, deadline=0.0, clock=lambda: 1.0
+    )
+    assert fake.calls == []
+    assert late.summary()["stopped_for_time"] is True
+    assert late.summary()["stopped_early"] is None  # not a failure: no alert, no failed run
+    again = extract_documents(
+        session_factory, store, client, limit=10, now=lambda: NOW, deadline=2.0, clock=lambda: 1.0
+    )
+    assert len(fake.calls) == 1
+    assert "stopped_for_time" not in again.summary()
+    assert _claims(session_factory) == 1
+
+
 def test_hidden_letters_copied_into_svg_style_still_hold_the_claim(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:

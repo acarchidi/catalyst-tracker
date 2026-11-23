@@ -28,12 +28,14 @@ from catalyst.api.mcp_server import build_server
 from catalyst.api.read import published, read_session
 from catalyst.api.views import CatalystDetail
 from catalyst.audit.sample import SAMPLE_SIZE, run_sample_check, week_of
+from catalyst.budget import TimeBudget
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import ON_REQUEST, SOURCES, build_clients, collect_all, load_companies
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.collectors.sources.mesh import stored_index
+from catalyst.copy_cache import CachedStore, claim_copy_keys
 from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
 from catalyst.export import build_export, write_export
@@ -186,6 +188,15 @@ def _parser() -> argparse.ArgumentParser:
         "--since", type=date.fromisoformat, default=None, help="Earliest publication date, YYYY-MM-DD."
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
+    extract.add_argument(
+        "--time-budget-minutes",
+        type=_positive_minutes,
+        default=TIME_BUDGET_MINUTES,
+        help=(
+            f"Stop starting new work after this many minutes, so the run ends cleanly and the next "
+            f"one carries on (default {TIME_BUDGET_MINUTES:g}; ADR 0064)."
+        ),
+    )
     _store_arguments(extract)
     verify_claims = commands.add_parser(
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
@@ -553,10 +564,25 @@ def _gate1_checks(args: argparse.Namespace) -> int:
         engine.dispose()
 
 
+# Shares of a run's time budget (ADR 0064). Reading new releases stops first, so the checks and
+# the publish gate always have time; the second reading stops next; the checks that read stored
+# copies stop at 90%, and then nothing is decided that run; past the whole budget nothing is
+# decided or published; past 85% no indication is asked for. Every step is safe to stop and run
+# again, so the next run carries on.
+TIME_BUDGET_MINUTES = 35.0  # 10 minutes inside the workflow step's 45, for a call already under way
+EXTRACT_SHARE = 0.45
+SECOND_SHARE = 0.7
+CHECKS_SHARE = 0.9
+INDICATION_SHARE = 0.85
+OUT_OF_TIME = "the run's time ran out first; the next run goes on"
+
+
 def _extract(args: argparse.Namespace) -> int:
+    budget = TimeBudget(args.time_budget_minutes)
     try:
         adapter = anthropic_adapter.from_settings()
-        store = _open_store(args, create_bucket=False)
+        # Every step reads the same stored copies: each is read once a run (ADR 0064).
+        store = CachedStore(_open_store(args, create_bucket=False))
     except settings.MissingSettingError as error:
         print(error, file=sys.stderr)
         return 2
@@ -564,46 +590,41 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         config = load_config()
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
-        report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
+        report = extract_documents(
+            sessionmaker(engine),
+            store,
+            client,
+            limit=args.limit,
+            since=args.since,
+            deadline=budget.by(EXTRACT_SHARE),
+        )
         # The extraction stands if a later step fails; each re-runs next time.
-        checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
-        try:
-            # With the stored copies, so a name its own document writes can be matched (ADR 0060).
-            matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now, store).summary()
-        except SQLAlchemyError as error:
-            matches = {"error": f"{type(error).__name__}: matching did not finish"}
-        else:
-            try:
-                checks = run_checks(sessionmaker(engine), _utc_now).summary()
-            except SQLAlchemyError as error:
-                checks = {"error": f"{type(error).__name__}: checks did not finish"}
-            else:
-                # Its own step, so a problem in it keeps the rule checks' summary (Opus review of PR #49).
-                try:
-                    checks["advisory"] = check_advisory_meetings(
-                        sessionmaker(engine), store, _utc_now
-                    ).summary()
-                except (SQLAlchemyError, ValueError, OSError) as error:
-                    checks["advisory"] = {
-                        "error": f"{type(error).__name__}: the advisory check did not finish"
-                    }
-                try:
-                    checks["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
-                except (SQLAlchemyError, ValueError, OSError) as error:
-                    checks["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
-                checks["drug"] = _drug_check(sessionmaker(engine), store)
-                checks["type"] = _type_check(sessionmaker(engine), store)
-                checks["safe_to_write"] = _safe_to_write(sessionmaker(engine))
+        _prefetch(sessionmaker(engine), store)
+        matches, checks = _match_and_check(sessionmaker(engine), store, budget.by(CHECKS_SHARE))
         # Last, so a problem in it never holds up matching or the rule checks (review of PR #34).
         try:
             second: dict[str, Any] = run_second_reading(
-                sessionmaker(engine), store, client, config, limit=args.limit, now=_utc_now
+                sessionmaker(engine),
+                store,
+                client,
+                config,
+                limit=args.limit,
+                now=_utc_now,
+                deadline=budget.by(SECOND_SHARE),
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
-        decisions = _decide_after(sessionmaker(engine), store, checks)
+        decisions = (
+            {"skipped": OUT_OF_TIME}
+            if budget.past()
+            else decide_after_checks(sessionmaker(engine), store, checks)
+        )
         published = _publish_after(sessionmaker(engine), store, decisions, config.roles[VERIFIER_ROLE].model)
-        indications = _indications_after(sessionmaker(engine), store, client, published, args.limit)
+        indications = (
+            {"skipped": OUT_OF_TIME}
+            if budget.past(INDICATION_SHARE)
+            else _indications_after(sessionmaker(engine), store, client, published, args.limit)
+        )
     finally:
         engine.dispose()
     if args.out is not None:
@@ -616,6 +637,7 @@ def _extract(args: argparse.Namespace) -> int:
         "decisions": decisions,
         "published": published,
         "indications": indications,
+        "minutes_used": round(budget.minutes_used(), 1),
     }
     print(json.dumps(summary, indent=2))
     second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
@@ -624,32 +646,73 @@ def _extract(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
-def _drug_check(session_factory: sessionmaker[Session], store: SnapshotStore) -> dict[str, Any]:
-    """Run the drug-named check as its own step, so a problem in it keeps every earlier summary."""
+def _prefetch(session_factory: sessionmaker[Session], store: CachedStore) -> None:
+    """Read every claim's stored copy, eight at a time, before the steps that read them (ADR 0064).
+
+    A copy that cannot be read here is read again by the step that needs it, which reports it.
+    """
     try:
-        return check_drug_named(session_factory, store, _utc_now).summary()
-    except (SQLAlchemyError, ValueError, OSError) as error:
-        return {"error": f"{type(error).__name__}: the drug check did not finish"}
+        with session_factory() as session:
+            keys = claim_copy_keys(session)
+    except SQLAlchemyError:
+        return  # matching reports the database problem itself
+    store.prefetch(keys)
 
 
-def _type_check(session_factory: sessionmaker[Session], store: SnapshotStore) -> dict[str, Any]:
-    """Run the type-named check as its own step, so a problem in it keeps every earlier summary."""
+def _match_and_check(
+    session_factory: sessionmaker[Session], store: SnapshotStore, deadline: float
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Match every claim's names, then run every check; return both summaries.
+
+    The checks that read stored copies stop past `deadline` and say so (ADR 0064).
+    """
+    checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
     try:
-        return check_type_named(session_factory, store, _utc_now).summary()
+        # With the stored copies, so a name its own document writes can be matched (ADR 0060).
+        matches: dict[str, Any] = resolve_claims(session_factory, _utc_now, store).summary()
+    except SQLAlchemyError as error:
+        return {"error": f"{type(error).__name__}: matching did not finish"}, checks
+    try:
+        checks = run_checks(session_factory, _utc_now).summary()
+    except SQLAlchemyError as error:
+        return matches, {"error": f"{type(error).__name__}: checks did not finish"}
+    # Each its own step, so a problem in one keeps the others' summaries (Opus review of PR #49).
+    try:
+        checks["advisory"] = check_advisory_meetings(session_factory, store, _utc_now).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
-        return {"error": f"{type(error).__name__}: the type check did not finish"}
+        checks["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
+    checks |= _copy_checks(session_factory, store, deadline)
+    checks["safe_to_write"] = _safe_to_write(session_factory)
+    return matches, checks
 
 
-def _decide_after(
+def _copy_checks(
+    session_factory: sessionmaker[Session], store: SnapshotStore, deadline: float | None
+) -> dict[str, Any]:
+    """Run the checks that read stored copies, each as its own step; each stops past `deadline`."""
+    found: dict[str, Any] = {}
+    steps = {"company": check_company_named, "drug": check_drug_named, "type": check_type_named}
+    for name, check in steps.items():
+        try:
+            found[name] = check(session_factory, store, _utc_now, deadline).summary()
+        except (SQLAlchemyError, ValueError, OSError) as error:
+            found[name] = {"error": f"{type(error).__name__}: the {name} check did not finish"}
+    return found
+
+
+def decide_after_checks(
     session_factory: sessionmaker[Session], store: SnapshotStore, checks: dict[str, Any]
 ) -> dict[str, Any]:
     """Decide every claim after every check; earlier steps stand if this fails.
 
-    Skipped when a check step failed, so no decision rests on outcomes this run did not renew.
+    Skipped when a check step failed or ran out of time, so no decision rests on outcomes this
+    run did not renew (ADR 0064).
     """
     steps = ("advisory", "company", "drug", "type", "safe_to_write")
     if "error" in checks or any("error" in checks.get(step, {}) for step in steps):
         return {"skipped": "the checks did not finish, so nothing was decided"}
+    if any(checks.get(step, {}).get("stopped_for_time") for step in steps):
+        return {"skipped": "a check ran out of time, so nothing was decided; the next run goes on"}
     try:
         return decide_claims(session_factory, store, _utc_now).summary()
     except (SQLAlchemyError, ValueError) as error:
@@ -774,12 +837,7 @@ def _verify_claims(args: argparse.Namespace) -> int:
             report["advisory"] = check_advisory_meetings(sessionmaker(engine), store, _utc_now).summary()
         except (SQLAlchemyError, ValueError, OSError) as error:
             report["advisory"] = {"error": f"{type(error).__name__}: the advisory check did not finish"}
-        try:
-            report["company"] = check_company_named(sessionmaker(engine), store, _utc_now).summary()
-        except (SQLAlchemyError, ValueError, OSError) as error:
-            report["company"] = {"error": f"{type(error).__name__}: the company check did not finish"}
-        report["drug"] = _drug_check(sessionmaker(engine), store)
-        report["type"] = _type_check(sessionmaker(engine), store)
+        report |= _copy_checks(sessionmaker(engine), store, None)
         report["safe_to_write"] = _safe_to_write(sessionmaker(engine))
     finally:
         engine.dispose()
@@ -1094,6 +1152,14 @@ def _evaluate_indication(args: argparse.Namespace) -> int:
     args.out.write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(record, indent=2, ensure_ascii=False))
     return 0
+
+
+def _positive_minutes(text: str) -> float:
+    """Parse a number of minutes that must be more than zero."""
+    minutes = float(text)
+    if not minutes > 0:
+        raise argparse.ArgumentTypeError(f"must be more than 0 minutes, not {text}")
+    return minutes
 
 
 def _at_least_one(text: str) -> int:
