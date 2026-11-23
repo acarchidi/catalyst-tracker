@@ -155,6 +155,12 @@ The owner asked for four monthly newsletters, each sold on its own or as an add-
   - facts only: no "bullish" labels or buy and sell language, and the not-financial-advice notice everywhere;
   - later, once outcomes exist, a descriptive base rate with its sample size;
   - foreign companies' directors and officers from March 18, 2026, when their Form 4 filing began (check the SEC's exemption order first)
+- [ ] Ownership changes around catalysts (owner request 2026-11-23; ADR 0056), extending the item above:
+  - every Form 4 code shown, with grants, awards, exercises, tax withholding and gifts in their own "Grants, exercises and other" group;
+  - a 30-day look-ahead after each catalyst's window, beside the 90-day lookback;
+  - new or changed large stakes from Schedule 13D and 13G: holder, percent, shares, event date, form, filing link;
+  - fund holdings at quarter end from the SEC's Form 13F data sets, always dated by quarter end and never placed as a trade date (after the parts above);
+  - one summary line per catalyst by default, opening to the details; the newsletter carries the line only
 
 ## Phase 8 — Medical devices and medical robotics (owner request 2026-10-17; ADR 0027)
 
@@ -205,6 +211,7 @@ Newest first. Every ADR in `docs/adr` adds a line here.
 
 | Date | Decision |
 | --- | --- |
+| 2026-11-23 | ADR 0056 (owner request; amends ADR 0026): every Form 4 transaction shown, grants and awards in their own group; 30 days after each catalyst as well as 90 before; large stakes from Schedule 13D and 13G; quarter-end fund holdings from Form 13F, dated by quarter end; one summary line per catalyst, details on request |
 | 2026-11-16 | ADR 0055 (owner decisions, plus the agent's change to ADR 0045 decision 4: the catch-up review of main waits for the owner's yes): the first issue goes out without conference dates, development stage, pipeline pages and cohort size, which follow as each merges; each Monday a scheduled fresh session builds the free and paid pages from the sealed export per `docs/weekly-issue.md` and hands them to the owner privately; coding work runs in batches and model-using product jobs at most once a day; ADR 0045's interim merge rule ended when the review returned a verdict on 2026-11-16 |
 | 2026-11-12 | ADR 0053, decision 2: the writer's indication pass sets a catalyst's `indication_id` only from its latest `indication_attempt` when that try found one, after checking the claim is the catalyst's own, the second reader's pass is stored, and the quote still matches its stored copy; a change row cites the claim; the read API prints the sentence's words, not the MeSH name; the weekday extract run asks and writes right after publishing, inside the existing caps |
 | 2026-11-12 | ADR 0053, decision 2: the indication reading job (`catalyst indicate-catalysts`) asks both readers about published catalysts with one drug tested alone and no indication, only while the indication gate is clear; a found indication is a claim (field `indication:<catalyst id>`, quote its sentence) with the second reader's pass as a check; every try is kept in `indication_attempt` so none is paid for twice; it never writes a catalyst; plain code also refuses a disease written straight before another MeSH disease term |
