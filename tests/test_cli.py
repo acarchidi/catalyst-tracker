@@ -654,6 +654,7 @@ def test_verify_claims_prints_the_counts(
     assert json.loads(capsys.readouterr().out) == {
         "claims": 4,
         "claims_passing": 3,
+        "dates_reread": 0,  # stored date words read again by today's rules (ADR 0061)
         "outcomes": {},
         "advisory": {"claims": 1, "outcomes": {}},
         "company": {"claims": 2, "documents_read": 1, "documents_unreadable": 0, "outcomes": {}},

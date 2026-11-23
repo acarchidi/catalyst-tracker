@@ -286,7 +286,8 @@ def test_the_calendar_is_the_next_30_days_in_date_order_and_only_open_catalysts(
     first = _detail(start=ISSUE, name="First Day Bio")
     overlapping = _detail(start=date(2026, 7, 1), end=date(2026, 12, 31), raw="2H26", name="Half Year Bio")
     digest = build_digest([last_day, past_horizon, already_past, resolved, first, overlapping], ISSUE)
-    assert [c.id for c in digest.upcoming] == [overlapping.id, first.id, last_day.id]
+    # Due entries first, then open windows, each in date order (ADR 0063).
+    assert [c.id for c in digest.upcoming] == [first.id, last_day.id, overlapping.id]
     assert digest.calendar_to == ISSUE + timedelta(days=30)
     assert calendar_window(Access.FREE, ISSUE, None, None) == (
         ISSUE,
@@ -325,6 +326,11 @@ def test_a_long_calendar_is_cut_to_the_limit_and_the_rest_counted() -> None:
         "new": 0,
         "upcoming": 5,
         "upcoming_not_listed": 2,
+        "due": 5,
+        "open_windows": 0,
+        "later": 0,
+        "due_total": 7,
+        "open_windows_total": 0,
         "moved_outside_free_calendar": 0,
         "new_outside_free_calendar": 0,
     }
@@ -393,7 +399,7 @@ def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     assert text.count(NOTICE) == 1
     assert html.rstrip().endswith(f"<p><small>{NOTICE}</small></p>")
     assert text.index("Key: ") < text.index("Rescheduled Catalysts (1)") < text.index("New (1)")
-    assert "Upcoming Catalysts through 4 November 2026 (0)" in text
+    assert "Due by 4 November 2026 (0)" in text  # the calendar is split (ADR 0063)
     for name in ("Clinical data", "Conference presentation", "Regulatory", "Trial progress"):
         assert name in text
     assert "Example Bio, Inc. (EXB)" in text
@@ -414,11 +420,67 @@ def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     assert set(page.tags) <= ALLOWED_TAGS
 
 
-def test_the_paid_calendar_is_named_by_its_last_listed_day() -> None:
-    records = [_detail(start=date(2026, 11, 1), end=date(2027, 6, 30), raw="1H27")]
-    text = _text(render_html(build_digest(records, ISSUE, access=Access.PAID)))
-    assert "Upcoming Catalysts through 30 June 2027 (1)" in text
-    assert "Upcoming Catalysts (0)" in _text(render_html(build_digest([], ISSUE, access=Access.PAID)))
+def test_the_calendar_splits_into_due_open_windows_and_later() -> None:
+    # Owner decision 2026-11-23 (ADR 0063): a window that ends within 30 days is "due"; one that
+    # starts by then but ends later is an "open window"; the paid issue adds what starts later.
+    due = _detail(start=date(2026, 10, 10), end=date(2026, 11, 4), raw="by 4 November", name="Due Bio")
+    wide = _detail(start=date(2026, 10, 1), end=date(2027, 12, 31), raw="by the end of 2027", name="Wide Bio")
+    later = _detail(start=date(2027, 1, 1), end=date(2027, 3, 31), raw="1Q27", name="Later Bio")
+    free = build_digest([due, wide, later], ISSUE)
+    assert [c.id for c in free.upcoming] == [due.id, wide.id]  # due first, then open windows
+    assert (free.counts.due, free.counts.open_windows, free.counts.later) == (1, 1, 0)
+    text = _text(render_html(free))
+    assert "Due by 4 November 2026 (1)" in text
+    assert "Open windows (1)" in text
+    assert "Windows that start by 4 November 2026 and end later." in text
+    assert "Later (" not in text
+    assert "Later Bio" not in text  # never named in the free issue
+    assert text.index("Due Bio") < text.index("Open windows (1)") < text.index("Wide Bio")
+    paid = build_digest([due, wide, later], ISSUE, access=Access.PAID)
+    assert (paid.counts.due, paid.counts.open_windows, paid.counts.later) == (1, 1, 1)
+    paid_text = _text(render_html(paid))
+    assert "Due by 4 November 2026 (1)" in paid_text
+    assert "Open windows (1)" in paid_text
+    assert "Later (1)" in paid_text
+    assert "Windows that start after 4 November 2026." in paid_text
+    assert paid_text.index("Wide Bio") < paid_text.index("Later (1)") < paid_text.index("Later Bio")
+
+
+def test_the_list_limit_keeps_due_entries_before_open_windows() -> None:
+    # A wide window that started long ago must not push a due entry off a cut list (ADR 0063).
+    wide = [_detail(start=date(2026, 1, 1), end=date(2027, 12, 31), raw="by 2027") for _ in range(3)]
+    due = _detail(start=date(2026, 10, 20), raw="October 20, 2026", name="Due Bio")
+    digest = build_digest([*wide, due], ISSUE, calendar_limit=2)
+    assert digest.upcoming[0].id == due.id
+    assert (digest.counts.due, digest.counts.open_windows, digest.counts.upcoming_not_listed) == (1, 1, 2)
+
+
+def test_a_cut_free_list_says_the_paid_issue_lists_them_all() -> None:
+    # Owner decision 2026-11-23 (ADR 0063): when the free list is cut, one line says how many the
+    # paid issue lists; nothing cut is named.
+    wide = [_detail(start=date(2026, 1, 1), end=date(2027, 12, 31), raw="by 2027") for _ in range(3)]
+    due = _detail(start=date(2026, 10, 20), raw="October 20, 2026", name="Due Bio")
+    free = build_digest([*wide, due], ISSUE, calendar_limit=2)
+    assert (free.counts.due_total, free.counts.open_windows_total) == (1, 3)
+    text = _text(render_html(free))
+    assert "The paid issue lists all 3 open windows." in text
+    assert "catalysts due by" not in text  # no due entry was cut
+    whole = _text(render_html(build_digest([*wide, due], ISSUE)))
+    assert "The paid issue lists" not in whole  # nothing cut, nothing said
+    paid = _text(render_html(build_digest([*wide, due], ISSUE, access=Access.PAID, calendar_limit=2)))
+    assert "The paid issue lists" not in paid
+    many_due = [_detail(start=date(2026, 10, 10 + n), raw="October 2026") for n in range(3)]
+    cut_due = _text(render_html(build_digest(many_due, ISSUE, calendar_limit=2)))
+    assert "The paid issue lists all 3 catalysts due by 4 November 2026." in cut_due
+
+
+def test_empty_open_window_and_later_sections_are_left_out() -> None:
+    text = _text(render_html(build_digest([], ISSUE, access=Access.PAID)))
+    assert "Due by 4 November 2026 (0)" in text
+    assert "Nothing is due by then." in text
+    assert "Open windows" not in text
+    assert "Later (" not in text
+    assert "Upcoming Catalysts" not in text
 
 
 @pytest.mark.parametrize(
@@ -561,18 +623,19 @@ def test_the_quote_link_is_always_a_plain_address(quote: str) -> None:
     assert all(ch.isascii() and ch.isprintable() and ch not in " \"'<>`\\" for ch in link)
 
 
-def test_the_html_states_the_counts_outside_the_free_calendar_and_an_empty_week() -> None:
+def test_the_html_leaves_out_the_counts_of_unlisted_records_and_states_an_empty_week() -> None:
     far_move = _slipped(start=date(2027, 4, 1), end=date(2027, 6, 30), raw="2Q27")
     text = " ".join(" ".join(_parsed(render_html(build_digest([far_move], ISSUE))).text).split())
     assert "No date on the next 30 days of the calendar moved this week." in text
-    assert "Outside the next 30 days: 1 date moved and 0 catalysts were added." in text
+    assert "Outside the next 30 days" not in text  # counted in the JSON only (ADR 0057)
     assert "2Q27" not in text
     empty = " ".join(" ".join(_parsed(render_html(build_digest([], ISSUE))).text).split())
     assert "Outside the next 30 days" not in empty
     assert "And " not in empty
     many = [_detail(start=ISSUE + timedelta(days=n)) for n in range(1, 4)]
     cut = " ".join(" ".join(_parsed(render_html(build_digest(many, ISSUE, calendar_limit=1))).text).split())
-    assert "And 2 more in the next 30 days." in cut
+    assert "more in the next 30 days" not in cut  # counted in the JSON only (ADR 0057)
+    assert build_digest(many, ISSUE, calendar_limit=1).counts.upcoming_not_listed == 2
 
 
 @given(
@@ -659,6 +722,11 @@ def test_the_command_writes_the_digest_and_prints_only_counts(
         "new": 0,
         "upcoming": 0,
         "upcoming_not_listed": 0,
+        "due": 0,
+        "open_windows": 0,
+        "later": 0,
+        "due_total": 0,
+        "open_windows_total": 0,
         "moved_outside_free_calendar": 0,
         "new_outside_free_calendar": 0,
     }
@@ -682,7 +750,8 @@ def test_the_next_issue_lists_the_calendar(
     out = tmp_path / "digest.json"
     assert cli.main(["digest", "--issue-date", "2026-10-12", "--out", str(out)]) == 0
     written = json.loads(out.read_text(encoding="utf-8"))
-    assert [UUID(c["id"]) for c in written["upcoming"]] == [seed.slipped, seed.adcom]
+    # The 5 November adcom is due; the 4Q26 readout is an open window, listed after it (ADR 0063).
+    assert [UUID(c["id"]) for c in written["upcoming"]] == [seed.adcom, seed.slipped]
     assert written["moved"] == []
 
 
