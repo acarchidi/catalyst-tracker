@@ -14,7 +14,8 @@ dashes do not count, so "SPY-003" and "spy 003" name SPY003) and as whole words 
 not). Hidden characters (a soft hyphen, a zero-width space) are looked past. A combination
 ("SPY072 + IL-17A/F") is named when each of its drugs is, within `NEAR` characters of each other.
 A drug's name inside another drug's longer name ("SPY072" in "SPY072 + IL-17A/F") does not name
-it. A claim with no drug, such as a trial of several drugs, is not applicable.
+it. A claim with no drug, such as a trial of several drugs, is not applicable. A claim matched to
+several drugs (ADR 0060) must name each of them.
 
 The check cannot tell two events of the same drug apart: a quote from the drug's other sub-study,
 with the same date words, passes.
@@ -303,11 +304,25 @@ class DrugFacts:
     def check(
         self, claim_id: UUID, document_id: UUID, value: object, span: tuple[str, int, int], text: str
     ) -> CheckResult:
-        """Run the check on one claim, against its document's text."""
+        """Run the check on one claim, against its document's text.
+
+        A claim matched to several drugs (a list or a combination; ADR 0060) passes only when
+        each of them is named: one drug's name near the quote says nothing about the others.
+        """
         names = self.names(claim_id, value)
         beside = [drug for other, drug in self.named.get(document_id, ()) if other != claim_id]
         others = other_drugs(self.drugs, self.owners.get(document_id, frozenset()), names, beside)
-        return drug_named(text, *span, names, others)
+        matched = self.matched.get(claim_id, ())
+        if len(matched) < 2:
+            return drug_named(text, *span, names, others)
+        for ref in matched:
+            own = drug_names(ref.names[0][0], [ref]) if ref.names else None
+            if own is None:
+                return CheckResult(CHECK, Outcome.FAIL, "a matched drug has no name on file")
+            result = drug_named(text, *span, own, others)
+            if result.outcome is not Outcome.PASS:
+                return result
+        return CheckResult(CHECK, Outcome.PASS)
 
 
 def load_drug_facts(session: Session) -> DrugFacts:
