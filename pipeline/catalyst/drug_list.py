@@ -251,11 +251,11 @@ def fda_sponsor_key(name: str) -> str:
     return " ".join(_SPONSOR_WORDS.get(word, word) for word in normalize_name(name).split())
 
 
-def _trimmed(name: str) -> str:
+def _trimmed(name: str, forms: frozenset[str] = FORM_WORDS) -> str:
     words = unicodedata.normalize("NFKC", _TRADEMARK.sub(" ", name)).split()
-    while words and (words[0].casefold() in FORM_WORDS or _DOSE.match(words[0])):
+    while words and (words[0].casefold() in forms or _DOSE.match(words[0])):
         words.pop(0)
-    while words and (words[-1].casefold() in FORM_WORDS or _DOSE.match(words[-1])):
+    while words and (words[-1].casefold() in forms or _DOSE.match(words[-1])):
         if len(words) > 1 and words[-1].isdigit() and _CODE_PREFIX.match(words[-2]):
             break  # "SCH 58235" and "BMN 333" are codes, not a name and a dose
         words.pop()
@@ -287,8 +287,10 @@ def _code_name(name: str, *, main: bool) -> bool:
     return not one_letter or len(shape.group("number")) >= 4  # "R115777", not "U100" or "C225"
 
 
-def _registry_part(text: str, trademark: bool, *, main: bool = True) -> ListedName | None:
-    name = _EDGE_PUNCTUATION.sub("", _trimmed(text))
+def _registry_part(
+    text: str, trademark: bool, *, main: bool = True, forms: frozenset[str] = FORM_WORDS
+) -> ListedName | None:
+    name = _EDGE_PUNCTUATION.sub("", _trimmed(text, forms))
     words = [w.casefold() for w in re.findall(r"[^\W_]+", name)]
     most = _MOST_WORDS if main else _MOST_OTHER_WORDS
     if not words or len(words) > most or ":" in name or _JOINS_DRUGS.search(name):
@@ -315,7 +317,7 @@ def _joins_drugs(text: str) -> bool:
     return bool(words & STAND_IN_WORDS) or bool(_JOINS_DRUGS.search(text))
 
 
-def registry_names(text: str) -> list[ListedName] | None:
+def registry_names(text: str, forms: frozenset[str] = FORM_WORDS) -> list[ListedName] | None:
     """Return the drug names in a registry intervention's name, or None for a stand-in or a combination.
 
     The first name returned is the main name, unless the text names no drug. Dose and form words
@@ -324,14 +326,16 @@ def registry_names(text: str) -> list[ListedName] | None:
     registry marks it ® or ™ or writes it in capitals. Text in a bracket is an other name
     ("Selinexor (KPT-330)"). A join anywhere, brackets included ("simvastatin (+) ezetimibe"),
     makes a combination. Descriptions, ordinary words, trial names, targets, isotopes, names of more
-    than six words, and short forms give none.
+    than six words, and short forms give none. `forms` are the dose, route, and form words dropped
+    at either end; a claim's drug words are read with a few more (ADR 0060).
     """
     if _joins_drugs(text):
         return None
     outside = _PARENTHESES.sub(" ", text)
-    found = [_registry_part(outside, bool(_TRADEMARK.search(outside)))]
+    found = [_registry_part(outside, bool(_TRADEMARK.search(outside)), forms=forms)]
     found += [
-        _registry_part(part, bool(_TRADEMARK.search(part)), main=False) for part in _PARENTHESES.findall(text)
+        _registry_part(part, bool(_TRADEMARK.search(part)), main=False, forms=forms)
+        for part in _PARENTHESES.findall(text)
     ]
     return list(dict.fromkeys(filter(None, found)))
 

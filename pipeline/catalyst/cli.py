@@ -568,7 +568,8 @@ def _extract(args: argparse.Namespace) -> int:
         # The extraction stands if a later step fails; each re-runs next time.
         checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
         try:
-            matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now).summary()
+            # With the stored copies, so a name its own document writes can be matched (ADR 0060).
+            matches: dict[str, Any] = resolve_claims(sessionmaker(engine), _utc_now, store).summary()
         except SQLAlchemyError as error:
             matches = {"error": f"{type(error).__name__}: matching did not finish"}
         else:
