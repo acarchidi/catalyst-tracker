@@ -37,6 +37,8 @@ JOB_NAMES = {
     "migrate": "Database update",
     "spend-check": "Spending check",
     "sample-check": "Weekly sample check",
+    "backfill-collect": "Backfill collection",
+    "backfill-extract": "Backfill extraction",
 }
 # The points the sample checker names, in the words an alert uses for them (ADR 0041).
 SAMPLE_POINTS = {
@@ -121,19 +123,20 @@ def _count(summary: Mapping[str, Any], key: str) -> int:
     return value if isinstance(value, int) else 0
 
 
-def _extract_problems(summary: dict[str, Any]) -> list[str]:
+def _extract_problems(summary: dict[str, Any], stops_expected: bool = False) -> list[str]:
+    """Name what went wrong; a backfill run's stop at a cap or its time limit is its normal end (ADR 0065)."""
     second = _mapping(summary.get("second_reading"))
     found = [
         (_count(summary, "documents_failed"), "{} could not be read."),
         (
-            bool(summary.get("stopped_early")),
+            bool(summary.get("stopped_early")) and not stops_expected,
             "It stopped early, before reading every document it was given (usually a spending cap).",
         ),
         ("error" in _mapping(summary.get("matches")), "Matching names to records did not finish."),
         ("error" in _mapping(summary.get("checks")), "The checks did not finish."),
         ("error" in second, "The second reading did not finish."),
         (_count(second, "documents_failed"), "The second reading could not read {}."),
-        (bool(second.get("stopped_early")), "The second reading stopped early."),
+        (bool(second.get("stopped_early")) and not stops_expected, "The second reading stopped early."),
         ("error" in _mapping(summary.get("decisions")), "The publish decisions did not finish."),
         ("error" in _mapping(summary.get("published")), "Writing the published catalysts did not finish."),
     ]
@@ -225,10 +228,12 @@ def _link_problems(summary: dict[str, Any]) -> list[str]:
 
 def _problems(run: JobRun) -> list[str]:
     problems = ["Its report could not be read."] if run.unreadable else []
-    if run.name == "extract-catalysts":
-        problems += _extract_problems(_mapping(run.summary))
+    if run.name in {"extract-catalysts", "backfill-extract"}:
+        problems += _extract_problems(_mapping(run.summary), stops_expected=run.name == "backfill-extract")
     elif run.name == "collect":
         problems += _collect_problems(_sequence(run.summary))
+    elif run.name == "backfill-collect":
+        problems += _collect_problems(_sequence(_mapping(run.summary).get("sources")))
     elif run.name == "snapshots-verify":
         problems += _copy_problems(_mapping(run.summary))
     elif run.name == "sample-check":
@@ -247,7 +252,11 @@ def _job_alert(run: JobRun, problems: list[str], limits: Thresholds, run_url: st
         "",
         "What went wrong:",
         *(f"- {problem}" for problem in problems),
-        *(_extract_notes(_mapping(run.summary)) if run.name == "extract-catalysts" else []),
+        *(
+            _extract_notes(_mapping(run.summary))
+            if run.name in {"extract-catalysts", "backfill-extract"}
+            else []
+        ),
         "",
         f"What to do: ask the coding session to look at the run log: {run_url}",
         "",
