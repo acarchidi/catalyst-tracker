@@ -1,0 +1,12 @@
+{
+  "https://data.sec.gov/submissions/CIK0000875320.json": {
+    "file": "submissions_CIK0000875320.json",
+    "status": 200,
+    "content_type": "application/json"
+  },
+  "https://data.sec.gov/submissions/CIK0000875320-submissions-001.json": {
+    "file": "CIK0000875320-submissions-001.json",
+    "status": 200,
+    "content_type": "application/json"
+  }
+}

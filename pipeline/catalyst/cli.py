@@ -8,7 +8,7 @@ import time
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import asdict
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 from zoneinfo import ZoneInfo
@@ -31,6 +31,7 @@ from catalyst.audit.sample import SAMPLE_SIZE, run_sample_check, week_of
 from catalyst.collectors.coverage import build_coverage, coverage_toml, load_overrides, unconfirmed_markdown
 from catalyst.collectors.report import latest_documents_report
 from catalyst.collectors.run import ON_REQUEST, SOURCES, build_clients, collect_all, load_companies
+from catalyst.collectors.sec.backfill import backfill_press_releases
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.collectors.sources.mesh import stored_index
@@ -38,6 +39,7 @@ from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
 from catalyst.export import build_export, write_export
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
+from catalyst.extract.backfill import backfill_status
 from catalyst.extract.disease import (
     CHECKER_PROMPT,
     READER_PROMPT,
@@ -186,7 +188,34 @@ def _parser() -> argparse.ArgumentParser:
         "--since", type=date.fromisoformat, default=None, help="Earliest publication date, YYYY-MM-DD."
     )
     extract.add_argument("--out", type=Path, default=None, help="Write the full results (JSON) here.")
+    extract.add_argument(
+        "--max-minutes",
+        type=_at_least_one,
+        default=None,
+        help="Start no new document after this many minutes; the rest wait for the next run (ADR 0065).",
+    )
+    extract.add_argument(
+        "--stop-is-expected",
+        action="store_true",
+        help="A stop at a daily cap or the time limit is this run's normal end, not a failure (ADR 0065).",
+    )
     _store_arguments(extract)
+    backfill = commands.add_parser(
+        "backfill-collect",
+        help="Store the 8-K press releases filed since 2025 that are not stored yet (free; ADR 0065).",
+    )
+    backfill.add_argument("--companies", type=Path, default=DEFAULT_COVERAGE, help="Company list (TOML).")
+    backfill.add_argument(
+        "--max-minutes",
+        type=_at_least_one,
+        default=None,
+        help="Start no new company after this many minutes.",
+    )
+    _store_arguments(backfill)
+    commands.add_parser(
+        "backfill-status",
+        help="Say whether the backfill's model reads may run today, and how many releases wait (free).",
+    )
     verify_claims = commands.add_parser(
         "verify-claims", help="Run the rule checks on every extracted claim and store the outcomes (free)."
     )
@@ -456,6 +485,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "prospects-check": _prospects_check,
         "snapshots-compress": _snapshots_space,
         "snapshots-usage": _snapshots_space,
+        "backfill-status": _backfill_status,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -481,6 +511,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return _verify(store, sessionmaker(engine), args.workers)
         if args.command == "collect":
             return _collect(args, email, store, sessionmaker(engine))
+        if args.command == "backfill-collect":
+            return _backfill_collect(args, email, store, sessionmaker(engine))
         return _press_release(args, email, store, sessionmaker(engine))
     finally:
         engine.dispose()
@@ -564,7 +596,9 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         config = load_config()
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
-        report = extract_documents(sessionmaker(engine), store, client, limit=args.limit, since=args.since)
+        report = extract_documents(
+            sessionmaker(engine), store, client, limit=args.limit, since=args.since, **_time_limit(args)
+        )
         # The extraction stands if a later step fails; each re-runs next time.
         checks: dict[str, Any] = {"error": "checks did not run, because matching did not finish"}
         try:
@@ -618,10 +652,19 @@ def _extract(args: argparse.Namespace) -> int:
         "indications": indications,
     }
     print(json.dumps(summary, indent=2))
-    second_failed = "error" in second or second.get("documents_failed") or second.get("stopped_early")
+    # A backfill run reads until a cap or its time limit stops it; that stop is its normal end.
+    stopped = not args.stop_is_expected and (summary["stopped_early"] or second.get("stopped_early"))
+    second_failed = "error" in second or second.get("documents_failed")
     gate_failed = "error" in decisions or "error" in published or "error" in indications
-    failed = summary["documents_failed"] or summary["stopped_early"] or second_failed or gate_failed
+    failed = summary["documents_failed"] or stopped or second_failed or gate_failed
     return 1 if failed else 0
+
+
+def _time_limit(args: argparse.Namespace) -> dict[str, Any]:
+    """Return a deadline only when asked for one; without it the run is as before (ADR 0065)."""
+    if args.max_minutes is None:
+        return {}
+    return {"deadline": _utc_now() + timedelta(minutes=args.max_minutes)}
 
 
 def _drug_check(session_factory: sessionmaker[Session], store: SnapshotStore) -> dict[str, Any]:
@@ -1255,6 +1298,32 @@ def _collect(
     ]
     print(json.dumps(summary, indent=2))
     return 1 if any(s.error for s in stats) else 0
+
+
+def _backfill_collect(
+    args: argparse.Namespace, email: str, store: SnapshotStore, session_factory: sessionmaker[Session]
+) -> int:
+    report = backfill_press_releases(
+        load_companies(args.companies),
+        EdgarClient(email),
+        store,
+        session_factory,
+        today=datetime.now(NEW_YORK).date(),
+        max_minutes=args.max_minutes,
+    )
+    print(json.dumps(report.summary(), indent=2))
+    return 1 if report.failed else 0
+
+
+def _backfill_status(args: argparse.Namespace) -> int:
+    engine = create_engine(settings.database_url())
+    try:
+        with Session(engine) as session:
+            status = backfill_status(session, datetime.now(NEW_YORK).date())
+    finally:
+        engine.dispose()
+    print(json.dumps(status.summary(), indent=2))
+    return 0
 
 
 def _press_release(
