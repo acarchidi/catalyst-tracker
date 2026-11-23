@@ -44,8 +44,11 @@ jobs:
     name: Backfill press releases
     runs-on: ubuntu-latest
     # GitHub cancels a job that reaches its limit, and a cancelled job skips its alert step, so
-    # each step has its own, lower limit: 10 + 110 + 5 + 200 + 5 = 330, under the job's 345 with
-    # setup, and under GitHub's 360. Each long step also stops itself earlier (--max-minutes).
+    # each step has its own, lower limit: 10 + 70 + 5 + 240 + 5 = 330, under the job's 345 with
+    # setup, and under GitHub's 360. The collection starts no new company after 60 minutes. In the
+    # reading step only the first reading has a time limit (120 minutes): the second reading, the
+    # publish decisions, the publish gate and the indication readers run after it with none, and
+    # the remaining 120 minutes are left for them (the second reading is about half the first).
     timeout-minutes: 345
     outputs:
       alerts: ${{ steps.alerts.outputs.plan }}
@@ -68,7 +71,7 @@ jobs:
       # Free: no model call.
       - name: Collect older press releases
         id: collect
-        timeout-minutes: 110
+        timeout-minutes: 70
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -77,7 +80,7 @@ jobs:
           SEC_CONTACT_EMAIL: ${{ secrets.SEC_CONTACT_EMAIL }}
         run: |
           set +e
-          uv run catalyst backfill-collect --companies config/coverage_companies.toml --max-minutes 100 \
+          uv run catalyst backfill-collect --companies config/coverage_companies.toml --max-minutes 60 \
             --snapshot-store supabase > "$RUNNER_TEMP/collect.json"
           status=$?
           { echo "## Collection"; echo '```json'; cat "$RUNNER_TEMP/collect.json"; echo '```'; } \
@@ -102,7 +105,7 @@ jobs:
       - name: Read the waiting press releases, newest first
         id: extract
         if: ${{ !cancelled() && steps.status.outputs.active == 'true' }}
-        timeout-minutes: 200
+        timeout-minutes: 240
         env:
           SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
@@ -113,7 +116,7 @@ jobs:
         run: |
           set +e
           # The full results (unchecked proposals with their quotes) are not printed: the log is public.
-          uv run catalyst extract-catalysts --since 2025-01-01 --limit "$LIMIT" --max-minutes 170 \
+          uv run catalyst extract-catalysts --since 2025-01-01 --limit "$LIMIT" --max-minutes 120 \
             --stop-is-expected --snapshot-store supabase > "$RUNNER_TEMP/extract.json"
           status=$?
           { echo "## Catalysts found"; echo '```json'; cat "$RUNNER_TEMP/extract.json"; echo '```'; } \
@@ -130,12 +133,14 @@ jobs:
           SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
           MIGRATE: ${{ steps.migrate.outcome }}
           COLLECT: ${{ steps.collect.outcome }}
+          STATUS: ${{ steps.status.outcome }}
           EXTRACT: ${{ steps.extract.outcome }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -o pipefail
           { echo "## Alerts"; uv run catalyst alerts --run "migrate:$MIGRATE" \
             --run "backfill-collect:$COLLECT:$RUNNER_TEMP/collect.json" \
+            --run "backfill-status:$STATUS" \
             --run "backfill-extract:$EXTRACT:$RUNNER_TEMP/extract.json" \
             --spend --run-url "$RUN_URL" --out "$RUNNER_TEMP/alerts.json"; } | tee -a "$GITHUB_STEP_SUMMARY"
           delimiter="plan_$(openssl rand -hex 16)"
