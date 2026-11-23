@@ -5,6 +5,7 @@
 - **Roadmap item:** Phase 1, "Drug reference list" (owner request, 2026-10-19)
 - **Amends:** ADR 0015, part 3 (registry intervention lists are not imported as drugs)
 - **Needs:** ADR 0037 (another company's drug waits for review; PR #77, merged)
+- **Amended by:** ADR 0060 (rule 9: "A (B)" with one part no record has is one drug with both names, when the company's own document writes them together at the claim's quote)
 
 ## Context
 

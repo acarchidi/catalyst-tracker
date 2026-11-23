@@ -38,6 +38,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.company_drugs import stated_drugs
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.run import NEW_YORK
@@ -112,6 +113,29 @@ def _with_another_drug(quote: str, other_drugs: frozenset[str]) -> bool:
     return False
 
 
+def _role_of_several(
+    quote: str, names: list[str], combined: bool, other_drugs: frozenset[str]
+) -> DrugRole | None:
+    """Return the one role of a claim whose drug words state several drugs (ADR 0060, part 3).
+
+    Words that combine them ("A plus B", "A with B") give `in_combination` only when the quote
+    joins two of them the same way and nothing says "alone"; never `alone`. A list ("A and B")
+    gives `alone` for each only when the quote speaks of no combination at all.
+    """
+    if _UNCLEAR.search(quote):
+        return None
+    any_name = "|".join(
+        r"[\s\-\u2010-\u2015]*".join(map(re.escape, re.findall(r"[^\W_]+", n))) for n in names
+    )
+    joined = re.search(
+        rf"(?<!\w)(?:{any_name})\s*,?\s*(?:{_JOIN}|with)\s*(?:{any_name})(?!\w)", quote, re.IGNORECASE
+    )
+    if combined:
+        return DrugRole.IN_COMBINATION if joined and not _ALONE.search(quote) else None
+    plain = not (joined or _COMBINATION.search(quote) or _with_another_drug(quote, other_drugs))
+    return DrugRole.ALONE if plain else None
+
+
 def drug_role(quote: str, drug: str | None, other_drugs: frozenset[str]) -> DrugRole | None:
     """Return the drug's role as the quote states it, or None when a person must decide.
 
@@ -119,8 +143,12 @@ def drug_role(quote: str, drug: str | None, other_drugs: frozenset[str]) -> Drug
     combination words gives `in_combination` only when they join the drug itself ("X plus Y",
     "Y in combination with X") and nothing says "alone" or "monotherapy". A regimen word
     (doublet, triplet, regimen, backbone, "in addition to", "on top of"), or "with" before another
-    drug on file (`other_drugs`, case-folded) or a code name, is unclear too.
+    drug on file (`other_drugs`, case-folded) or a code name, is unclear too. Drug words that
+    state several drugs are read by `_role_of_several`.
     """
+    stated = stated_drugs(drug) if drug else None
+    if stated is not None and len(stated.drugs) > 1:
+        return _role_of_several(quote, [d[0].name for d in stated.drugs], stated.combined, other_drugs)
     if _UNCLEAR.search(quote) or _with_another_drug(quote, other_drugs):
         return None
     combined, alone = _COMBINATION.search(quote), _ALONE.search(quote)

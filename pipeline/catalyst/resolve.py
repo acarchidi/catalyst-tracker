@@ -11,7 +11,7 @@ import re
 import unicodedata
 from collections import defaultdict
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from enum import StrEnum
 from uuid import UUID
@@ -35,6 +35,7 @@ class MatchedBy(StrEnum):
     STUDY_NAME = "study_name"
     DOCUMENT_LINK = "document_link"  # a company linked to the document by registry or FDA sponsor
     NEW_CODE_NAME = "new_code_name"  # the company's own code name, first seen in its release
+    COMPANY_NAMED = "company_named"  # a name no list has, written in the company's document (ADR 0060)
 
 
 _KIND_RULE = {
@@ -187,15 +188,12 @@ class ReferenceData:
                 if key := normalize_name(name):
                     self._by_name[key].append(company.id)
         self._drug_names: defaultdict[str, list[tuple[DrugRef, DrugNameKind]]] = defaultdict(list)
-        self._drug_owner: dict[UUID, UUID | None] = {}
+        self._drugs: dict[UUID, DrugRef] = {}
         self._unconfirmed: set[UUID] = set()
         for drug in drugs:
-            self._drug_owner[drug.id] = drug.company_id
             if drug.unconfirmed:
                 self._unconfirmed.add(drug.id)
-            for name, kind in drug.names:
-                if key := name_key(name):
-                    self._drug_names[key].append((drug, kind))
+            self.add_drug(drug)
         self._trials = list(trials)
         self._study_patterns = {t.id: whole_word_pattern(t.study_name) for t in self._trials if t.study_name}
         self._by_nct: defaultdict[str, list[UUID]] = defaultdict(list)
@@ -244,18 +242,36 @@ class ReferenceData:
 
     def drug_company(self, drug_id: UUID) -> UUID | None:
         """Return the company that develops the drug, if one is known."""
-        return self._drug_owner.get(drug_id)
+        drug = self._drugs.get(drug_id)
+        return drug.company_id if drug else None
+
+    def drug(self, drug_id: UUID) -> DrugRef:
+        """Return the drug with every name it goes by."""
+        return self._drugs[drug_id]
+
+    def drugs(self) -> list[DrugRef]:
+        """Return every drug on file, those added during this run too."""
+        return list(self._drugs.values())
 
     def drug_unconfirmed(self, drug_id: UUID) -> bool:
         """Say whether the drug is named only by registry words, with no code or Drugs@FDA name."""
         return drug_id in self._unconfirmed
 
     def add_drug(self, drug: DrugRef) -> None:
-        """Index a drug created after loading, so later lookups in the same run find it."""
-        self._drug_owner[drug.id] = drug.company_id
+        """Index a drug created, or given a new name, after loading, so later lookups find it."""
+        self._drugs[drug.id] = drug
         for name, kind in drug.names:
             if key := name_key(name):
-                self._drug_names[key].append((drug, kind))
+                kept = [hit for hit in self._drug_names[key] if hit[0].id != drug.id or hit[0] is drug]
+                self._drug_names[key] = [*kept, (drug, kind)]  # an older copy of this drug goes
+
+    def join_drugs(self, keep: UUID, gone: UUID) -> None:
+        """Give one drug every name of another, which is then no longer on file (ADR 0060, part 4)."""
+        old = self._drugs.pop(gone)
+        for name, _ in old.names:
+            key = name_key(name)
+            self._drug_names[key] = [hit for hit in self._drug_names[key] if hit[0].id != gone]
+        self.add_drug(replace(self._drugs[keep], names=(*self._drugs[keep].names, *old.names)))
 
     def trials_mentioned(self, text: str, company_id: UUID | None = None) -> list[tuple[str, Resolution]]:
         """Find every trial a longer text names: registry numbers, and study names in capitals.
