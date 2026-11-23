@@ -1,6 +1,6 @@
 # Weekly issue hand-off (ADR 0055)
 
-Run each Monday by a coding session. It builds the free and paid Substack pages from the live data and gives them to the owner privately. Print counts only. Never commit, publish, paste into a pull request, issue, or log, or upload as a public artifact: the export, the private key, or either page. The one exception is step 6's private copy page (owner request 2026-11-23, ADR 0055 as amended).
+Run each Monday by a coding session. It builds the free and paid Substack pages from the live data and gives them to the owner privately. Print counts only. Never commit, publish, upload as an artifact, or paste into a pull request, issue, or log: the export, the private key, or either page. The repository is public and GitHub Actions artifacts can be downloaded, so this covers every kind of artifact. The one exception is step 6's private copy page in the Claude app (owner request 2026-11-23, ADR 0055 as amended).
 
 Work in the session's scratchpad directory, written below as `$S`. Every file made here stays there; run `umask 077` first so each one is created readable by this session only.
 
