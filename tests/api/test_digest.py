@@ -595,13 +595,25 @@ def test_empty_open_window_and_later_sections_are_left_out() -> None:
                     "December 8-11, 2026",
                     date(2026, 12, 8),
                     date(2026, 12, 11),
-                    "Company expects potential data on December 8-11, 2026.",
+                    "Company expects potential data on December 8\u201311, 2026.",
                 ),
                 (
                     "December 12\u201315, 2026",
                     date(2026, 12, 12),
                     date(2026, 12, 15),
                     "Company expects potential data on December 12\u201315, 2026.",
+                ),
+                (
+                    "December 14-16",
+                    date(2026, 12, 14),
+                    date(2026, 12, 16),
+                    "Company expects potential data on December 14\u201316, 2026.",
+                ),
+                (
+                    "the fourth Quarter 2026",
+                    date(2026, 10, 1),
+                    date(2026, 12, 31),
+                    "Company expects potential data in the fourth quarter of 2026.",
                 ),
                 (
                     "by the end of next year",
@@ -1170,3 +1182,25 @@ def test_the_command_refuses_a_stale_export(tmp_path: Path, capsys: pytest.Captu
     )
     assert "before the week of this issue ended" in capsys.readouterr().err
     assert not out.exists()
+
+
+def test_the_date_history_stops_at_the_issue_week_and_skips_changes_that_change_nothing() -> None:
+    # Fresh-eyes review of 2026-11-24 (ADR 0055, decision 8): a move learned after the reported week
+    # is next week's news, and a "change" from a window to the same words is no move at all.
+    after_week = datetime(2026, 10, 6, 15, tzinfo=UTC)  # the day after the issue date
+    late = _slipped(moved_at=after_week)
+    text = _text(render_html(build_digest([late], ISSUE, access=Access.PAID)))
+    assert "Date history:" not in text
+    moved = _slipped()
+    once = _text(render_html(build_digest([moved], ISSUE, access=Access.PAID)))
+    assert once.count(" to 4Q26 ") == 1
+    move_rows = [c for c in moved.history if c.old_value is not None]
+    repeat = [
+        c.model_copy(
+            update={"old_value": c.new_value, "source": c.source.model_copy(update={"claim_id": uuid4()})}
+        )
+        for c in move_rows
+    ]
+    twice = moved.model_copy(update={"history": [*moved.history, *repeat]})
+    text = _text(render_html(build_digest([twice], ISSUE, access=Access.PAID)))
+    assert text.count(" to 4Q26 ") == 1  # the repeat changes nothing, so it is not shown

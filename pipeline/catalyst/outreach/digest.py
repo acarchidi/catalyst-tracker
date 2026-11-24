@@ -134,6 +134,10 @@ _THIS_YEAR = compile_pattern(r"(?i)\b(this|the current) year\b")
 _NEXT_YEAR = compile_pattern(r"(?i)\bnext year\b")
 _MONTH_ONLY = compile_pattern(rf"(?i)(in )?({_MONTHS})")
 _MONTH_DAYS = compile_pattern(rf"(?i)({_MONTHS}) \d{{1,2}}\b")
+_QUARTER_WORD = compile_pattern(r"\b(Quarter|Half)\b")
+_PART_YEAR = compile_pattern(r"(?i)\b(quarter|half) (\d{4})\b")
+_NUMBER_RANGE = compile_pattern(r"(?<=\d)-(?=\d)")
+_ANY_YEAR = compile_pattern(r"\b(19|20)\d\d\b")
 _ORDINAL_PART = compile_pattern(r"(?i)(first|second|third|fourth) (half|quarter)\b")
 _FRAGMENT_WORDS = 4
 _FRAGMENT_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.~")
@@ -445,29 +449,30 @@ def render_html(digest: Digest) -> str:
     """
     week = f"{_day(digest.week_from, year=False)} to {_day(digest.week_to)}"
     paid = digest.access == Access.PAID.value
+    until = datetime.combine(digest.issue_date, time.min, tzinfo=NEW_YORK)  # end of the reported week
     where = "the calendar" if paid else "the next 30 days"
     parts = [
         f"<h1>Catalyst digest: week of {week}</h1>",
         *(["<p>Full issue for paid subscribers.</p>"] if paid else []),
         "<p>Key: " + " · ".join(f"{mark} {escape(name)}" for mark, name in _CATEGORY_KEY) + "</p>",
         f"<h2>Rescheduled Catalysts ({digest.counts.moved})</h2>",
-        _list([_move_item(move) for move in digest.moved])
+        _list([_move_item(move, until) for move in digest.moved])
         or f"<p>No date {'on' if paid else 'in'} {where} moved this week.</p>",
         f"<h2>New ({digest.counts.new})</h2>",
-        _list([_item(catalyst) for catalyst in digest.new])
+        _list([_item(catalyst, until) for catalyst in digest.new])
         or f"<p>No catalyst {'on' if paid else 'in'} {where} was added this week.</p>",
     ]
     last = _day(horizon(digest.issue_date))
     due, open_windows, later = _split(digest.upcoming, digest.issue_date)
     parts += [
         f"<h2>Due by {last} ({len(due)})</h2>",
-        _list([_item(catalyst) for catalyst in due]) or "<p>Nothing is due by then.</p>",
+        _list([_item(catalyst, until) for catalyst in due]) or "<p>Nothing is due by then.</p>",
     ]
     if open_windows:
         parts += [
             f"<h2>Open windows ({len(open_windows)})</h2>",
             f"<p>Windows that start by {last} and end later.</p>",
-            _list([_item(catalyst) for catalyst in open_windows]),
+            _list([_item(catalyst, until) for catalyst in open_windows]),
         ]
     if not paid:
         # A cut free list says how many the paid issue lists, never which (ADR 0063).
@@ -481,7 +486,7 @@ def render_html(digest: Digest) -> str:
         parts += [
             f"<h2>Later ({len(later)})</h2>",
             f"<p>Windows that start after {last}.</p>",
-            _list([_item(catalyst) for catalyst in later]),
+            _list([_item(catalyst, until) for catalyst in later]),
         ]
     # Records left out are counted in the JSON only, never in the issue (owner decision 2026-11-23; ADR 0057).
     parts.append(f"<p><small>{escape(digest.notice)}</small></p>")
@@ -574,7 +579,12 @@ def _date_words(raw: str, start: date, end: date) -> str:
     words = _NEXT_YEAR.sub(str(end.year), words)
     if _MONTH_ONLY.fullmatch(words):
         words = f"{words} {end.year}"
+    words = _QUARTER_WORD.sub(lambda m: m.group(1).lower(), words)
+    words = _PART_YEAR.sub(r"\1 of \2", words)
+    words = _NUMBER_RANGE.sub("\u2013", words)  # "8-11" reads with an en dash
     if _MONTH_DAYS.match(words):
+        if not _ANY_YEAR.search(words):
+            words = f"{words}, {end.year}"
         return f"on {words}"
     if words.lower().startswith("later in "):
         return words
@@ -635,7 +645,7 @@ def _source_line(source: SourceView) -> str:
     return f"<p>Sources: {label}, {escape(source.url)}</p>"
 
 
-def _move_item(move: DateMove) -> str:
+def _move_item(move: DateMove, until: datetime | None = None) -> str:
     before = _span(move.before.start, move.before.end)
     if move.before.raw_text:
         before = f"{move.before.raw_text} ({before})"
@@ -646,25 +656,34 @@ def _move_item(move: DateMove) -> str:
         + escape(f"When: {when(move.catalyst)} Before: {before}. {_MOVE_SENTENCES[move.kind]}")
         + "</p>",
         _source_line(move.source),
-        *_history_lines(move.catalyst),
+        *_history_lines(move.catalyst, until),
     ]
     return "<li>" + "\n".join(lines) + "</li>"
 
 
-def _history_lines(catalyst: CatalystSummary) -> list[str]:
-    """Return the catalyst's earlier date moves, oldest first; only the paid shape has them."""
+def _history_lines(catalyst: CatalystSummary, until: datetime | None = None) -> list[str]:
+    """Return the catalyst's earlier date moves, oldest first; only the paid shape has them.
+
+    A move learned after `until` (the end of the reported week) is next week's news, and a move
+    that leaves the window's words as they were is not shown (ADR 0055, decision 8).
+    """
     if not isinstance(catalyst, CatalystDetail):
         return []
     state: dict[str, JsonValue] = {}
     moves: list[str] = []
-    rows = [change for change in catalyst.history if change.field in DATE_FIELDS]
+    rows = [
+        change
+        for change in catalyst.history
+        if change.field in DATE_FIELDS and (until is None or change.learned_at < until)
+    ]
     for (_, first_value), group in groupby(rows, key=_move_key):
         changes = list(group)
         before = _window_text(state)
         state.update({change.field: change.new_value for change in changes})
-        if not first_value:
+        after = _window_text(state)
+        if not first_value and after != before:
             learned = max(change.learned_at for change in changes).astimezone(NEW_YORK).date()
-            moves.append(f"<li>{escape(f'{_day(learned)}: {before} to {_window_text(state)}')}</li>")
+            moves.append(f"<li>{escape(f'{_day(learned)}: {before} to {after}')}</li>")
     return ["<p>Date history:</p>", _list(moves)] if moves else []
 
 
@@ -682,7 +701,7 @@ def _window_text(state: dict[str, JsonValue]) -> str:
     return span or "not stated"
 
 
-def _item(catalyst: CatalystSummary) -> str:
+def _item(catalyst: CatalystSummary, until: datetime | None = None) -> str:
     dated = [source for source in catalyst.sources if DATE_FIELDS.intersection(source.fields)]
     source = next(chain(dated, catalyst.sources), None)
     lines = [
@@ -690,6 +709,6 @@ def _item(catalyst: CatalystSummary) -> str:
         *_facts(catalyst),
         "<p>" + escape(f"When: {when(catalyst)}") + "</p>",
         *([_source_line(source)] if source else []),
-        *_history_lines(catalyst),
+        *_history_lines(catalyst, until),
     ]
     return "<li>" + "\n".join(lines) + "</li>"
