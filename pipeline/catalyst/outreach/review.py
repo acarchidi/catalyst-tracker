@@ -105,7 +105,7 @@ def review_digest(digest: Digest) -> list[Finding]:
     seen: set[tuple[int, str]] = set()
     entries = [move.catalyst for move in digest.moved] + list(digest.new) + list(digest.upcoming)
     for entry in entries:
-        where = f"{entry.company.name} | {entry.title}"
+        where = f"{entry.company.display_name} | {entry.title}"
         window = entry.window
         quotes = " ".join(_norm(source.quote) for source in entry.sources)
         if window.raw_text and _norm(window.raw_text) not in quotes:
@@ -117,7 +117,7 @@ def review_digest(digest: Digest) -> list[Finding]:
             findings.append(
                 Finding("ticker_not_common_stock", where, f"{ticker}: warrant, unit, right or CVR")
             )
-        name = entry.company.name
+        name = entry.company.display_name  # the name readers see (ADR 0068)
         if _STATE_SUFFIX.search(name) or (name == name.upper() and _SHOUTING.search(name)):
             findings.append(
                 Finding("raw_company_name", where, "SEC conformed name; use the company's own spelling")
