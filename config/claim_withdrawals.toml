@@ -89,3 +89,9 @@ claim = "e7bd09fa-eaef-4034-9eba-2609852ff512"
 reason = "Drug match unconfirmed: the quote is about selcodebart in inflammatory bowel disease, not clearly DISC-0974"
 evidence = "own source"
 added = 2026-11-24
+
+[[withdrawal]]
+claim = "2ccc4ee2-846e-45fe-8886-2932c7becb41"
+reason = "Palisade's PALI-2108 Crohn's disease IND was already submitted: the FDA cleared it on 22 September 2026"
+evidence = "https://finviz.com/news/394263/palisade-bio-receives-fda-clearance-of-ind-for-pali-2108-in-crohns-disease-expanding-phase-2-development-across-ibd"
+added = 2026-11-24
