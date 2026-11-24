@@ -317,6 +317,19 @@ def _parser() -> argparse.ArgumentParser:
         type=int,
         help=f"Most other catalysts to list (free {DEFAULT_CALENDAR_LIMIT}, paid {PAID_CALENDAR_LIMIT}).",
     )
+    review = commands.add_parser(
+        "review-issue",
+        help="Run the pre-publication checks on a built issue, its pages, and the note "
+        "(docs/issue-review.md). Prints counts only; exits 1 on any failure.",
+    )
+    review.add_argument("--free-json", type=Path, required=True, help="The free digest JSON.")
+    review.add_argument("--paid-json", type=Path, required=True, help="The paid digest JSON.")
+    review.add_argument("--free-page", type=Path, required=True, help="The free page.")
+    review.add_argument("--paid-page", type=Path, required=True, help="The paid page.")
+    review.add_argument("--note", type=Path, required=True, help="The promotional note, plain text.")
+    review.add_argument(
+        "--out", type=Path, required=True, help="Write every finding here (JSON); keep it private."
+    )
     keygen = commands.add_parser(
         "seal-keygen",
         help="Make a one-off key pair for a sealed export: save the private key, print the public line.",
@@ -497,6 +510,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mcp": _serve,
         "export-catalysts": _export,
         "digest": _digest,
+        "review-issue": _review_issue,
         "seal-keygen": _seal_keygen,
         "seal": _seal,
         "unseal": _unseal,
@@ -1074,6 +1088,40 @@ def _digest(args: argparse.Namespace) -> int:
     counts = {"issue_date": issue_date.isoformat(), "access": issue.access, **issue.counts.model_dump()}
     print(json.dumps(counts))
     return 0
+
+
+def _review_issue(args: argparse.Namespace) -> int:
+    """Run the mechanical review (ADR 0055, decision 7); print counts only, findings to --out."""
+    from catalyst.outreach.digest import Digest
+    from catalyst.outreach.review import review_digest, review_note, review_page
+
+    try:
+        free = Digest.model_validate_json(args.free_json.read_text(encoding="utf-8"))
+        paid = Digest.model_validate_json(args.paid_json.read_text(encoding="utf-8"))
+        pages = {
+            "free": args.free_page.read_text(encoding="utf-8"),
+            "paid": args.paid_page.read_text(encoding="utf-8"),
+        }
+        note = args.note.read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        print(f"Nothing reviewed: {type(error).__name__}: cannot read the inputs.", file=sys.stderr)
+        return 2
+    if free.access != "free" or paid.access != "paid" or free.issue_date != paid.issue_date:
+        print("Nothing reviewed: the free and paid files are not one week's pair.", file=sys.stderr)
+        return 2
+    found = {
+        "free": review_digest(free) + review_page(pages["free"]),
+        "paid": review_digest(paid) + review_page(pages["paid"]),
+        "note": review_note(note),
+    }
+    write_export(args.out, {k: [vars(f) for f in v] for k, v in found.items()})
+    counts: dict[str, dict[str, int]] = {}
+    for part, items in found.items():
+        for item in items:
+            counts.setdefault(part, {}).setdefault(item.check, 0)
+            counts[part][item.check] += 1
+    print(json.dumps({"issue_date": free.issue_date.isoformat(), "failures": counts}))
+    return 1 if any(found.values()) else 0
 
 
 def _export_details(path: Path, issue_date: date) -> list[CatalystDetail]:

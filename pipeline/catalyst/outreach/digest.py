@@ -126,8 +126,15 @@ _COMMON_FIRST_WORDS = frozenset(
 )
 _END_WORDS = compile_pattern(r"(?i)(the )?(end|year-end)\b")
 _PREPOSITION = compile_pattern(
-    r"(?i)(in|by|during|at|before|after|around|within|over|from|through|until|on)\b"
+    r"(?i)(in|by|during|at|before|after|around|within|over|from|through|throughout|until|on)\b"
 )
+_MONTHS = "january|february|march|april|may|june|july|august|september|october|november|december"
+_LATER_THIS_YEAR = compile_pattern(r"(?i)\blater this year\b")
+_THIS_YEAR = compile_pattern(r"(?i)\b(this|the current) year\b")
+_NEXT_YEAR = compile_pattern(r"(?i)\bnext year\b")
+_MONTH_ONLY = compile_pattern(rf"(?i)(in )?({_MONTHS})")
+_MONTH_DAYS = compile_pattern(rf"(?i)({_MONTHS}) \d{{1,2}}\b")
+_ORDINAL_PART = compile_pattern(r"(?i)(first|second|third|fourth) (half|quarter)\b")
 _FRAGMENT_WORDS = 4
 _FRAGMENT_SAFE = frozenset("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.~")
 
@@ -438,16 +445,17 @@ def render_html(digest: Digest) -> str:
     """
     week = f"{_day(digest.week_from, year=False)} to {_day(digest.week_to)}"
     paid = digest.access == Access.PAID.value
-    where = "the calendar" if paid else "the next 30 days of the calendar"
+    where = "the calendar" if paid else "the next 30 days"
     parts = [
         f"<h1>Catalyst digest: week of {week}</h1>",
         *(["<p>Full issue for paid subscribers.</p>"] if paid else []),
         "<p>Key: " + " · ".join(f"{mark} {escape(name)}" for mark, name in _CATEGORY_KEY) + "</p>",
         f"<h2>Rescheduled Catalysts ({digest.counts.moved})</h2>",
-        _list([_move_item(move) for move in digest.moved]) or f"<p>No date on {where} moved this week.</p>",
+        _list([_move_item(move) for move in digest.moved])
+        or f"<p>No date {'on' if paid else 'in'} {where} moved this week.</p>",
         f"<h2>New ({digest.counts.new})</h2>",
         _list([_item(catalyst) for catalyst in digest.new])
-        or f"<p>No catalyst was added to {where} this week.</p>",
+        or f"<p>No catalyst {'on' if paid else 'in'} {where} was added this week.</p>",
     ]
     last = _day(horizon(digest.issue_date))
     due, open_windows, later = _split(digest.upcoming, digest.issue_date)
@@ -557,9 +565,24 @@ def _date_words(raw: str, start: date, end: date) -> str:
     words = " ".join(raw.split())
     if not words:
         return f"between {_day(start)} and {_day(end)}"
+    # Words with no year get the window's own year, so a reader never meets "this year" without
+    # knowing which; a month with days reads "on" (owner's review practices; ADR 0055, decision 7).
+    # "This year" is the year the window opens in and "next year" the year it closes in: a window
+    # read from "by the end of next year" opens on the document's date, a year before it closes.
+    words = _LATER_THIS_YEAR.sub(f"later in {start.year}", words)
+    words = _THIS_YEAR.sub(str(start.year), words)
+    words = _NEXT_YEAR.sub(str(end.year), words)
+    if _MONTH_ONLY.fullmatch(words):
+        words = f"{words} {end.year}"
+    if _MONTH_DAYS.match(words):
+        return f"on {words}"
+    if words.lower().startswith("later in "):
+        return words
     first, _, rest = words.partition(" ")
     if first.lower() in _COMMON_FIRST_WORDS or first.lower().startswith("mid-"):
         words = f"{first.lower()} {rest}".rstrip()
+    if _ORDINAL_PART.match(words):
+        words = f"the {words}"  # "first half of 2027" reads "in the first half of 2027"
     if _END_WORDS.match(words):
         return f"at {words}"
     return words if _PREPOSITION.match(words) else f"in {words}"
