@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 from functools import partial
 from typing import Any
 
+import httpx
 from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -153,31 +154,59 @@ def collect_press_releases(
     since: date,
     before: date,
     already_stored: Callable[[str], bool],
+    not_found: Callable[[str], None] = lambda _url: None,
 ) -> Iterator[FetchedDocument]:
-    """Yield the Exhibit 99.1 of each 8-K in the period whose filing is not stored yet."""
+    """Yield the Exhibit 99.1 of each 8-K in the period whose filing is not stored yet.
+
+    A filing whose index page or press release EDGAR answers 404 for is passed to `not_found` and
+    skipped; the company's other filings are still read, and the next run tries it again. Any
+    other error ends the company's collection, as before.
+    """
     for filing in press_release_filings(client, submissions_json, since, before):
         ref = filing.ref
         if not filing.may_have_exhibits or already_stored(f"sec:{ref.accession_number}:"):
             continue
-        # Fetch every kept document before yielding any, so a failure part-way stores nothing.
-        fetched: list[FetchedDocument] = []
-        for document in press_releases(list_documents(client.get(ref.index_url).text)):
-            response = client.get(document.url)
-            fetched.append(
-                FetchedDocument(
-                    source_key=source_key(ref, document),
-                    url=document.url,
-                    publisher=PUBLISHER,
-                    source_tier=SourceTier.REGULATOR_OR_SEC,
-                    document_type=DOCUMENT_TYPE,
-                    published_at=ref.accepted_at,
-                    content=response.content,
-                    content_type=response.headers.get("content-type", "application/octet-stream").split(";")[
-                        0
-                    ],
-                )
-            )
+        try:
+            fetched = _fetch_filing(client, ref)
+        except _NotFoundError as missing:
+            not_found(missing.url)
+            continue
         yield from fetched
+
+
+class _NotFoundError(Exception):
+    def __init__(self, url: str) -> None:
+        super().__init__(url)
+        self.url = url
+
+
+def _get(client: EdgarClient, url: str) -> httpx.Response:
+    try:
+        return client.get(url)
+    except httpx.HTTPStatusError as error:
+        if error.response.status_code == 404:  # Not Found
+            raise _NotFoundError(url) from error
+        raise
+
+
+def _fetch_filing(client: EdgarClient, ref: FilingRef) -> list[FetchedDocument]:
+    """Fetch every kept document of one filing before storing any, so a failure part-way stores nothing."""
+    fetched: list[FetchedDocument] = []
+    for document in press_releases(list_documents(_get(client, ref.index_url).text)):
+        response = _get(client, document.url)
+        fetched.append(
+            FetchedDocument(
+                source_key=source_key(ref, document),
+                url=document.url,
+                publisher=PUBLISHER,
+                source_tier=SourceTier.REGULATOR_OR_SEC,
+                document_type=DOCUMENT_TYPE,
+                published_at=ref.accepted_at,
+                content=response.content,
+                content_type=response.headers.get("content-type", "application/octet-stream").split(";")[0],
+            )
+        )
+    return fetched
 
 
 def backfill_window(today: date) -> tuple[date, date] | None:
@@ -198,6 +227,7 @@ class BackfillReport:
     companies_done: int = 0
     companies_left: int = 0
     sources: list[CollectionStats] = field(default_factory=list[CollectionStats])
+    not_found: list[str] = field(default_factory=list[str])  # filings EDGAR answered 404 for
 
     def summary(self) -> dict[str, Any]:
         """Return the counts the owner reads in the job summary."""
@@ -209,6 +239,8 @@ class BackfillReport:
             "companies_done": self.companies_done,
             "companies_left": self.companies_left,
             "press_releases_stored": sum(s.created for s in self.sources),
+            "filings_not_found": len(self.not_found),
+            "not_found": self.not_found,
             "sources": [
                 {"source": s.source, "created": s.created, "existing": s.existing, "error": s.error}
                 for s in self.sources
@@ -263,6 +295,10 @@ def backfill_press_releases(
     collector = Collector(store, session_factory, now)
     deadline = now() + timedelta(minutes=max_minutes) if max_minutes is not None else None
 
+    def report_missing(url: str) -> None:
+        report.not_found.append(url)
+        log_event(_log, "filing_not_found", url=url)
+
     def already_stored(prefix: str) -> bool:
         with session_factory() as session:
             return bool(known_source_keys(session, prefix))
@@ -277,10 +313,13 @@ def backfill_press_releases(
             report.sources.append(found)
             continue
         company_id, submissions = found
-        documents = partial(collect_press_releases, client, submissions, since, before, already_stored)
+        documents = partial(
+            collect_press_releases, client, submissions, since, before, already_stored, report_missing
+        )
         report.sources.append(
             collector.run(f"sec-backfill:{pilot.ticker}", documents, (company_id, DocumentMatch.SEC_CIK))
         )
         report.companies_done += 1
-    log_event(_log, "backfill_collected", **report.summary() | {"sources": len(report.sources)})
+    counts = {"sources": len(report.sources), "not_found": len(report.not_found)}
+    log_event(_log, "backfill_collected", **report.summary() | counts)
     return report
