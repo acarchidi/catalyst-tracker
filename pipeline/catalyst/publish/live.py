@@ -180,14 +180,15 @@ class LiveIndex:
 
     cited: Mapping[UUID, UUID]  # claim -> catalyst
     catalysts: Sequence[LiveCatalyst]
-    # Withdrawn catalysts (ADR 0070), each `source` the withdrawn claim's document, not its window's.
+    # Withdrawn catalysts (ADR 0070); each `source.published_at` is when it was withdrawn.
     withdrawn: Sequence[LiveCatalyst] = ()
 
     def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
         """Say whether the claim's event was withdrawn after review and its source is no newer.
 
         Matched like `place`, but on company, type, drugs and trials only: a stated indication
-        never lets a stale event back in. Only a document published after the withdrawn claim's is new.
+        never lets a stale event back in. Only a document published after the withdrawal itself is
+        new: later releases often repeat the stale date (Opus re-review of PR #151).
         """
         same = [
             c
@@ -246,7 +247,7 @@ def load_live(session: Session) -> LiveIndex:
         if row.field in WINDOW_FIELDS:
             window_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
         elif row.field == CatalystField.STATUS.value:  # the last one withdrew a withdrawn catalyst
-            status_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
+            status_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.learned_at)
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []

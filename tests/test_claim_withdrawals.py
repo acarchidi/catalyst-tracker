@@ -6,6 +6,9 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
+from hypothesis import HealthCheck, given, settings
+from hypothesis import strategies as st
+from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.alerts import _extract_problems  # pyright: ignore[reportPrivateUsage]
@@ -35,8 +38,10 @@ from catalyst.schemas import (
     GateDecision,
     IndicationAttempt,
     IndicationResult,
+    SourceTier,
 )
 from catalyst.snapshots import LocalSnapshotStore
+from conftest import truncate_all
 from test_publish_writer import NOW, OCT_14, OCT_16, VERIFIER_MODEL, World
 
 
@@ -168,13 +173,56 @@ def test_an_older_claim_about_the_same_event_does_not_bring_it_back(world: World
     assert [row.status for row in world.rows(Catalyst)] == ["withdrawn"]
 
 
-def test_a_claim_from_a_newer_document_may_publish_the_event_again(world: World) -> None:
+def test_a_later_release_repeating_the_stale_date_does_not_bring_it_back(world: World) -> None:
+    first = world.claim("second half of 2027", published=OCT_14)
+    assert _publish(world)["catalysts_created"] == 1
+    world.claim("second half of 2027", published=OCT_16)  # same dates: never recorded against it
+    assert _publish(world)["not_written_same_dates"] == 1
+    summary = _publish(world, _entry(first), days=1)
+    assert (summary["catalysts_withdrawn"], summary["catalysts_created"]) == (1, 0)
+    assert summary["top_reasons"] == {WITHDRAWN_EVENT: 1}
+    assert _publish(world, _entry(first), days=2)["catalysts_created"] == 0
+    assert [row.status for row in world.rows(Catalyst)] == ["withdrawn"]
+
+
+def test_only_a_release_published_after_the_withdrawal_may_publish_the_event_again(world: World) -> None:
     first = world.claim("second half of 2027", published=OCT_14)
     _publish(world)
-    _publish(world, _entry(first), days=1)
-    world.claim("first half of 2028", published=OCT_16)
-    assert _publish(world, _entry(first), days=2)["catalysts_created"] == 1
+    _publish(world, _entry(first), days=1)  # withdrawn on Oct 19
+    world.claim("first half of 2028", published=NOW + timedelta(days=3))
+    assert _publish(world, _entry(first), days=4)["catalysts_created"] == 1
     assert sorted(row.status for row in world.rows(Catalyst)) == ["upcoming", "withdrawn"]
+
+
+_RELEASES = st.lists(
+    st.tuples(
+        st.integers(min_value=0, max_value=20),  # days before NOW
+        st.sampled_from([SourceTier.REGULATOR_OR_SEC, SourceTier.COMPANY_SITE, SourceTier.WIRE]),
+        st.sampled_from(["second half of 2027", "fourth quarter of 2027", "December 2027"]),
+    ),
+    min_size=1,
+    max_size=5,
+)
+
+
+@settings(max_examples=25, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
+@given(releases=_RELEASES, pick=st.integers(min_value=0, max_value=10))
+def test_a_withdrawn_event_never_reappears_from_releases_before_the_withdrawal(
+    session_factory: sessionmaker[Session], engine: Engine, tmp_path: Path, releases: list[Any], pick: int
+) -> None:
+    """Any same-event releases published before the withdrawal: two runs later, nothing is live."""
+    truncate_all(engine)
+    world = World(session_factory, LocalSnapshotStore(tmp_path))
+    for days, tier, text in releases:
+        world.claim(text, published=NOW - timedelta(days=days), tier=tier)
+    _publish(world)
+    cited = sorted({c.claim_id for c in world.rows(CatalystChange)}, key=str)
+    if not cited:
+        return  # nothing was published, so nothing can come back
+    entry = _entry(cited[pick % len(cited)])
+    for day in (1, 2):
+        _publish(world, entry, days=day)
+        assert {row.status for row in world.rows(Catalyst)} == {"withdrawn"}
 
 
 def test_no_indication_is_written_to_a_withdrawn_catalyst(world: World) -> None:

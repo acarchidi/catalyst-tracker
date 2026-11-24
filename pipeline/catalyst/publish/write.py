@@ -480,7 +480,7 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
     catalysts = list(live.catalysts)
     for item in sorted(ready, key=_Ready.order):
         if live.was_withdrawn(item.key, item.candidate.rank.published_at):
-            # A claim from no newer a document must not bring a withdrawn event back as a new
+            # A claim from a document published before the withdrawal must not bring the event back as a new
             # catalyst (Opus review of PR #151).
             result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, WITHDRAWN_EVENT)
             run.results.setdefault(item.claim.id, []).append(result)
