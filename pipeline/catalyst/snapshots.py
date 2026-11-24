@@ -23,7 +23,7 @@ from typing import Protocol
 from urllib.parse import urlsplit
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import TABLES
@@ -70,6 +70,14 @@ class SnapshotStore(Protocol):
 
     def get(self, key: str) -> bytes:
         """Return the bytes stored under `key`, after checking they still match their hash."""
+        ...
+
+
+class DeletingStore(SnapshotStore, Protocol):
+    """A snapshot store that can also delete a copy (ADR 0066)."""
+
+    def delete_copy(self, key: str) -> None:
+        """Delete the copy at `key`; a copy already gone is not an error."""
         ...
 
 
@@ -151,6 +159,11 @@ class LocalSnapshotStore:
         if not path.is_file():
             raise SnapshotNotFoundError(f"no copy at {key}")
         return _checked(key, path.read_bytes())
+
+    def delete_copy(self, key: str) -> None:
+        """Delete the copy at `key` (ADR 0066); a copy already gone is not an error."""
+        _expected_hash(key)
+        (self._root / key).unlink(missing_ok=True)
 
 
 class SupabaseSnapshotStore:
@@ -246,6 +259,16 @@ class SupabaseSnapshotStore:
         """Store the compressed copy of `content` under `key`; refuse bytes that do not match it."""
         _checked(key, content)
         self._upload(key + COMPRESSED_SUFFIX, compress_copy(content), "application/gzip")
+
+    def delete_copy(self, key: str) -> None:
+        """Delete every object of the copy at `key`, compressed and plain (ADR 0066).
+
+        Only `catalyst snapshots-clean` calls this, for a fully read document that backs no claim.
+        A copy already gone is not an error, so a stopped clean-up can be run again.
+        """
+        _expected_hash(key)
+        self._delete(key + COMPRESSED_SUFFIX)
+        self._delete(key)
 
     def _compressed_is_good(self, key: str) -> bool:
         data = self._download(key + COMPRESSED_SUFFIX)
@@ -392,6 +415,7 @@ class VerifyReport:
     missing: list[str] = field(default_factory=list[str])
     changed: list[str] = field(default_factory=list[str])
     unreadable: list[str] = field(default_factory=list[str])
+    deleted: int = 0  # copies deleted on purpose, once fully read and backing no claim (ADR 0066)
 
     @property
     def ok(self) -> bool:
@@ -407,13 +431,19 @@ def verify_snapshots(
     One copy that cannot be read (a storage or network error, a malformed row) is listed as
     unreadable and the audit continues, so one failure never hides the rest of the report.
     `workers` copies are read at the same time (ADR 0054); the report lists them in source-key
-    order whatever the number.
+    order whatever the number. A copy deleted on purpose (ADR 0066) is counted, not read: it is
+    not missing.
     """
     table = TABLES[SourceDocument]
     with session_factory() as session:
         rows = session.execute(
-            select(table.c.source_key, table.c.sha256, table.c.snapshot_key).order_by(table.c.source_key)
+            select(table.c.source_key, table.c.sha256, table.c.snapshot_key)
+            .where(table.c.copy_deleted_at.is_(None))
+            .order_by(table.c.source_key)
         ).all()
+        deleted = session.execute(
+            select(func.count()).select_from(table).where(table.c.copy_deleted_at.is_not(None))
+        ).scalar_one()
 
     def verdict(row: tuple[str, str, str]) -> str | None:
         _, sha256, key = row
@@ -429,7 +459,7 @@ def verify_snapshots(
             return "unreadable"
         return None
 
-    report = VerifyReport()
+    report = VerifyReport(deleted=deleted)
     triples = [(str(source_key), str(sha256), str(key)) for source_key, sha256, key in rows]
     with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
         verdicts = list(pool.map(verdict, triples))  # map keeps the rows' order

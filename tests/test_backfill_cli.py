@@ -11,6 +11,7 @@ from catalyst import cli
 from catalyst.cli import main
 from catalyst.collectors.documents import CollectionStats
 from catalyst.collectors.sec.backfill import BackfillReport
+from catalyst.extract.filings import FilingReport
 from catalyst.extract.indicate import IndicationReport
 from catalyst.extract.run import ExtractionReport
 from catalyst.publish.indication import IndicationWrites
@@ -18,6 +19,7 @@ from catalyst.publish.run import DecisionReport
 from catalyst.publish.sanity import SafeReport
 from catalyst.publish.write import PublishReport
 from catalyst.resolve_claims import MatchReport
+from catalyst.store_cleanup import CleanupReport
 from catalyst.verify.advisory import AdvisoryReport
 from catalyst.verify.company import CompanyReport
 from catalyst.verify.drug import DrugReport
@@ -26,6 +28,13 @@ from catalyst.verify.run import CheckReport
 from catalyst.verify.second_run import SecondReadingReport
 
 NOW = datetime(2026, 11, 25, 2, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _filing_jobs_stand_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the filing reader and the store clean-up (ADR 0066), which need a database."""
+    monkeypatch.setattr(cli, "read_filings", lambda *_args, **_kw: FilingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "clean_store", lambda *_args, **_kw: CleanupReport(deleting=True))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 class _FakeEngine:

@@ -1,9 +1,9 @@
 """Source documents: the primary documents every claim points back to (spec: Provenance)."""
 
-from typing import Annotated
+from typing import Annotated, ClassVar, Self
 from urllib.parse import urlsplit
 
-from pydantic import AfterValidator, AwareDatetime, Field
+from pydantic import AfterValidator, AwareDatetime, Field, model_validator
 
 from catalyst.schemas.base import Entity
 from catalyst.schemas.enums import SourceTier
@@ -33,6 +33,9 @@ class SourceDocument(Entity):
     # The source's own identity for the document (an SEC accession and file name, an NCT number
     # and its update date, ...). Re-fetching the same key adds nothing (ADR 0005).
     __unique__ = (("source_key",),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "deleted_only_after_read": "copy_deleted_at IS NULL OR fully_read_at IS NOT NULL"
+    }
 
     source_key: str = Field(
         pattern=r"^[a-z]+:.+$",
@@ -64,3 +67,23 @@ class SourceDocument(Entity):
     content_type: str = Field(
         min_length=1, max_length=200, description="Media type the publisher sent, for example 'text/html'."
     )
+    fully_read_at: AwareDatetime | None = Field(
+        default=None,
+        description=(
+            "When the extractor finished reading every part of this filing or exhibit (ADR 0066); "
+            "it is never read again. Empty until then, and for press releases."
+        ),
+    )
+    copy_deleted_at: AwareDatetime | None = Field(
+        default=None,
+        description=(
+            "When the stored copy was deleted, because the document was fully read and backs no claim "
+            "(ADR 0066). Empty while the copy is kept."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _deleted_only_after_read(self) -> Self:
+        if self.copy_deleted_at is not None and self.fully_read_at is None:
+            raise ValueError("a copy is deleted only once its document is fully read")
+        return self

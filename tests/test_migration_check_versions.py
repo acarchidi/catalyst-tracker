@@ -75,7 +75,8 @@ def test_upgrade_adds_empty_columns_and_downgrade_removes_them_keeping_outcomes(
     config: Config, engine: Engine
 ) -> None:
     command.downgrade(config, BEFORE)
-    truncate_all(engine)
+    with engine.begin() as connection:  # works at either revision: later tables do not exist yet
+        connection.execute(text("TRUNCATE source_document CASCADE"))
     check = _a_stored_outcome(engine)
     command.upgrade(config, REVISION)
     assert {"rule_version", "input_digest"} <= _columns(engine)
