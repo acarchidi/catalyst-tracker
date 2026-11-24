@@ -74,6 +74,24 @@ class Company(Entity):
     sic_code: SicCode | None = Field(
         default=None, description="SEC industry code, for example 2834 (pharmaceutical preparations)."
     )
+    display_name: Name | None = Field(
+        default=None,
+        description=(
+            "Name shown to readers (ADR 0068): the company's own spelling in its own stored press "
+            "releases, else the SEC name without its state suffix. Empty until first computed."
+        ),
+    )
+    display_name_document_id: Annotated[UUID, References("source_document")] | None = Field(
+        default=None,
+        description="The stored press release that spells the display name; empty when it is the SEC name.",
+    )
+    display_name_inputs: Sha256Hex | None = Field(
+        default=None,
+        description=(
+            "SHA-256 of what the display name was computed from: the code, the SEC name, and the "
+            "releases read (ADR 0068); a run recomputes it only when this changes."
+        ),
+    )
 
 
 class CompanyDocument(Entity):

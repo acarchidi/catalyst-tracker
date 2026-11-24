@@ -22,6 +22,7 @@
 | `catalyst.logs` | JSON log lines | Events | Standard error |
 | `catalyst.llm` | `ModelClient`, provider adapters, prices, daily spend caps, prompt files | Role, prompt, document | Validated JSON plus cost; a `model_call` row per call |
 | `catalyst.publish` | The publish gate: `gate` decides one claim; `run` (`catalyst decide-claims`) stores every decision; `sanity` stores `safe_to_write`, whether the writer can place a claim without guessing; `write` (`catalyst publish-claims`) checks again and is the only writer of live catalysts, their change rows, and drug and trial links (ADR 0018, part 5) | Claims, stored checks, stored copies | `claim_decision` rows; live catalysts |
+| `catalyst.company_names` | Each company's display name: its own spelling in its own stored press releases, else the SEC name without its state suffix (`catalyst company-names`, also last in `extract-catalysts`; ADR 0068) | SEC names, stored press releases | `company.display_name` and its source release |
 | `catalyst.api` | Read-only data API (`catalyst api`, localhost, `/v1`) and MCP server (`catalyst mcp`, stdio) over published data only; free versus paid shaping (ADR 0025) | Published catalysts, their change rows and drug links | JSON with sources and the not-financial-advice notice |
 | `catalyst.cli` | `uv run catalyst ...` commands | Arguments | JSON on standard output |
 

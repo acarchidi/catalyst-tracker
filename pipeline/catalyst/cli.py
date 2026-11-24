@@ -36,6 +36,7 @@ from catalyst.collectors.sec.backfill import backfill_press_releases
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.collectors.sources.mesh import stored_index
+from catalyst.company_names import recompute_display_names
 from catalyst.copy_cache import CachedStore, claim_copy_keys
 from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
@@ -250,6 +251,11 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
+    names = commands.add_parser(
+        "company-names",
+        help="Store each company's own spelling of its name, from its stored releases (free; ADR 0068).",
+    )
+    _store_arguments(names)
     drugs = commands.add_parser(
         "load-drugs",
         help=(
@@ -482,6 +488,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "resolve-claims": _resolve,
         "load-drugs": _load_drugs,
         "verify-claims": _verify_claims,
+        "company-names": _company_names,
         "alerts": _alerts,
         "post-issues": _post_issues,
         "decide-claims": _decide_claims,
@@ -688,6 +695,12 @@ def _extract(args: argparse.Namespace) -> int:
             if plan.past(INDICATION_SHARE)
             else _indications_after(sessionmaker(engine), store, client, published, args.limit)
         )
+        # Last and free: each company's own spelling of its name, for the issue (ADR 0068).
+        names = (
+            {"skipped": OUT_OF_TIME}
+            if plan.past(1.0)
+            else _display_names(sessionmaker(engine), store, plan.by(1.0))
+        )
     finally:
         engine.dispose()
     if args.out is not None:
@@ -700,6 +713,7 @@ def _extract(args: argparse.Namespace) -> int:
         "decisions": decisions,
         "published": published,
         "indications": indications,
+        "display_names": names,
         "minutes_used": round(plan.budget.minutes_used(), 1),
     }
     print(json.dumps(summary, indent=2))
@@ -910,6 +924,32 @@ def _verify_claims(args: argparse.Namespace) -> int:
         engine.dispose()
     print(json.dumps(report, indent=2))
     return 0
+
+
+def _company_names(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = _display_names(sessionmaker(engine), store, None)
+    finally:
+        engine.dispose()
+    print(json.dumps(report, indent=2))
+    return 1 if "error" in report else 0
+
+
+def _display_names(
+    session_factory: sessionmaker[Session], store: SnapshotStore, deadline: float | None
+) -> dict[str, Any]:
+    """Store each company's display name (ADR 0068); a problem here never fails the steps before it."""
+    try:
+        return recompute_display_names(session_factory, store, deadline).summary()
+    except (SQLAlchemyError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the display names did not finish"}
 
 
 def _decide_claims(args: argparse.Namespace) -> int:

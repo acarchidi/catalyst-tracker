@@ -74,6 +74,11 @@ def name_words(text: str) -> str:
     return " ".join(_WORD.findall(_spelled(text)))
 
 
+def without_state_suffix(name: str) -> str:
+    r"""Return the SEC name without EDGAR's state suffix ("\DE", " /DE/", "/MD"); nothing else changes."""
+    return _STATE_SUFFIX.sub("", name).strip() or name
+
+
 def normalize_name(name: str) -> str:
     """Return the name in a form two spellings of one company share: lower case, words only."""
     text = _spelled(name)

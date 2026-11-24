@@ -96,7 +96,7 @@ def build_export(
 
 
 def _catalyst_order(detail: CatalystDetail) -> tuple[Any, ...]:
-    return (detail.window.start, detail.company.name, str(detail.id))
+    return (detail.window.start, detail.company.display_name, str(detail.id))
 
 
 def held_claims(session: Session, store: SnapshotStore | None = None) -> list[dict[str, Any]]:
@@ -359,7 +359,7 @@ def registry_values(session: Session, trial_ids: list[UUID]) -> dict[UUID, dict[
 def _held_order(item: dict[str, Any]) -> tuple[Any, ...]:
     start = claim_value(item["values"]).get("window_start")
     start = start if isinstance(start, str) else ""
-    name = item["company"]["name"] if item["company"] else ""
+    name = item["company"]["display_name"] if item["company"] else ""
     return (start == "", start, name, item["claim_id"])  # undated claims last
 
 

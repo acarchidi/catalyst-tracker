@@ -381,7 +381,7 @@ def _split(listed: Sequence[Shaped], issue_date: date) -> tuple[list[Shaped], li
 
 
 def _order(detail: CatalystDetail) -> tuple[date, str, str]:
-    return (detail.window.start, detail.company.name, str(detail.id))
+    return (detail.window.start, detail.company.display_name, str(detail.id))
 
 
 def _news(detail: CatalystDetail, week: tuple[datetime, datetime]) -> str:
@@ -509,7 +509,7 @@ def _heading(catalyst: CatalystSummary) -> str:
     ticker = f" ({catalyst.company.ticker})" if catalyst.company.ticker else ""
     name = category(catalyst.catalyst_type)
     return (
-        f"{_CATEGORY_MARKS[name]} <strong>{escape(catalyst.company.name + ticker)}</strong>: "
+        f"{_CATEGORY_MARKS[name]} <strong>{escape(catalyst.company.display_name + ticker)}</strong>: "
         f"{escape(catalyst.title)}"
     )
 

@@ -36,6 +36,7 @@ from catalyst.api.views import (
     TrialView,
     WindowView,
 )
+from catalyst.collectors.coverage import without_state_suffix
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import has_words
 from catalyst.logs import log_event
@@ -448,12 +449,18 @@ def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
     """Return each company with its current ticker, by id."""
     current = _TICKER.c.valid_to.is_(None)
     statement = (
-        select(_COMPANY.c.id, _COMPANY.c.name, _COMPANY.c.cik, _TICKER.c.ticker)
+        select(_COMPANY.c.id, _COMPANY.c.name, _COMPANY.c.display_name, _COMPANY.c.cik, _TICKER.c.ticker)
         .outerjoin(_TICKER, (_TICKER.c.company_id == _COMPANY.c.id) & current)
         .where(_COMPANY.c.id.in_(ids))
     )
     return {
-        row.id: CompanyView(id=row.id, name=row.name, cik=row.cik, ticker=row.ticker)
+        row.id: CompanyView(
+            id=row.id,
+            name=row.name,
+            display_name=row.display_name or without_state_suffix(row.name),
+            cik=row.cik,
+            ticker=row.ticker,
+        )
         for row in session.execute(statement)
     }
 
