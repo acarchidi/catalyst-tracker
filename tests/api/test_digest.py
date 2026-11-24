@@ -535,16 +535,62 @@ def test_empty_open_window_and_later_sections_are_left_out() -> None:
                 ("year-end 2026", "Company expects potential data at year-end 2026."),
                 ("the end of the year", "Company expects potential data at the end of the year."),
                 ("In 2026", "Company expects potential data in 2026."),
-                ("First half of 2027", "Company expects potential data in first half of 2027."),
+                ("First half of 2027", "Company expects potential data in the first half of 2027."),
+                ("throughout 2027", "Company expects potential data throughout 2027."),
+                ("fourth quarter of 2026", "Company expects potential data in the fourth quarter of 2026."),
                 ("mid-2027", "Company expects potential data in mid-2027."),
                 ("Mid-2027", "Company expects potential data in mid-2027."),
                 ("The End of 2026", "Company expects potential data at the End of 2026."),
                 ("by the end of 2026", "Company expects potential data by the end of 2026."),
                 ("Q1 2027", "Company expects potential data in Q1 2027."),
                 ("December 2026", "Company expects potential data in December 2026."),
+                # Owner's review practices (2026-11-24): words with no year get the window's year,
+                # and a month with days reads "on" (ADR 0055, decision 7).
+                ("late this year", "Company expects potential data in late 2026."),
+                ("later this year", "Company expects potential data later in 2026."),
+                ("by the end of this year", "Company expects potential data by the end of 2026."),
+                (
+                    "the fourth quarter of this year",
+                    "Company expects potential data in the fourth quarter of 2026.",
+                ),
                 (
                     "   ",
                     "Company expects potential data between 1 July 2026 and 31 December 2026.",
+                ),
+            ]
+        ),
+        *(
+            (raw, DateConfidence.COMPANY_CONFIRMED, start, end, expected)
+            for raw, start, end, expected in [
+                (
+                    "November",
+                    date(2026, 11, 1),
+                    date(2026, 11, 30),
+                    "Company expects potential data in November 2026.",
+                ),
+                (
+                    "in November",
+                    date(2026, 11, 1),
+                    date(2026, 11, 30),
+                    "Company expects potential data in November 2026.",
+                ),
+                (
+                    "December 8-11, 2026",
+                    date(2026, 12, 8),
+                    date(2026, 12, 11),
+                    "Company expects potential data on December 8-11, 2026.",
+                ),
+                (
+                    "December 12\u201315, 2026",
+                    date(2026, 12, 12),
+                    date(2026, 12, 15),
+                    "Company expects potential data on December 12\u201315, 2026.",
+                ),
+                (
+                    "early next year",
+                    date(2027, 1, 1),
+                    date(2027, 4, 30),
+                    "Company expects potential data in early 2027.",
                 ),
             ]
         ),
@@ -626,7 +672,7 @@ def test_the_quote_link_is_always_a_plain_address(quote: str) -> None:
 def test_the_html_leaves_out_the_counts_of_unlisted_records_and_states_an_empty_week() -> None:
     far_move = _slipped(start=date(2027, 4, 1), end=date(2027, 6, 30), raw="2Q27")
     text = " ".join(" ".join(_parsed(render_html(build_digest([far_move], ISSUE))).text).split())
-    assert "No date on the next 30 days of the calendar moved this week." in text
+    assert "No date in the next 30 days moved this week." in text
     assert "Outside the next 30 days" not in text  # counted in the JSON only (ADR 0057)
     assert "2Q27" not in text
     empty = " ".join(" ".join(_parsed(render_html(build_digest([], ISSUE))).text).split())
