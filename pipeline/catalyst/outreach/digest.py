@@ -33,7 +33,7 @@ from pydantic import Field, JsonValue, model_validator
 from catalyst.api.access import FREE_HORIZON_DAYS, NOTICE, Access, calendar_window, shape
 from catalyst.api.read import DATE_FIELDS, OPEN_STATUSES
 from catalyst.api.views import CatalystDetail, CatalystSummary, ChangeView, Shaped, SourceView, View
-from catalyst.schemas import CatalystType, DateConfidence
+from catalyst.schemas import CatalystType, DateConfidence, SourceTier
 
 NEW_YORK = ZoneInfo("America/New_York")
 WEEK = timedelta(days=7)
@@ -59,7 +59,7 @@ _CATEGORIES: dict[str, frozenset[CatalystType]] = {
             CatalystType.LABEL_EXPANSION,
         }
     ),
-    "Trial progress": frozenset({CatalystType.ENROLLMENT_COMPLETION}),
+    "Trial progress": frozenset({CatalystType.ENROLLMENT_COMPLETION, CatalystType.PRIMARY_COMPLETION}),
     "Corporate and financing": frozenset(
         {
             CatalystType.OFFERING,
@@ -93,12 +93,13 @@ _EXPECTED = {
     CatalystType.SHELF_FILING: "a shelf filing",
     CatalystType.MERGER_ACQUISITION: "the transaction to close",
     CatalystType.EARNINGS: "results",
+    CatalystType.PRIMARY_COMPLETION: "primary completion",
 }
 # Who stands behind the date, said in words instead of the old date label.
 _DAY_LABELS = {
     DateConfidence.COMPANY_CONFIRMED: "",
     DateConfidence.REGULATOR_SCHEDULED: "set by the regulator",
-    DateConfidence.REGISTRY_ESTIMATE: "registry estimate",
+    DateConfidence.REGISTRY_ESTIMATE: "Estimated",  # `when` words these itself (ADR 0067)
     DateConfidence.INFERRED: "our estimate",
 }
 _COMMON_FIRST_WORDS = frozenset(
@@ -532,6 +533,8 @@ def when(catalyst: CatalystSummary) -> str:
     expects potential data in 2026." Who stands behind the date replaces the old date label.
     """
     window = catalyst.window
+    if catalyst.date_confidence is DateConfidence.REGISTRY_ESTIMATE:
+        return f"Estimated {_registry_words(window.start, window.end)}."  # ADR 0067
     if window.start == window.end:
         who = _DAY_LABELS[catalyst.date_confidence]
         return f"{_day(window.start)}{f' ({who})' if who else ''}."
@@ -539,11 +542,25 @@ def when(catalyst: CatalystSummary) -> str:
     event = _EXPECTED.get(catalyst.catalyst_type, "the event")
     if catalyst.date_confidence is DateConfidence.COMPANY_CONFIRMED:
         return f"Company expects {event} {words}."
-    if catalyst.date_confidence is DateConfidence.REGISTRY_ESTIMATE:
-        return f"The trial registry estimates completion {words}."
     if catalyst.date_confidence is DateConfidence.REGULATOR_SCHEDULED:
         return f"The regulator expects {event} {words}."
     return f"Our estimate: {event} {words}."
+
+
+def _registry_words(start: date, end: date) -> str:
+    """Return a registry estimate's window in words: a day, a whole month, or the days it spans.
+
+    The registry writes "2027-03"; the issue prints "March 2027" (owner decision 2026-11-23).
+    """
+    if start == end:
+        return _day(start)
+    if (
+        start.day == 1
+        and (end + timedelta(days=1)).day == 1
+        and (start.year, start.month) == (end.year, end.month)
+    ):
+        return f"{start:%B} {start.year}"
+    return _span(start, end)
 
 
 def _date_words(raw: str, start: date, end: date) -> str:
@@ -607,14 +624,20 @@ def _encode(text: str) -> str:
 def _source_line(source: SourceView) -> str:
     label = escape(f"{source.publisher}, {source.document_type}, {_day(source.published_at.date())}")
     if _is_plain_https(source.url):
-        address = escape(quote_link(source.url, source.quote), quote=True)
+        # A registry field is not printed on the trial's page, so it gets no text fragment (ADR 0067).
+        link = (
+            source.url if source.source_tier is SourceTier.REGISTRY else quote_link(source.url, source.quote)
+        )
+        address = escape(link, quote=True)
         return f'<p>Sources: <a href="{address}">{label}</a></p>'
     return f"<p>Sources: {label}, {escape(source.url)}</p>"
 
 
 def _move_item(move: DateMove) -> str:
     before = _span(move.before.start, move.before.end)
-    if move.before.raw_text:
+    if move.catalyst.date_confidence is DateConfidence.REGISTRY_ESTIMATE:
+        before = _registry_words(move.before.start, move.before.end)
+    elif move.before.raw_text:
         before = f"{move.before.raw_text} ({before})"
     lines = [
         _heading(move.catalyst),

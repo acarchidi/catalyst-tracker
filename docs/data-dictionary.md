@@ -218,7 +218,7 @@ An expected event that can move a company's value, with its date window. These a
 | Field | Type | Required | Meaning |
 | --- | --- | --- | --- |
 | `id` | identifier | yes | Internal identifier. |
-| `catalyst_type` | one of: `pdufa_date`, `advisory_committee`, `topline_readout`, `conference_presentation`, `regulatory_submission`, `regulatory_acceptance`, `chmp_opinion`, `complete_response_letter`, `label_expansion`, `enrollment_completion`, `offering`, `shelf_filing`, `merger_acquisition`, `earnings` | yes | What kind of event this is. |
+| `catalyst_type` | one of: `pdufa_date`, `advisory_committee`, `topline_readout`, `conference_presentation`, `regulatory_submission`, `regulatory_acceptance`, `chmp_opinion`, `complete_response_letter`, `label_expansion`, `enrollment_completion`, `offering`, `shelf_filing`, `merger_acquisition`, `earnings`, `primary_completion` | yes | What kind of event this is. |
 | `company_id` | link to `company` | yes | The company the event concerns. |
 | `indication_id` | link to `indication` | no | The indication, if any. |
 | `title` | text, up to 300 characters | yes | One-line description shown to users. |
@@ -227,7 +227,7 @@ An expected event that can move a company's value, with its date window. These a
 | `window_precision` | one of: `day`, `month`, `quarter`, `half`, `year` | yes | How precisely the date is known. |
 | `window_raw_text` | text, up to 300 characters | yes | The date exactly as the source wrote it, for example '2H26'. |
 | `date_confidence` | one of: `company_confirmed`, `regulator_scheduled`, `registry_estimate`, `inferred` | yes | Who stands behind the date. |
-| `status` | one of: `upcoming`, `slipped`, `resolved` | yes | Upcoming, slipped, or resolved. |
+| `status` | one of: `upcoming`, `slipped`, `resolved`, `replaced` | yes | Upcoming, slipped, resolved, or replaced (a registry estimate a company date replaced). |
 
 Rules:
 

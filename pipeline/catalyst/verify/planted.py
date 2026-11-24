@@ -30,6 +30,7 @@ from catalyst.extract.text import TEXT_VERSION, QuoteSpan, document_text, find_q
 from catalyst.references import trial_from_study
 from catalyst.resolve import CompanyRef, DrugRef, ReferenceData, TrialRef, name_key
 from catalyst.schemas import CatalystType, DrugNameKind, TrialPhase
+from catalyst.schemas.enums import REGISTRY_ONLY_TYPES
 from catalyst.verify.rules import PDUFA_MONTHS, TrialNames, phases_overlap, stated_phases
 
 SEED = 2026
@@ -326,8 +327,11 @@ def _drug_elsewhere(record: Record, corpus: Corpus, _rng: Random) -> list[Record
 
 
 def _wrong_type(record: Record, _corpus: Corpus, _rng: Random) -> list[Record]:
+    # Only types the extractor can propose: its prompts never offer a registry-only type (ADR 0067).
     return [
-        _with(record, catalyst_type=t.value) for t in CatalystType if t.value != record.value["catalyst_type"]
+        _with(record, catalyst_type=t.value)
+        for t in CatalystType
+        if t.value != record.value["catalyst_type"] and t not in REGISTRY_ONLY_TYPES
     ]
 
 

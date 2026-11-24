@@ -512,7 +512,22 @@ def test_empty_open_window_and_later_sections_are_left_out() -> None:
             DateConfidence.REGISTRY_ESTIMATE,
             date(2026, 12, 1),
             date(2026, 12, 31),
-            "The trial registry estimates completion in December 2026.",
+            # Owner decision 2026-11-23 (ADR 0067): a registry estimate says just "Estimated".
+            "Estimated December 2026.",
+        ),
+        (
+            "2027-03-15",
+            DateConfidence.REGISTRY_ESTIMATE,
+            date(2027, 3, 15),
+            date(2027, 3, 15),
+            "Estimated 15 March 2027.",
+        ),
+        (
+            "2027",
+            DateConfidence.REGISTRY_ESTIMATE,
+            date(2027, 1, 1),
+            date(2027, 3, 31),
+            "Estimated 1 January 2027 to 31 March 2027.",
         ),
         (
             "December 15, 2026",
@@ -601,6 +616,42 @@ def test_every_catalyst_type_has_a_category_and_an_expected_event() -> None:
         )
         assert "the event" not in when(record)
         assert render_html(build_digest([record], ISSUE, access=Access.PAID))
+
+
+def test_a_registry_estimate_says_estimated_and_links_the_trial_page_as_it_is() -> None:
+    # Owner decision 2026-11-23 (ADR 0067). The quote is a registry field, which the trial's page
+    # does not print, so its link carries no text fragment (spec: Provenance, rule 9).
+    page_url = "https://clinicaltrials.gov/study/NCT04677543"
+    quote = '"primaryCompletionDateStruct":{"date":"2026-10","type":"ESTIMATED"}'
+    source = _source(quote, page_url).model_copy(
+        update={
+            "source_tier": SourceTier.REGISTRY,
+            "publisher": "ClinicalTrials.gov",
+            "document_type": "Registry record",
+        }
+    )
+    record = _detail(
+        start=date(2026, 10, 1),
+        end=date(2026, 10, 31),
+        raw="2026-10",
+        title="Primary completion: ARISE trial",
+    )
+    record = record.model_copy(
+        update={
+            "catalyst_type": CatalystType.PRIMARY_COMPLETION,
+            "date_confidence": DateConfidence.REGISTRY_ESTIMATE,
+            "sources": [source],
+            "trials": [TrialView(id=uuid4(), nct_id="NCT04677543", study_name="ARISE")],
+        }
+    )
+    html = render_html(build_digest([record], ISSUE))
+    text = _text(html)
+    assert "When: Estimated October 2026." in text
+    assert "Primary completion: ARISE trial" in text
+    assert "Trial: ARISE (NCT04677543)" in text
+    assert "\U0001f7e8" in html  # trial progress
+    assert _parsed(html).links == [page_url]
+    assert "2026-10" not in text  # the registry's own form of the date is not printed
 
 
 def test_the_quote_link_encodes_everything_but_plain_characters() -> None:

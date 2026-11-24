@@ -111,6 +111,14 @@ class CatalystType(StrEnum):
     SHELF_FILING = "shelf_filing"
     MERGER_ACQUISITION = "merger_acquisition"
     EARNINGS = "earnings"
+    # A trial's estimated primary completion, from its registry record only (ADR 0067); the
+    # extractor's prompts do not offer it.
+    PRIMARY_COMPLETION = "primary_completion"
+
+
+# Types only plain code writes, from a registry record; the extractor's prompts offer every other
+# type, and a test holds them to that (ADR 0067).
+REGISTRY_ONLY_TYPES = frozenset({CatalystType.PRIMARY_COMPLETION})
 
 
 class CatalystStatus(StrEnum):
@@ -119,6 +127,7 @@ class CatalystStatus(StrEnum):
     UPCOMING = "upcoming"
     SLIPPED = "slipped"
     RESOLVED = "resolved"
+    REPLACED = "replaced"  # a registry estimate a company-stated date took the place of (ADR 0067)
 
 
 class ClaimSubject(StrEnum):
