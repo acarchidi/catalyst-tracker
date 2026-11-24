@@ -587,6 +587,18 @@ def test_empty_open_window_and_later_sections_are_left_out() -> None:
                     "Company expects potential data on December 12\u201315, 2026.",
                 ),
                 (
+                    "by the end of next year",
+                    date(2026, 11, 20),
+                    date(2027, 12, 31),
+                    "Company expects potential data by the end of 2027.",
+                ),
+                (
+                    "late this year or early next year",
+                    date(2026, 10, 1),
+                    date(2027, 4, 30),
+                    "Company expects potential data in late 2026 or early 2027.",
+                ),
+                (
                     "early next year",
                     date(2027, 1, 1),
                     date(2027, 4, 30),

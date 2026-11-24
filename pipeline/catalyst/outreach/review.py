@@ -13,7 +13,7 @@ import unicodedata
 from dataclasses import dataclass
 from datetime import timedelta
 from html import unescape
-from urllib.parse import unquote, urlsplit
+from urllib.parse import urlsplit
 
 from catalyst.api.access import FREE_HORIZON_DAYS
 from catalyst.outreach.digest import Digest
@@ -195,9 +195,3 @@ def review_note(note: str) -> list[Finding]:
         if re.search(pattern, note if check != "note_construction" else low)
     ]
     return findings
-
-
-def quote_of(link: str) -> str:
-    """Return the quote words a source link's text fragment carries (for the review log)."""
-    fragment = urlsplit(unescape(link)).fragment
-    return unquote(fragment.removeprefix(":~:text="))

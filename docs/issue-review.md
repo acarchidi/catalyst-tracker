@@ -9,8 +9,8 @@ Every Monday the session runs this review between building the pages (weekly-iss
 ## A. Data, per listed entry
 
 1. **(code)** Each entry's date words appear in one of its quotes.
-2. Each entry's quote names the drug or the company for the event. Until Master control settles the rule, a gap is reported and does not hold the issue.
-3. **(code)** The ticker is the common stock: no five-letter symbol ending in W, U, R or Z (a warrant, unit, right or CVR), unless that is the company's only listing. SEC's `company_tickers_exchange.json` shows the exchange.
+2. The drug and company need not appear in the quote itself when the claim passed the publish gate's drug and company checks, which read the stored document around the quote (Master control, 2026-11-24). A claim whose drug or company check did not pass holds the issue.
+3. **(code)** The ticker is the common stock: no five-letter symbol ending in W, U, R or Z (a warrant, unit, right or CVR). SEC's `company_tickers_exchange.json` shows the exchange. A company whose only listing is such a symbol needs a person's confirmation, recorded in the review log.
 4. **(code)** The company name is a display name: no EDGAR state suffix ("\DE") and no name in capitals.
 5. **(code)** No listed window has ended. The entry is open.
 6. No entry is an event that a newer filing says already happened, or replaced: a closed deal, a completed submission, a meeting already held. Each "Due" entry is checked against the company's newer filings and news.

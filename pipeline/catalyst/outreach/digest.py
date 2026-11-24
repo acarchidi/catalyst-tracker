@@ -567,9 +567,11 @@ def _date_words(raw: str, start: date, end: date) -> str:
         return f"between {_day(start)} and {_day(end)}"
     # Words with no year get the window's own year, so a reader never meets "this year" without
     # knowing which; a month with days reads "on" (owner's review practices; ADR 0055, decision 7).
-    words = _LATER_THIS_YEAR.sub(f"later in {end.year}", words)
-    words = _THIS_YEAR.sub(str(end.year), words)
-    words = _NEXT_YEAR.sub(str(start.year), words)
+    # "This year" is the year the window opens in and "next year" the year it closes in: a window
+    # read from "by the end of next year" opens on the document's date, a year before it closes.
+    words = _LATER_THIS_YEAR.sub(f"later in {start.year}", words)
+    words = _THIS_YEAR.sub(str(start.year), words)
+    words = _NEXT_YEAR.sub(str(end.year), words)
     if _MONTH_ONLY.fullmatch(words):
         words = f"{words} {end.year}"
     if _MONTH_DAYS.match(words):
