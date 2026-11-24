@@ -218,7 +218,7 @@ def _store(
         if reading is not None:
             row = insert(TABLES[DocumentReading]).values(**reading.model_dump())
             replaced = {"skipped": None, "catalysts": row.excluded.catalysts, "read_at": row.excluded.read_at}
-            session.execute(row.on_conflict_do_update(index_elements=_READING_KEY, set_=replaced))
+            session.execute(row.on_conflict_do_update(index_elements=READING_KEY, set_=replaced))
         if not claims:
             return 0
         result = session.execute(
@@ -230,7 +230,7 @@ def _store(
         return len(result.all())
 
 
-_READING_KEY = list(DocumentReading.__unique__[0])
+READING_KEY = list(DocumentReading.__unique__[0])
 
 
 def _keep_skip(session_factory: sessionmaker[Session], reading: DocumentReading) -> bool:
@@ -255,14 +255,14 @@ def _keep_skip(session_factory: sessionmaker[Session], reading: DocumentReading)
             return False
         row = insert(table).values(**reading.model_dump())
         stored = row.on_conflict_do_update(
-            index_elements=_READING_KEY,
+            index_elements=READING_KEY,
             set_={"skipped": row.excluded.skipped, "read_at": row.excluded.read_at},
             where=table.c.skipped.is_not(None),
         )
         return session.execute(stored.returning(table.c.id)).first() is not None
 
 
-def _reading(document_id: Any, model: str, at: datetime, catalysts: int = 0) -> DocumentReading:
+def extractor_reading(document_id: Any, model: str, at: datetime, catalysts: int = 0) -> DocumentReading:
     """Return the extractor's reading of a document that made no claim."""
     return DocumentReading(
         source_document_id=UUID(str(document_id)),
@@ -275,12 +275,13 @@ def _reading(document_id: Any, model: str, at: datetime, catalysts: int = 0) -> 
     )
 
 
-def _is_text(content_type: str) -> bool:
+def is_text(content_type: str) -> bool:
+    """Say whether a copy is a web page or plain text, the only copies a model reads (ADR 0038)."""
     return content_type.split(";")[0].strip().lower() in TEXT_TYPES
 
 
 @dataclass(frozen=True)
-class _Skip:
+class SkipRecorder:
     """Keep a document no model read as a reading with its reason, and say so in the report."""
 
     session_factory: sessionmaker[Session]
@@ -331,8 +332,8 @@ def extract_documents(
         published = row.published_at.astimezone(NEW_YORK).date()
         result = DocumentResult(row.source_key, row.url, row.company, published)
         report.documents.append(result)
-        skip = _Skip(session_factory, result, _reading(row.id, client.model_for(ROLE), now()))
-        if not _is_text(row.content_type):
+        skip = SkipRecorder(session_factory, result, extractor_reading(row.id, client.model_for(ROLE), now()))
+        if not is_text(row.content_type):
             skip(ReadingSkip.NOT_TEXT)
             continue
         try:
@@ -384,7 +385,7 @@ def extract_documents(
         # A read that makes no claim (nothing found, or every quote lost) is kept, so the next run
         # does not pay to read it again (Opus review of PR #79, O1).
         found = len(extraction.catalysts)
-        no_claim = None if claims else _reading(row.id, extraction.model, now(), catalysts=found)
+        no_claim = None if claims else extractor_reading(row.id, extraction.model, now(), catalysts=found)
         result.claims_stored = _store(session_factory, claims, no_claim)
         log_event(_log, "document_extracted", source_key=row.source_key, catalysts=len(result.catalysts))
     # Counts only, never page text: copies whose claims all wait because the readings differ.

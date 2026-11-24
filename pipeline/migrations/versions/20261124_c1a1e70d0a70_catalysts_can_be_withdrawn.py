@@ -4,7 +4,7 @@ Widens `catalyst.status` by one letter and allows the value `withdrawn`. No row 
 downgrade refuses while any catalyst is withdrawn, since the older code would show it again.
 
 Revision ID: c1a1e70d0a70
-Revises: a64c0de5e7a1
+Revises: 1b7e8f9c6561
 Create Date: 2026-11-24 12:00:00.000000
 """
 
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c1a1e70d0a70"
-down_revision: str | None = "a64c0de5e7a1"
+down_revision: str | None = "1b7e8f9c6561"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

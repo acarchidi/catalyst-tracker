@@ -90,6 +90,37 @@ def test_a_problem_in_the_summary_raises_one_alert_for_the_job(change: dict[str,
     assert plan["solved"] == []
 
 
+@pytest.mark.parametrize(
+    ("change", "words"),
+    [
+        ({"filings": {"error": "OperationalError: x"}}, "Reading the 10-Q, 10-K and exhibit filings did not"),
+        ({"filings": {"filings_failed": 2}}, "2 documents among the 10-Q, 10-K and exhibit filings"),
+        (
+            {"store_cleanup": {"error": "OperationalError: x"}},
+            "stored copies no longer needed did not finish",
+        ),
+        ({"store_cleanup": {"copies_failed": 1}}, "1 document no longer needed could not be deleted"),
+    ],
+)
+def test_a_problem_reading_filings_or_cleaning_the_store_raises_the_job_alert(
+    change: dict[str, Any], words: str
+) -> None:
+    """ADR 0066: the filing reader and the clean-up report in the extraction's own alert."""
+    plan = build_alerts(
+        [JobRun("extract-catalysts", "failure", CLEAN_EXTRACT | change)], None, LIMITS, RUN_URL
+    )
+    assert _keys(plan) == ["job-failed:extract-catalysts"]
+    assert words in plan["issues"][0]["body"]
+
+
+def test_a_filing_reader_paused_at_the_usual_cap_is_no_alert() -> None:
+    paused = {"filings": {"stopped_early": "the usual daily cap is reached", "filings_failed": 0}}
+    plan = build_alerts(
+        [JobRun("extract-catalysts", "success", CLEAN_EXTRACT | paused)], None, LIMITS, RUN_URL
+    )
+    assert plan["issues"] == []
+
+
 def test_documents_skipped_without_a_model_call_are_counted_in_plain_words() -> None:
     skips = {
         "documents_skipped_already_done": 116,

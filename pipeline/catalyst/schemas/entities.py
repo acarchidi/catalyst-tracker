@@ -573,6 +573,49 @@ class DocumentReading(Entity):
     )
 
 
+class DocumentPartReading(Entity):
+    """One reader's pass over one part of a long filing or exhibit (ADR 0066).
+
+    A 10-Q, a 10-K, or an exhibit is read part by part; each part read is kept, so a run that stops
+    part-way goes on with the next part, and no part is paid for twice. A part is known by the
+    hash of its words, so the same words are never read twice by the same reader and prompt.
+    """
+
+    __tablename__ = "document_part_reading"
+    __unique__ = (("source_document_id", "agent", "prompt_id", "prompt_version", "part_sha256"),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "catalysts_not_negative": "catalysts >= 0",
+        "part_in_range": "part >= 0 AND part < parts",
+        "forward_span": "part_start >= 0 AND part_end > part_start",
+    }
+
+    source_document_id: Annotated[UUID, References("source_document")] = Field(
+        description="The document the part is from."
+    )
+    agent: ShortText = Field(description="Which reader, for example 'extractor'.")
+    prompt_id: ShortText = Field(description="Prompt used.")
+    prompt_version: ShortText = Field(description="Version of that prompt.")
+    model: ShortText = Field(description="Model that answered.")
+    section: ShortText = Field(
+        description="Which section the part is from, for example 'Management's discussion and analysis'."
+    )
+    part: Annotated[int, Field(ge=0)] = Field(
+        description="The part's place among the document's parts, from 0."
+    )
+    parts: Annotated[int, Field(gt=0)] = Field(description="How many parts the document has to read.")
+    part_start: Annotated[int, Field(ge=0)] = Field(
+        description="Where the part starts in the document's visible text, in characters."
+    )
+    part_end: Annotated[int, Field(gt=0)] = Field(description="Where the part ends in the visible text.")
+    part_sha256: str = Field(
+        pattern=r"^[0-9a-f]{64}$", max_length=64, description="SHA-256 of the part's words, lowercase hex."
+    )
+    catalysts: Annotated[int, Field(ge=0)] = Field(
+        description="How many catalysts the reader proposed in it."
+    )
+    read_at: AwareDatetime = Field(description="When the part was read.")
+
+
 class CatalystChange(Entity):
     """One change to a catalyst field (spec: Change history).
 

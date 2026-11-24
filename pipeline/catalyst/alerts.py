@@ -126,6 +126,7 @@ def _count(summary: Mapping[str, Any], key: str) -> int:
 def _extract_problems(summary: dict[str, Any], stops_expected: bool = False) -> list[str]:
     """Name what went wrong; a backfill run's stop at a cap or its time limit is its normal end (ADR 0065)."""
     second = _mapping(summary.get("second_reading"))
+    filings, cleanup = _mapping(summary.get("filings")), _mapping(summary.get("store_cleanup"))
     found = [
         (_count(summary, "documents_failed"), "{} could not be read."),
         (
@@ -139,6 +140,10 @@ def _extract_problems(summary: dict[str, Any], stops_expected: bool = False) -> 
         (bool(second.get("stopped_early")) and not stops_expected, "The second reading stopped early."),
         ("error" in _mapping(summary.get("decisions")), "The publish decisions did not finish."),
         ("error" in _mapping(summary.get("published")), "Writing the published catalysts did not finish."),
+        ("error" in filings, "Reading the 10-Q, 10-K and exhibit filings did not finish."),
+        (_count(filings, "filings_failed"), "{} among the 10-Q, 10-K and exhibit filings could not be read."),
+        ("error" in cleanup, "Deleting the stored copies no longer needed did not finish."),
+        (_count(cleanup, "copies_failed"), "{} no longer needed could not be deleted (it is kept)."),
     ]
     problems = [text.format(_plural(int(n), "document")) for n, text in found if n]
     if waiting := _count(_mapping(summary.get("decisions")), "withdrawals_waiting"):
