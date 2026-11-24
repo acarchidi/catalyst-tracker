@@ -75,6 +75,7 @@ from catalyst.outreach.digest import (
 from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
+from catalyst.publish.withdrawals import load_withdrawals
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.sealed import SealError, generate_keypair, seal, unseal
@@ -781,7 +782,7 @@ def decide_after_checks(
     if any(checks.get(step, {}).get("stopped_for_time") for step in steps):
         return {"skipped": "a check ran out of time, so nothing was decided; the next run goes on"}
     try:
-        return decide_claims(session_factory, store, _utc_now).summary()
+        return decide_claims(session_factory, store, _utc_now, load_withdrawals()).summary()
     except (SQLAlchemyError, ValueError) as error:
         return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
 
@@ -808,7 +809,9 @@ def _publish_after(
     if "error" in decisions or "skipped" in decisions:
         return {"skipped": "the publish decisions did not finish, so nothing was published"}
     try:
-        return publish_claims(session_factory, store, _utc_now, verifier_model=verifier_model).summary()
+        return publish_claims(
+            session_factory, store, _utc_now, verifier_model=verifier_model, withdrawals=load_withdrawals()
+        ).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
         return {"error": f"{type(error).__name__}: publishing did not finish"}
 
@@ -921,7 +924,7 @@ def _decide_claims(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        report = decide_claims(sessionmaker(engine), store, _utc_now)
+        report = decide_claims(sessionmaker(engine), store, _utc_now, load_withdrawals())
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
@@ -938,7 +941,10 @@ def _publish_claims(args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         model = load_config().roles[VERIFIER_ROLE].model
-        report = publish_claims(sessionmaker(engine), store, _utc_now, verifier_model=model)
+        withdrawals = load_withdrawals()
+        report = publish_claims(
+            sessionmaker(engine), store, _utc_now, verifier_model=model, withdrawals=withdrawals
+        )
         indications = publish_indications(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()

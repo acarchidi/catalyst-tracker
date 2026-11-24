@@ -10,14 +10,15 @@ passing is for the outcome tracker, not a review item.
 
 A person's latest decision from the review queue counts (ADR 0042): an approval excuses the holds
 they saw (`gate.approve`) while those checks' outcomes are unchanged since; a rejection holds the
-claim (`gate.REVIEW_REJECTED`).
+claim (`gate.REVIEW_REJECTED`). A claim on the reviewed withdrawal list is held, whatever else
+was decided (`catalyst.publish.withdrawals`; ADR 0070).
 """
 
 from __future__ import annotations
 
 import logging
 from collections import Counter, defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from itertools import groupby
@@ -34,6 +35,7 @@ from catalyst.logs import log_event
 from catalyst.publish.gate import UnreadableCopy, decide, match_quote, read_copy
 from catalyst.publish.live import claim_key, excuse_passed_window, load_live
 from catalyst.publish.sanity import person_may_approve
+from catalyst.publish.withdrawals import Withdrawal, load_withdrawn, withdraw
 from catalyst.review import apply_review, latest_reviews
 from catalyst.schemas import Claim, ClaimCheck, ClaimDecision, GateDecision, SourceDocument
 from catalyst.snapshots import SnapshotStore
@@ -82,15 +84,22 @@ def _load(session: Session) -> tuple[list[Any], dict[UUID, list[ClaimCheck]]]:
 
 
 def decide_claims(
-    session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    now: Callable[[], datetime],
+    withdrawals: Sequence[Withdrawal] = (),
 ) -> DecisionReport:
-    """Decide every extractor claim from its stored checks and stored copy, and keep the decision."""
+    """Decide every extractor claim from its stored checks and stored copy, and keep the decision.
+
+    `withdrawals` is the reviewed list; an entry naming no claim or several stops the run.
+    """
     report = DecisionReport()
     at = now()
     with session_factory() as session:
         rows, checks = _load(session)
         matches, live = load_matches(session), load_live(session)
         reviews = latest_reviews(session)
+        withdrawn = load_withdrawn(session, withdrawals)
     decisions: list[dict[str, Any]] = []
     names = list(TABLES[Claim].c.keys())
     # Claims come grouped by document, so only the current document's text is held (review of PR #52).
@@ -106,6 +115,7 @@ def decide_claims(
                 stored_checks = excuse_passed_window(claim.id, stored_checks, at)
             decision = decide(claim, stored_checks, match_quote(claim, copy))
             decision = apply_review(decision, reviews.get(claim.id), stored_checks, person_may_approve)
+            decision = withdraw(decision, withdrawn.get(claim.id))
             report.claims += 1
             if decision.decision is GateDecision.PUBLISH:
                 report.to_publish += 1

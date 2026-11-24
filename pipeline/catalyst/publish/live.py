@@ -52,6 +52,8 @@ WINDOW_CHECK = "window_not_past"
 LIVE_REASON = "the catalyst is already published; a date that has passed is for the outcome tracker"
 if WINDOW_CHECK not in gate.RULE_CHECKS or WINDOW_CHECK not in gate.MAY_NOT_APPLY:
     raise RuntimeError(f"{WINDOW_CHECK} must be a rule check that may not apply")
+# A resolved or withdrawn catalyst takes no more claims (ADR 0070).
+CLOSED = (CatalystStatus.RESOLVED.value, CatalystStatus.WITHDRAWN.value)
 SEVERAL = "the claim matches more than one published catalyst"
 OTHER_INDICATION = "the indication differs from the published one"
 # The fields whose newest change row names the claim behind the current dates (B1; round 2, N1).
@@ -230,7 +232,7 @@ def load_live(session: Session) -> LiveIndex:
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
-    for row in session.execute(select(catalyst).where(catalyst.c.status != CatalystStatus.RESOLVED.value)):
+    for row in session.execute(select(catalyst).where(catalyst.c.status.not_in(CLOSED))):
         live = Catalyst.model_validate(row, from_attributes=True)
         source = window_source.get(live.id)
         if source is None:  # no change row: not written by the gate, so never matched to a claim

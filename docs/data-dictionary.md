@@ -227,7 +227,7 @@ An expected event that can move a company's value, with its date window. These a
 | `window_precision` | one of: `day`, `month`, `quarter`, `half`, `year` | yes | How precisely the date is known. |
 | `window_raw_text` | text, up to 300 characters | yes | The date exactly as the source wrote it, for example '2H26'. |
 | `date_confidence` | one of: `company_confirmed`, `regulator_scheduled`, `registry_estimate`, `inferred` | yes | Who stands behind the date. |
-| `status` | one of: `upcoming`, `slipped`, `resolved` | yes | Upcoming, slipped, or resolved. |
+| `status` | one of: `upcoming`, `slipped`, `resolved`, `withdrawn` | yes | Upcoming, slipped, resolved, or withdrawn after review. |
 
 Rules:
 
