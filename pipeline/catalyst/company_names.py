@@ -9,8 +9,11 @@ So the display name is the company's own spelling, as its own stored press relea
   punctuation, legal-form words), is the SEC name, with the legal form the text writes after it
   ("MacroGenics, Inc.", "Incyte Corporation"). It must start with a capital or a digit, and a
   spelling with no small letter is a headline, not a spelling;
-- a spelling with a legal form beats one without; then the most frequent; then the first seen,
-  newest release first;
+- short legal words that are also words ("as", "Co-founder") count only in capitals or with
+  their dots or slash; only spaces, commas, full stops, and hyphens join a name's words; control
+  and invisible characters are removed first, and a spelling over `MAX_NAME_CHARS` is not used;
+- a spelling with a legal form beats one without; then the most frequent; then the longer; then
+  the first seen, newest release first;
 - with no spelling, it is the SEC name without its state suffix, and nothing else changes.
 
 The step stores the name, the release it came from, and a digest of its inputs (this code, the
@@ -24,6 +27,7 @@ from __future__ import annotations
 import logging
 import re
 import time
+import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -32,6 +36,7 @@ from uuid import UUID
 
 import httpx
 from sqlalchemy import select, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.collectors.coverage import normalize_name, without_state_suffix
@@ -83,9 +88,16 @@ _LEGAL = frozenset(
     ]
 )
 _ABBREVIATED = frozenset({"inc", "corp", "co", "ltd"})  # their period is part of the name
-_FORM_WORD = re.compile(r",?\s+((?:[^\W\d_]\.){2,}|[^\W\d_]/[^\W\d_]|[^\W\d_]+\.?)")
-_GAP = r"[^\w&]{1,3}"  # between two words of a name: a space, a comma, a dash
-_AROUND_AND = r"[^\w&]{0,3}"
+# Legal words that are also English or name parts ("joined Incyte as", "Co-founder"): they count
+# only in capitals ("AS", "SE") or written with their dots or slash ("Co.", "S.A.", "A/S").
+_SHORT_LEGAL = frozenset({"co", "sa", "ag", "nv", "se", "ab", "as", "asa", "kk", "bv", "lp", "spa"})
+# One legal word after a name: dotted letters ("N.V."), "A/S", or a word with an optional full
+# stop, never one joined to the next word by a hyphen ("Co-founder").
+_FORM_WORD = re.compile(r",? +((?:[^\W\d_]\.){2,}|[^\W\d_]/[^\W\d_]|[^\W\d_]+\.?)(?![\w\-\u2010-\u2015])")
+# Between two words of a name only plain spaces, commas, full stops, and hyphens; "&" is a word.
+_GAP = r"[ ,.\-]{1,3}"
+_AROUND_AND = r"[ ,.\-]{0,3}"
+MAX_NAME_CHARS = 120  # a longer spelling is a misreading, not a company name
 
 _log = logging.getLogger(__name__)
 
@@ -112,6 +124,8 @@ def _with_form(text: str, end: int) -> str:
         bare = word.replace(".", "").replace("/", "").casefold()
         if bare not in _LEGAL:
             break
+        if bare in _SHORT_LEGAL and not ("." in word or "/" in word or word.isupper()):
+            break
         if word.endswith(".") and word.count(".") == 1 and bare not in _ABBREVIATED:
             word = word[:-1]  # "Corporation." ends a sentence
         form += found.group(0)[: found.start(1) - found.start(0)] + word
@@ -127,17 +141,30 @@ class _Seen:
     order: int
 
 
+def printable(text: str) -> str:
+    """Return the text without control or invisible format characters; line breaks become spaces."""
+    kept: list[str] = []
+    for char in text:
+        if unicodedata.category(char) in ("Cc", "Cf"):
+            kept.append(" " if char in "\t\n\r\f\v" else "")
+        else:
+            kept.append(char)
+    return "".join(kept)
+
+
 def _spellings(sec_name: str, texts: Sequence[str]) -> list[_Seen]:
     target = normalize_name(sec_name)
     if not target:
         return []
     pattern = _name_pattern(target)
     seen: list[_Seen] = []
-    for index, text in enumerate(texts):
+    for index, text in enumerate(map(printable, texts)):
         for found in pattern.finditer(text):
             name = found.group(0)
             form = _with_form(text, found.end())
             spelling = " ".join(f"{name}{form}".split())
+            if len(spelling) > MAX_NAME_CHARS or not spelling.isprintable():
+                continue
             if not (spelling[0].isupper() or spelling[0].isdigit()) or not any(c.islower() for c in spelling):
                 continue
             if normalize_name(spelling) != target:
@@ -156,7 +183,8 @@ def spelled_in(sec_name: str, texts: Sequence[str]) -> tuple[str, int] | None:
     first: dict[str, _Seen] = {}
     for item in pool:
         first.setdefault(item.spelling, item)
-    best = max(counts, key=lambda spelling: (counts[spelling], -first[spelling].order))
+    # Most frequent; on a tie the longer legal form ("Company N.V." over "Company"); then the first seen.
+    best = max(counts, key=lambda spelling: (counts[spelling], len(spelling), -first[spelling].order))
     return best, first[best].text_index
 
 
@@ -168,7 +196,12 @@ def own_spelling(sec_name: str, texts: Sequence[str]) -> str | None:
 
 def display_name(sec_name: str, texts: Sequence[str]) -> str:
     """Return the name readers see: the company's own spelling, else the SEC name without its suffix."""
-    return own_spelling(sec_name, texts) or without_state_suffix(sec_name)
+    return own_spelling(sec_name, texts) or _plain_sec_name(sec_name)
+
+
+def _plain_sec_name(sec_name: str) -> str:
+    """Return the SEC name without its state suffix, and without control or format characters."""
+    return " ".join(printable(without_state_suffix(sec_name)).split()) or sec_name
 
 
 @dataclass
@@ -181,6 +214,7 @@ class NamesReport:
     from_documents: int = 0  # computed this run from the company's own spelling
     documents_read: int = 0
     documents_unreadable: int = 0
+    writes_failed: int = 0  # names the database refused; each company is written on its own
     stopped_for_time: bool = False
 
     def summary(self) -> dict[str, Any]:
@@ -192,6 +226,7 @@ class NamesReport:
             "from_documents": self.from_documents,
             "documents_read": self.documents_read,
             "documents_unreadable": self.documents_unreadable,
+            "writes_failed": self.writes_failed,
             "stopped_for_time": self.stopped_for_time,
         }
 
@@ -226,7 +261,7 @@ def _releases(session: Session) -> dict[UUID, list[_Release]]:
         )
         .join(document, document.c.id == link.c.source_document_id)
         .where(link.c.matched_by == DocumentMatch.SEC_CIK, document.c.document_type.contains(PRESS_RELEASE))
-        .order_by(link.c.company_id, document.c.published_at.desc(), document.c.id)
+        .order_by(link.c.company_id, document.c.published_at.desc().nulls_last(), document.c.id)
     )
     found: defaultdict[UUID, list[_Release]] = defaultdict(list)
     for row in session.execute(query):
@@ -257,9 +292,28 @@ def _computed(
     found = spelled_in(company.sec_name, [text for _, text in texts])
     complete = len(texts) == len(read)
     if found is None:
-        return without_state_suffix(company.sec_name), None, complete
+        return _plain_sec_name(company.sec_name), None, complete
     report.from_documents += 1
     return found[0], texts[found[1]][0].id, complete
+
+
+def _write(session: Session, write: dict[str, Any], report: NamesReport) -> None:
+    """Store one company's name in its own savepoint, so a name the database refuses skips only it."""
+    table = TABLES[Company]
+    try:
+        with session.begin_nested():
+            session.execute(
+                update(table)
+                .where(table.c.id == write["id"])
+                .values(
+                    display_name=write["name"],
+                    display_name_document_id=write["document"],
+                    display_name_inputs=write["inputs"],
+                )
+            )
+    except SQLAlchemyError as error:
+        report.writes_failed += 1
+        log_event(_log, "display_name_not_stored", company_id=str(write["id"]), error=type(error).__name__)
 
 
 def recompute_display_names(
@@ -304,14 +358,6 @@ def recompute_display_names(
         )
     with session_factory.begin() as session:
         for write in writes:
-            session.execute(
-                update(table)
-                .where(table.c.id == write["id"])
-                .values(
-                    display_name=write["name"],
-                    display_name_document_id=write["document"],
-                    display_name_inputs=write["inputs"],
-                )
-            )
+            _write(session, write, report)
     log_event(_log, "display_names_computed", **report.summary())
     return report

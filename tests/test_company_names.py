@@ -7,6 +7,7 @@ the SEC name with EDGAR's state suffix removed. It is never title-cased.
 
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 import pytest
@@ -304,3 +305,76 @@ def test_an_older_export_without_display_names_still_reads() -> None:
         {"id": str(UUID(int=1)), "name": "MACROGENICS INC", "cik": 1, "ticker": None}
     )
     assert view.display_name == "MACROGENICS INC"
+
+
+# Opus review of PR #157: short legal words, odd characters, and one bad name in a run
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Jane Doe joined Incyte as Chief Medical Officer. Incyte Corporation is based in Wilmington.",
+        "Incyte as a partner will fund the trial. Incyte Corporation (Nasdaq: INCY) said.",
+        "Incyte Co-founder Jane Doe spoke. Incyte Corporation (Nasdaq: INCY) said.",
+    ],
+)
+def test_a_short_word_after_the_name_is_not_a_legal_form(text: str) -> None:
+    assert own_spelling("INCYTE CORP", [text]) == "Incyte Corporation"
+
+
+def test_a_short_legal_form_counts_in_capitals_or_with_its_dots() -> None:
+    assert own_spelling("Genmab A/S", ["Genmab A/S (Nasdaq: GMAB) today announced"]) == "Genmab A/S"
+    assert own_spelling("ACME BIO SE", ["Acme Bio SE today announced"]) == "Acme Bio SE"
+    assert own_spelling("ACME PHARMA CO", ["Acme Pharma Co. today announced"]) == "Acme Pharma Co."
+
+
+def test_on_a_tie_the_longer_legal_form_wins() -> None:
+    text = "NewAmsterdam Pharma Company today said. NewAmsterdam Pharma Company N.V. also said."
+    assert own_spelling("NewAmsterdam Pharma Co N.V.", [text]) == "NewAmsterdam Pharma Company N.V."
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Viridian\x00Therapeutics, Inc. today announced",
+        "Viridian‮Therapeutics, Inc. today announced",
+        "Viridian​Therapeutics, Inc. today announced",
+        "Viridian\x1fTherapeutics, Inc. today announced",
+        "Viridian‮ Therapeutics, Inc. today announced",
+        "Viridian Therapeutics,‮ Inc. today announced",
+    ],
+)
+def test_control_and_invisible_characters_never_reach_a_name(text: str) -> None:
+    name = display_name("Viridian Therapeutics, Inc.\\DE", [text])
+    assert name.isprintable(), repr(name)
+
+
+def test_only_plain_separators_join_the_words_of_a_name() -> None:
+    assert own_spelling("Viridian Therapeutics, Inc.\\DE", ["Viridian;Therapeutics, Inc. said"]) is None
+    assert own_spelling("Bio-Techne Corp", ["Bio-Techne Corporation said"]) == "Bio-Techne Corporation"
+
+
+def test_a_spelling_longer_than_the_limit_is_not_used() -> None:
+    long_name = "Acme " + " ".join(["Very"] * 40) + " Bio"
+    assert own_spelling(long_name.upper() + " INC", [f"{long_name}, Inc. today said"]) is None
+
+
+def test_one_name_the_database_refuses_does_not_stop_the_others(
+    session_factory: sessionmaker[Session], store: LocalSnapshotStore, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from catalyst import company_names
+
+    with session_factory.begin() as session:
+        bad = _company(session, 1125345, "MACROGENICS INC", [("MGNX", "Nasdaq")])
+        good = _company(session, 1590750, "Viridian Therapeutics, Inc.\\DE", [("VRDN", "Nasdaq")])
+    real = company_names._computed  # pyright: ignore[reportPrivateUsage]
+
+    def broken(company: Any, *rest: Any) -> tuple[str, UUID | None, bool]:  # a name Postgres refuses
+        name, document, complete = real(company, *rest)
+        return ("MACRO\x00GENICS" if name.startswith("MACRO") else name), document, complete
+
+    monkeypatch.setattr(company_names, "_computed", broken)
+    report = recompute_display_names(session_factory, store)
+    assert report.writes_failed == 1
+    assert _stored(session_factory, bad) == (None, None)
+    assert _stored(session_factory, good)[0] == "Viridian Therapeutics, Inc."
