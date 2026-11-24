@@ -15,6 +15,7 @@ latest `review_decision` by a person, null when nobody has decided it (ADR 0042)
 A held claim the second reading did not confirm also carries `second_reading`: the values of
 every event the second reader listed in that document, so the cause can be found without the
 database (ADR 0062). It is in the held list only, which leaves a job only sealed (ADR 0034).
+A claim on the reviewed withdrawal list is left out of both lists (ADR 0070).
 """
 
 import json
@@ -37,6 +38,7 @@ from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT
 from catalyst.publish.gate import UnreadableCopy, read_copy
 from catalyst.publish.live import claim_value
+from catalyst.publish.withdrawals import PREFIX as WITHDRAWN
 from catalyst.schemas import (
     Claim,
     ClaimDecision,
@@ -163,6 +165,7 @@ def held_claims(session: Session, store: SnapshotStore | None = None) -> list[di
             "second_reading": readings.get(row.id),
         }
         for row in rows
+        if not any(reason.startswith(WITHDRAWN) for reason in row.reasons)
     ]
     return _with_registry(session, sorted(held, key=_held_order))
 

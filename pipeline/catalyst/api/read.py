@@ -57,6 +57,7 @@ from catalyst.schemas import (
     SourceDocument,
     Trial,
 )
+from catalyst.tickers import main_ticker
 
 _log = logging.getLogger(__name__)
 _CATALYST = TABLES[Catalyst]
@@ -282,7 +283,11 @@ def _source(row: Row[Any], fields: list[str]) -> SourceView:
 
 
 def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]:
-    """Build each catalyst with its sources; leave out, and log, any with an unbacked value."""
+    """Build each catalyst with its sources; leave out, and log, any with an unbacked value.
+
+    A withdrawn catalyst (ADR 0070) is never shown, by any read.
+    """
+    rows = [row for row in rows if row.status != CatalystStatus.WITHDRAWN.value]
     ids = [row.id for row in rows]
     changes: dict[UUID, list[Row[Any]]] = defaultdict(list)
     for change in session.execute(
@@ -446,22 +451,39 @@ def _change(row: Row[Any]) -> ChangeView:
 
 
 def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
-    """Return each company with its current ticker, by id."""
+    """Return each company with its main current ticker (`catalyst.tickers.main_ticker`), by id.
+
+    SEC's company record lists warrants and over-the-counter lines too; all are stored, and the
+    main one is chosen here on every read, so a stored ticker never needs correcting (ADR 0070).
+    """
     current = _TICKER.c.valid_to.is_(None)
     statement = (
-        select(_COMPANY.c.id, _COMPANY.c.name, _COMPANY.c.display_name, _COMPANY.c.cik, _TICKER.c.ticker)
+        select(
+            _COMPANY.c.id,
+            _COMPANY.c.name,
+            _COMPANY.c.display_name,
+            _COMPANY.c.cik,
+            _TICKER.c.ticker,
+            _TICKER.c.exchange,
+        )
         .outerjoin(_TICKER, (_TICKER.c.company_id == _COMPANY.c.id) & current)
         .where(_COMPANY.c.id.in_(ids))
+        .order_by(_COMPANY.c.id, _TICKER.c.valid_from, _TICKER.c.ticker)
     )
+    rows = list(session.execute(statement))
+    tickers: defaultdict[UUID, list[tuple[str, str | None]]] = defaultdict(list)
+    for row in rows:
+        if row.ticker is not None:
+            tickers[row.id].append((row.ticker, row.exchange))
     return {
         row.id: CompanyView(
             id=row.id,
             name=row.name,
             display_name=row.display_name or without_state_suffix(row.name),
             cik=row.cik,
-            ticker=row.ticker,
+            ticker=main_ticker(tickers[row.id]) if tickers[row.id] else None,
         )
-        for row in session.execute(statement)
+        for row in rows
     }
 
 

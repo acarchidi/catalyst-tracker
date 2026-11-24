@@ -446,8 +446,9 @@ def test_decide_claims_prints_the_counts(
 ) -> None:
     seen: list[object] = []
 
-    def decide(_factory: object, store: object, _now: object) -> DecisionReport:
+    def decide(_factory: object, store: object, _now: object, withdrawals: list[object]) -> DecisionReport:
         seen.append(store)
+        assert len(withdrawals) == 8  # the shipped withdrawal list is always passed (ADR 0070)
         report = DecisionReport(claims=3, to_publish=1, to_review=2)
         report.reasons.update({"advisory_meeting_noticed has not run": 2})
         return report
@@ -503,8 +504,11 @@ def test_publish_claims_prints_the_counts(
 ) -> None:
     models: list[str] = []
 
-    def publish(_factory: object, _store: object, _now: object, *, verifier_model: str) -> PublishReport:
+    def publish(
+        _factory: object, _store: object, _now: object, *, verifier_model: str, withdrawals: list[object]
+    ) -> PublishReport:
         models.append(verifier_model)  # only the configured verifier's readings vouch (O2)
+        assert len(withdrawals) == 8  # the shipped withdrawal list is always passed (ADR 0070)
         report = PublishReport(claims_marked_publish=3, catalysts_created=1, held_on_recheck=2)
         report.reasons.update({"window_not_past failed": 2})
         return report
