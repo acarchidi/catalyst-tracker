@@ -36,6 +36,7 @@ from catalyst.api.views import (
     TrialView,
     WindowView,
 )
+from catalyst.collectors.coverage import without_state_suffix
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import has_words
 from catalyst.logs import log_event
@@ -457,7 +458,14 @@ def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
     """
     current = _TICKER.c.valid_to.is_(None)
     statement = (
-        select(_COMPANY.c.id, _COMPANY.c.name, _COMPANY.c.cik, _TICKER.c.ticker, _TICKER.c.exchange)
+        select(
+            _COMPANY.c.id,
+            _COMPANY.c.name,
+            _COMPANY.c.display_name,
+            _COMPANY.c.cik,
+            _TICKER.c.ticker,
+            _TICKER.c.exchange,
+        )
         .outerjoin(_TICKER, (_TICKER.c.company_id == _COMPANY.c.id) & current)
         .where(_COMPANY.c.id.in_(ids))
         .order_by(_COMPANY.c.id, _TICKER.c.valid_from, _TICKER.c.ticker)
@@ -471,6 +479,7 @@ def company_views(session: Session, ids: list[UUID]) -> dict[UUID, CompanyView]:
         row.id: CompanyView(
             id=row.id,
             name=row.name,
+            display_name=row.display_name or without_state_suffix(row.name),
             cik=row.cik,
             ticker=main_ticker(tickers[row.id]) if tickers[row.id] else None,
         )

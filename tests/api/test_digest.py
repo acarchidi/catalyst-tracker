@@ -387,6 +387,23 @@ def _parsed(html: str) -> _Tags:
 ALLOWED_TAGS = {"h1", "h2", "p", "ul", "li", "strong", "a", "small"}
 
 
+def test_the_issue_shows_the_companys_own_spelling_and_its_common_ticker() -> None:
+    # ADR 0068: the SEC name in capitals ("MACROGENICS INC") is never shown; the company's own
+    # spelling is, and an export written before display names reads with the plain SEC name.
+    own = _detail(first_learned=IN_WEEK, name="MACROGENICS INC")
+    own = own.model_copy(
+        update={"company": own.company.model_copy(update={"display_name": "MacroGenics, Inc."})}
+    )
+    old = _detail(first_learned=IN_WEEK, name="Viridian Therapeutics, Inc.\\DE")
+    record = old.model_dump(mode="json")
+    del record["company"]["display_name"]
+    text = _text(render_html(build_digest([own, CatalystDetail.model_validate(record)], ISSUE)))
+    assert "MacroGenics, Inc. (EXB)" in text
+    assert "Viridian Therapeutics, Inc. (EXB)" in text
+    assert "MACROGENICS" not in text
+    assert "\\DE" not in text
+
+
 def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     # Owner decision 2026-11-10 (ADR 0053): section names, a colour key on top, the notice once at the
     # end in small print, "When:" in words, no date label, and the quote reached through its link.

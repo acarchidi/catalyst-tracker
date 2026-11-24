@@ -38,6 +38,9 @@ A US-listed company we cover, identified by its SEC number.
 | `cik` | whole number | yes | SEC Central Index Key; the company's permanent SEC number. |
 | `name` | text, up to 300 characters | yes | Current legal name as filed with the SEC. |
 | `sic_code` | text, up to 4 characters | no | SEC industry code, for example 2834 (pharmaceutical preparations). |
+| `display_name` | text, up to 300 characters | no | Name shown to readers (ADR 0068): the company's own spelling in its own stored press releases, else the SEC name without its state suffix. Empty until first computed. |
+| `display_name_document_id` | link to `source_document` | no | The stored press release that spells the display name; empty when it is the SEC name. |
+| `display_name_inputs` | text, up to 64 characters | no | SHA-256 of what the display name was computed from: the code, the SEC name, and the releases read (ADR 0068); a run recomputes it only when this changes. |
 
 Rules:
 

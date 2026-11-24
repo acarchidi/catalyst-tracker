@@ -48,9 +48,20 @@ def test_a_warrant_unit_or_right_ticker_fails() -> None:
 
 
 def test_an_sec_conformed_name_fails() -> None:
+    # The check reads the name readers see, the display name (ADR 0068); here it is the raw SEC name.
     for name in ("MACROGENICS INC", "Viridian Therapeutics, Inc.\\DE", "INCYTE CORP"):
         record = _detail(name=name)
+        shown = record.company.model_copy(update={"display_name": name})
+        record = record.model_copy(update={"company": shown})
         assert "raw_company_name" in _checks(review_digest(build_digest([record], ISSUE))), name
+
+
+def test_the_companys_own_spelling_passes_the_name_check() -> None:
+    # ADR 0068: the SEC name stays in `name`; the issue shows the display name.
+    record = _detail(name="MACROGENICS INC")
+    shown = record.company.model_copy(update={"display_name": "MacroGenics, Inc."})
+    record = record.model_copy(update={"company": shown})
+    assert "raw_company_name" not in _checks(review_digest(build_digest([record], ISSUE)))
 
 
 def test_a_due_entry_whose_window_has_ended_fails() -> None:
