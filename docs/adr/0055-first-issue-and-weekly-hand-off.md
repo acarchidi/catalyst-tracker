@@ -24,6 +24,8 @@ The Claude review failed from 2026-10-20 because the account's purchased credit 
 
 5. **Amended 2026-11-23: a private copy page instead of files.** The owner asked not to download files each week. The pages are handed over on one private artifact page, updated in place each Monday, with copy buttons for each title and issue. The page is private to the owner; the paid issue still appears nowhere else.
 
+6. **Amended 2026-11-24: a promotional note each week.** The owner asked for "a smart tweet/substack 'note' that i can post to promote it" with each issue. The private page also holds a note of at most 280 characters with a "Copy note" button. It names only catalysts the free issue prints, as the free issue prints them, and holds no advice or prediction. The owner posts it by hand, as with the issue (ADR 0049, decision 1).
+
 ## Alternatives
 
 - **Wait for all four facts (ADR 0053's proposal).** Declined by the owner: several more weeks and four reviewed pull requests before any issue.
