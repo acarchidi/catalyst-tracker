@@ -34,7 +34,7 @@ from catalyst.schemas import (
 from catalyst.snapshots import LocalSnapshotStore
 from catalyst.verify.rules import CheckResult
 from catalyst.verify.run import store_check
-from test_publish_writer import NOW, OCT_16, VERIFIER_MODEL, World
+from test_publish_writer import NOW, OCT_14_LATER, OCT_16, VERIFIER_MODEL, World
 
 OWNER = "acarchidi"
 LATER = NOW + timedelta(hours=1)
@@ -212,7 +212,8 @@ def test_b1_an_approved_slip_whose_window_has_since_passed_is_never_written(worl
     """Opus review of PR #84, B1: lifting "does not overlap" must not skip the passed-window check."""
     world.claim("first half of 2027")
     _publish(world)
-    slip = world.claim("fourth quarter of 2026", published=OCT_16, decision=GateDecision.REVIEW)
+    # Later the same day: a newer source of another day would move the window (ADR 0069).
+    slip = world.claim("fourth quarter of 2026", published=OCT_14_LATER, decision=GateDecision.REVIEW)
     check_safe_to_write(world.factory, lambda: NOW)
     _, reasons = _decide(world)[slip]
     assert reasons == [
