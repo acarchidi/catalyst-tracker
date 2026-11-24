@@ -51,7 +51,7 @@ from catalyst.extract.disease import (
     score_record,
 )
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
-from catalyst.extract.filings import SpendGuard, read_filings, spend_guard
+from catalyst.extract.filings import SpendGuard, read_filings
 from catalyst.extract.indicate import indicate_catalysts
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
@@ -673,10 +673,8 @@ def _extract(args: argparse.Namespace) -> int:
         report = extract_documents(
             sessionmaker(engine), store, client, limit=args.limit, since=args.since, deadline=reading_ends
         )
-        # Filings after the releases, inside the same reading time and within the usual caps (ADR 0066).
-        guard = spend_guard(
-            sessionmaker(engine), config, DatabaseLedger(engine), _utc_now().astimezone(NEW_YORK).date()
-        )
+        # Filings after the releases, inside the same reading time and the usual caps (ADR 0066).
+        guard = SpendGuard(config, DatabaseLedger(engine), _utc_now().astimezone(NEW_YORK).date())
         filings = _filings_after(sessionmaker(engine), store, client, args, reading_ends, guard)
         # The extraction stands if a later step fails; each re-runs next time.
         _prefetch(sessionmaker(engine), store)

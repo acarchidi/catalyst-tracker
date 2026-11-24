@@ -27,9 +27,11 @@ from catalyst.extract.filings import (
     filing_view,
     filings_waiting,
     is_filing,
+    part_call_most,
     read_filings,
     reader_text,
 )
+from catalyst.extract.injection import hidden_letters
 from catalyst.extract.sections import BUSINESS, MDA, OTHER, WHOLE, document_parts, sections
 from catalyst.extract.text import document_text
 from catalyst.llm.client import Completion, ModelClient, ModelError
@@ -311,23 +313,34 @@ def test_a_pdf_exhibit_is_kept_as_a_reading_that_no_model_read_and_is_never_full
     assert fake.shown == []
 
 
-def test_filings_spend_only_the_usual_cap_unless_the_credit_still_pays(
+def test_filings_spend_only_the_usual_cap_even_on_a_raised_cap_day(
     session_factory: sessionmaker[Session], tmp_path: Path
 ) -> None:
+    """The raised $8 and $4 caps are the press-release backfill's alone (owner, 2026-11-23)."""
     store = LocalSnapshotStore(tmp_path)
     _store(session_factory, store, "q", "10-Q")
-    config = _config(cap="2", raised="8")
+    config = _config(cap="2", raised="8")  # TODAY is a raised-cap day
     ledger = InMemoryLedger()
-    ledger._extra[("extractor", TODAY)] = Decimal("1.90")  # pyright: ignore[reportPrivateUsage]
+    ledger._extra[("extractor", TODAY)] = Decimal("1.95")  # pyright: ignore[reportPrivateUsage]
     fake = _Fake()
     client = ModelClient(config, {"fake": fake}, ledger, now=lambda: NOW)
-    guard = SpendGuard(config, ledger, TODAY, credit_pays=lambda: False)
+    guard = SpendGuard(config, ledger, TODAY)
     report = read_filings(session_factory, store, client, limit=10, now=lambda: NOW, guard=guard)
     assert report.summary()["stopped_early"] == USUAL_CAP_STOP
-    assert fake.shown == []  # $1.90 + one part's worst case passes the usual $2
-    paid = SpendGuard(config, ledger, TODAY, credit_pays=lambda: True)
-    read_filings(session_factory, store, client, limit=10, now=lambda: NOW, guard=paid)
-    assert fake.shown  # while the credit pays, up to the raised $8
+    assert fake.shown == []  # $1.95 + one part's worst case passes the usual $2, though $8 is open
+    assert client_would_allow(config, ledger)  # the client alone would have let it spend
+
+
+def client_would_allow(config: ModelConfig, ledger: InMemoryLedger) -> bool:
+    """Say whether the day's (raised) cap has room left, as the model client sees it."""
+    return ledger.spent("extractor", TODAY) < config.roles["extractor"].cap_on(TODAY)
+
+
+def test_one_part_s_worst_case_comes_from_the_role_s_prices() -> None:
+    config = _config(cap="2")
+    worst = part_call_most(config, "extractor")
+    # (80,000 + 8,000 characters) / 3 tokens at $2 a million, plus 1,000 output tokens at $10 a million.
+    assert worst == Decimal(29334) * 2 / 1_000_000 + Decimal(1000) * 10 / 1_000_000
 
 
 def test_the_second_reading_reads_only_the_parts_that_hold_a_claim(
@@ -467,8 +480,8 @@ def test_the_second_reading_of_filings_pauses_at_the_usual_cap_without_failing(
     fake = _Fake()
     client = ModelClient(config, {"fake": fake}, ledger, now=lambda: NOW)
     read_filings(session_factory, store, client, limit=10, now=lambda: NOW)
-    ledger._extra[("verifier", TODAY)] = Decimal("1.90")  # pyright: ignore[reportPrivateUsage]
-    guard = SpendGuard(config, ledger, TODAY, credit_pays=lambda: False)
+    ledger._extra[("verifier", TODAY)] = Decimal("1.95")  # pyright: ignore[reportPrivateUsage]
+    guard = SpendGuard(config, ledger, TODAY)
     report = run_second_reading(
         session_factory, store, client, config, limit=10, now=lambda: NOW, gate=lambda _c: [], guard=guard
     )
@@ -476,3 +489,47 @@ def test_the_second_reading_of_filings_pauses_at_the_usual_cap_without_failing(
     assert summary["filings_paused"] == USUAL_CAP_STOP
     assert summary["stopped_early"] is None  # a pause is not a stop at a cap
     assert "verify_catalysts" not in fake.prompts
+
+
+REAL_TEXT = "<p>" + "Acme Bio develops medicines for serious liver diseases in clinical trials. " * 8 + "</p>"
+
+
+def _hides(page: str) -> bool:
+    content = f"<html><body>{page}{REAL_TEXT}</body></html>".encode()
+    view = filing_view(content, "text/html", "10-Q")
+    return hidden_letters(view.hide_text, view.visible)
+
+
+def test_a_real_inline_xbrl_header_is_not_hidden_text() -> None:
+    header = (
+        '<div style="display:none"><ix:header><ix:hidden><ix:nonNumeric name="dei:AmendmentFlag">false'
+        '</ix:nonNumeric></ix:hidden><ix:resources><xbrli:context id="c"><xbrli:entity>Q3</xbrli:entity>'
+        "</xbrli:context></ix:resources></ix:header></div>"
+    )
+    assert not _hides(header)
+    assert not hidden_letters(filing_view(QUARTERLY, "text/html", "10-Q").hide_text, _visible(QUARTERLY))
+
+
+@pytest.mark.parametrize(
+    "page",
+    [
+        # Header words inside comments are no element: what lies between them stays hidden text.
+        '<!-- <ix:header> --><div style="display:none">Secret words for a model</div><!-- </ix:header> -->',
+        # In a script, likewise.
+        '<script>"<ix:header>"</script><div style="display:none">Secret words</div>'
+        '<script>"</ix:header>"</script>',
+        # A bare header with no hidden ancestor, wrapping a hidden block.
+        '<ix:header><div style="display:none">Secret words for a model</div></ix:header>',
+        # A hidden header that holds page markup, not only data tags.
+        '<div style="display:none"><ix:header><div>Secret words for a model</div></ix:header></div>',
+        # A second header: a filing has one.
+        '<div style="display:none"><ix:header><ix:hidden>a</ix:hidden></ix:header></div>'
+        '<div style="display:none"><ix:header><ix:hidden>Secret words</ix:hidden></ix:header></div>',
+        # A hidden block beside a real header is still hidden text.
+        '<div style="display:none"><ix:header><ix:hidden>false</ix:hidden></ix:header></div>'
+        '<div style="display:none">Secret words for a model</div>',
+    ],
+)
+def test_hidden_text_dressed_as_an_xbrl_header_still_holds_every_claim(page: str) -> None:
+    """Opus review of PR #150, B1: only a real, hidden, data-only header is left out of the check."""
+    assert _hides(page)

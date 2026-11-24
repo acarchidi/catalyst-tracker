@@ -11,9 +11,9 @@ publish gate, as a press release's. Only the reading differs: a long filing is r
   last part's claims. A fully read document is never read again, whatever the prompt version.
 - A copy no model can read (a PDF) or with almost no words is kept as a reading with its reason,
   as for press releases (ADR 0038).
-- Spending: within each role's usual daily cap. Past it, up to the raised cap, only while the
-  promotional credit still covers a whole day (`credit_covers_a_day`, ADR 0065), so filing reads
-  never turn the raised caps into paid money. The client's own caps apply to every call as well.
+- Spending: always within each role's usual daily cap (`daily_cap_usd`), never a raised one: the
+  raised caps are the press-release backfill's alone (owner, 2026-11-23; ADR 0065). The client's
+  own caps apply to every call as well.
 
 Each reading is the strict visible text (`strict_text.visible_text`): its result never depends on
 a time limit, so the parts of a document come out the same on every run.
@@ -22,7 +22,7 @@ a time limit, so the parts of a document come out the same on every run.
 from __future__ import annotations
 
 import logging
-import re
+import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -38,7 +38,6 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE, catalyst_claims, extract_catalysts
-from catalyst.extract.backfill import credit_covers_a_day
 from catalyst.extract.run import (
     MIN_WORDS,
     NEW_YORK,
@@ -53,9 +52,17 @@ from catalyst.extract.run import (
 from catalyst.extract.sections import PART_CHARS, Part, document_parts
 from catalyst.extract.strict_text import visible_text as strict_visible_text
 from catalyst.extract.text import document_text, find_quote, visible_text
-from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
+from catalyst.extract.xbrl_header import without_header
+from catalyst.llm.client import (
+    CHARS_PER_TOKEN_ESTIMATE,
+    InputTooLargeError,
+    ModelClient,
+    ModelError,
+    SpendCapReachedError,
+)
 from catalyst.llm.config import ModelConfig
 from catalyst.llm.ledger import SpendLedger
+from catalyst.llm.pricing import TokenUsage, cost_usd
 from catalyst.logs import log_alert, log_event
 from catalyst.schemas import Claim, DocumentPartReading, DocumentReading, ReadingSkip, SourceDocument
 from catalyst.snapshots import SnapshotStore, SnapshotStoreError
@@ -63,13 +70,10 @@ from catalyst.snapshots import SnapshotStore, SnapshotStoreError
 FILING_FORMS = ("10-Q", "10-K")
 PRESS_RELEASE = "8-K EX-99.1"  # read whole by `extract_documents`, never here
 EXHIBITS = "8-K EX-99%"  # every other Exhibit 99 of an 8-K the collector keeps
-# The most one part's call can cost the extractor or verifier, by the client's own cautious
-# worst case: an 80,000-character part and the prompt (about 29,000 tokens by characters / 3, at
-# $2 a million) plus a full 16,000-token answer (at $10 a million): about $0.22.
-PART_CALL_MOST_USD = Decimal("0.25")
-USUAL_CAP_STOP = "the usual daily cap is reached; filings read past it only while the credit pays (ADR 0066)"
-# SEC's inline XBRL header: data tags the filer must hide, never words for a reader.
-_IX_HEADER = re.compile(rb"<ix:header\b.*?</ix:header\s*>", re.IGNORECASE | re.DOTALL)
+# Room for the prompt and the publication date ahead of a part, in characters (the extractor's
+# prompt is about 7,000).
+PROMPT_CHARS = 8_000
+USUAL_CAP_STOP = "the usual daily cap is reached; filings never use a raised cap (ADR 0066)"
 
 _log = logging.getLogger(__name__)
 
@@ -104,7 +108,7 @@ def filing_view(content: bytes, content_type: str, document_type: str, limit: in
     """Read a stored filing once: its text, its visible text, and its parts."""
     text = document_text(content, content_type)
     visible = strict_visible_text(content, content_type)
-    hide_text = document_text(_IX_HEADER.sub(b"", content), content_type) if "html" in content_type else text
+    hide_text = document_text(without_header(content), content_type) if "html" in content_type else text
     return FilingView(text, visible, hide_text, tuple(document_parts(visible, document_type, limit)))
 
 
@@ -122,32 +126,29 @@ def reader_text(content: bytes, content_type: str, document_type: str, quote: st
     return part.text if part is not None else view.visible
 
 
+def part_call_most(config: ModelConfig, role: str) -> Decimal:
+    """Return the most one part's call can cost `role`, by the client's own cautious estimate.
+
+    A full part and the prompt at characters / 3 tokens of input, and a full answer of the role's
+    `max_tokens`, at the role's model prices in config/models.toml.
+    """
+    settings = config.roles[role]
+    tokens = math.ceil((PART_CHARS + PROMPT_CHARS) / CHARS_PER_TOKEN_ESTIMATE)
+    return cost_usd(config.pricing[settings.model], TokenUsage(input=tokens, output=settings.max_tokens))
+
+
 @dataclass(frozen=True)
 class SpendGuard:
-    """How far filing reads may spend today: each role's usual cap, its raised one while the credit pays."""
+    """How far filing reads may spend today: each role's usual daily cap, never a raised one."""
 
     config: ModelConfig
     ledger: SpendLedger
     today: date
-    credit_pays: Callable[[], bool]
 
     def allows(self, role: str) -> bool:
-        """Say whether `role` may start one more part's call today."""
-        settings = self.config.roles[role]
-        cap = settings.cap_on(self.today) if self.credit_pays() else settings.daily_cap_usd
-        return self.ledger.spent(role, self.today) + PART_CALL_MOST_USD <= cap
-
-
-def spend_guard(
-    session_factory: sessionmaker[Session], config: ModelConfig, ledger: SpendLedger, today: date
-) -> SpendGuard:
-    """Build the guard for a live run: the credit check reads every model call since it began."""
-
-    def credit_pays() -> bool:
-        with session_factory() as session:
-            return credit_covers_a_day(session, today)
-
-    return SpendGuard(config, ledger, today, credit_pays)
+        """Say whether `role` may start one more part's call today within its usual cap."""
+        cap = self.config.roles[role].daily_cap_usd
+        return self.ledger.spent(role, self.today) + part_call_most(self.config, role) <= cap
 
 
 @dataclass
