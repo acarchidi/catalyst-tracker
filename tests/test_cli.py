@@ -11,7 +11,7 @@ import httpx
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from catalyst import cli
+from catalyst import cli, store_cleanup
 from catalyst.audit.sample import SampleReport
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
@@ -1132,11 +1132,24 @@ def _quiet_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(cli, "publish_claims", lambda *_args, **_kw: PublishReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
+@pytest.mark.parametrize(("setting", "deletes"), [(None, False), ("false", False), ("true", True)])
 def test_extract_catalysts_reads_filings_after_the_releases_and_cleans_the_store_last(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    setting: str | None,
+    deletes: bool,
 ) -> None:
-    """ADR 0066: filings share the reading time and the usual caps; read copies with no claim go."""
+    """ADR 0066: filings share the reading time and the usual caps; the clean-up deletes only when on.
+
+    Deleting live data is "dry run first, counts only": with `delete_read_copies` off, or no
+    setting at all, the nightly step only counts.
+    """
     _quiet_pipeline(monkeypatch)
+    settings_file = tmp_path / "store_cleanup.toml"
+    if setting is not None:
+        settings_file.write_text(f"delete_read_copies = {setting}\n")
+    monkeypatch.setattr(store_cleanup, "SETTINGS_PATH", settings_file)
     asked: dict[str, Any] = {}
 
     def filings(*_args: object, **options: Any) -> FilingReport:
@@ -1145,7 +1158,7 @@ def test_extract_catalysts_reads_filings_after_the_releases_and_cleans_the_store
 
     def cleanup(*_args: object, **options: Any) -> CleanupReport:
         asked["delete"] = options["delete"]
-        return CleanupReport(deleting=True, copies_deleted=2)
+        return CleanupReport(deleting=options["delete"], copies_to_delete=2)
 
     monkeypatch.setattr(cli, "read_filings", filings)
     monkeypatch.setattr(cli, "clean_store", cleanup)
@@ -1153,10 +1166,28 @@ def test_extract_catalysts_reads_filings_after_the_releases_and_cleans_the_store
     assert asked["limit"] == 60
     assert asked["deadline"] > datetime.now(UTC)
     assert asked["guard"] is not None
-    assert asked["delete"] is True
+    assert asked["delete"] is deletes
     summary = json.loads(capsys.readouterr().out)
     assert summary["filings"]["filings_waiting"] == 7
-    assert summary["store_cleanup"]["copies_deleted"] == 2
+    assert summary["store_cleanup"] == {
+        "deleting": deletes,
+        "copies_to_delete": 2,
+        "copies_deleted": 0,
+        "copies_failed": 0,
+        "by_document_type": {},
+    }
+
+
+def test_the_committed_setting_keeps_the_nightly_clean_up_a_dry_run() -> None:
+    """Until the owner has seen a dry run's counts, the nightly run deletes nothing (ADR 0066)."""
+    assert store_cleanup.nightly_deletes() is False
+
+
+def test_a_setting_that_is_not_true_or_false_stops_the_clean_up(tmp_path: Path) -> None:
+    settings_file = tmp_path / "store_cleanup.toml"
+    settings_file.write_text('delete_read_copies = "yes"\n')
+    with pytest.raises(ValueError, match="true or false"):
+        store_cleanup.nightly_deletes(settings_file)
 
 
 def test_a_filing_that_could_not_be_read_or_a_copy_not_deleted_fails_the_run(

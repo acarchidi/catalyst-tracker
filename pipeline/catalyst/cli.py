@@ -88,7 +88,7 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
-from catalyst.store_cleanup import clean_store
+from catalyst.store_cleanup import clean_store, nightly_deletes
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
 from catalyst.verify.drug import check_drug_named
@@ -763,10 +763,14 @@ def _filings_after(
 
 
 def _cleanup_after(session_factory: sessionmaker[Session], store: CachedStore) -> dict[str, Any]:
-    """Delete the copies of filings fully read that back no claim, last of all (ADR 0066)."""
+    """Count, by type, the copies of fully read filings that back no claim, last of all (ADR 0066).
+
+    They are deleted only once `delete_read_copies` is on in config/store_cleanup.toml: deleting
+    live data comes after a dry run's counts have been seen. Off, this is that dry run.
+    """
     try:
-        return clean_store(session_factory, store, delete=True, now=_utc_now).summary()
-    except (SQLAlchemyError, SnapshotStoreError, httpx.HTTPError, OSError) as error:
+        return clean_store(session_factory, store, delete=nightly_deletes(), now=_utc_now).summary()
+    except (SQLAlchemyError, SnapshotStoreError, httpx.HTTPError, OSError, ValueError) as error:
         return {"error": f"{type(error).__name__}: the store clean-up did not finish"}
 
 

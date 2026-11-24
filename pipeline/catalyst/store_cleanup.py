@@ -18,10 +18,12 @@ just before it is deleted. Re-running deletes nothing twice. Logs and summaries 
 from __future__ import annotations
 
 import logging
+import tomllib
 from collections import Counter, defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -41,7 +43,23 @@ KEPT_NOT_READ = "kept_not_fully_read"
 KEPT_CLAIM = "kept_backs_a_claim"
 KEPT_SHARED = "kept_copy_shared"
 
+# Whether the nightly run deletes, or only counts (ADR 0066): off until a dry run's counts are seen.
+SETTINGS_PATH = Path(__file__).resolve().parents[2] / "config" / "store_cleanup.toml"
+
 _log = logging.getLogger(__name__)
+
+
+def nightly_deletes(path: Path | None = None) -> bool:
+    """Say whether the nightly run's clean-up deletes; a missing file or setting means it only counts."""
+    path = path or SETTINGS_PATH
+    try:
+        with path.open("rb") as handle:
+            value = tomllib.load(handle).get("delete_read_copies", False)
+    except FileNotFoundError:
+        return False
+    if not isinstance(value, bool):
+        raise ValueError(f"{path.name}: delete_read_copies must be true or false")
+    return value
 
 
 def _utc_now() -> datetime:
