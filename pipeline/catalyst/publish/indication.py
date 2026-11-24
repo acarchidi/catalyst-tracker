@@ -40,6 +40,7 @@ from catalyst.schemas import (
     Catalyst,
     CatalystChange,
     CatalystField,
+    CatalystStatus,
     CheckOutcome,
     Claim,
     ClaimCheck,
@@ -82,7 +83,11 @@ def _latest_found(session: Session) -> list[Any]:
     query = (
         select(latest)
         .join(catalyst, catalyst.c.id == latest.c.catalyst_id)
-        .where(latest.c.outcome == IndicationResult.FOUND.value, catalyst.c.indication_id.is_(None))
+        .where(
+            latest.c.outcome == IndicationResult.FOUND.value,
+            catalyst.c.indication_id.is_(None),
+            catalyst.c.status != CatalystStatus.WITHDRAWN.value,  # never touched again (ADR 0070)
+        )
         .order_by(latest.c.catalyst_id)
     )
     return list(session.execute(query))

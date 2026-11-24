@@ -76,6 +76,7 @@ from catalyst.outreach.digest import (
 from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
+from catalyst.publish.withdrawals import load_withdrawals, withdrawals_pending
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.sealed import SealError, generate_keypair, seal, unseal
@@ -640,6 +641,7 @@ SECOND_SHARE = 0.7
 CHECKS_SHARE = 0.9
 INDICATION_SHARE = 0.85
 OUT_OF_TIME = "the run's time ran out first; the next run goes on"
+STOPPED_FOR_TIME = "a check ran out of time, so nothing was decided; the next run goes on"
 
 
 @dataclass(frozen=True)
@@ -712,6 +714,7 @@ def _extract(args: argparse.Namespace) -> int:
             if plan.past(1.0)
             else decide_after_checks(sessionmaker(engine), store, checks)
         )
+        decisions = withdrawals_waiting(sessionmaker(engine), decisions)
         published = _publish_after(sessionmaker(engine), store, decisions, config.roles[VERIFIER_ROLE].model)
         indications = (
             {"skipped": OUT_OF_TIME}
@@ -872,11 +875,27 @@ def decide_after_checks(
     if "error" in checks or any("error" in checks.get(step, {}) for step in steps):
         return {"skipped": "the checks did not finish, so nothing was decided"}
     if any(checks.get(step, {}).get("stopped_for_time") for step in steps):
-        return {"skipped": "a check ran out of time, so nothing was decided; the next run goes on"}
+        return {"skipped": STOPPED_FOR_TIME}
     try:
-        return decide_claims(session_factory, store, _utc_now).summary()
+        return decide_claims(session_factory, store, _utc_now, load_withdrawals()).summary()
     except (SQLAlchemyError, ValueError) as error:
         return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
+
+
+def withdrawals_waiting(session_factory: sessionmaker[Session], decisions: dict[str, Any]) -> dict[str, Any]:
+    """When the decisions were skipped for time, add how many listed withdrawals wait (ADR 0070).
+
+    A failed check step already raises its own alert; a stop for time does not, so without this a
+    withdrawal could wait silently. When the count cannot be read, the alert says that instead.
+    """
+    if decisions.get("skipped") not in (OUT_OF_TIME, STOPPED_FOR_TIME):
+        return decisions
+    try:
+        with session_factory() as session:
+            waiting = withdrawals_pending(session, load_withdrawals())
+    except (SQLAlchemyError, ValueError):
+        return decisions | {"withdrawals_unchecked": True}
+    return decisions | ({"withdrawals_waiting": waiting} if waiting else {})
 
 
 def _safe_to_write(session_factory: sessionmaker[Session]) -> dict[str, Any]:
@@ -901,7 +920,9 @@ def _publish_after(
     if "error" in decisions or "skipped" in decisions:
         return {"skipped": "the publish decisions did not finish, so nothing was published"}
     try:
-        return publish_claims(session_factory, store, _utc_now, verifier_model=verifier_model).summary()
+        return publish_claims(
+            session_factory, store, _utc_now, verifier_model=verifier_model, withdrawals=load_withdrawals()
+        ).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
         return {"error": f"{type(error).__name__}: publishing did not finish"}
 
@@ -1014,7 +1035,7 @@ def _decide_claims(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        report = decide_claims(sessionmaker(engine), store, _utc_now)
+        report = decide_claims(sessionmaker(engine), store, _utc_now, load_withdrawals())
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
@@ -1031,7 +1052,10 @@ def _publish_claims(args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         model = load_config().roles[VERIFIER_ROLE].model
-        report = publish_claims(sessionmaker(engine), store, _utc_now, verifier_model=model)
+        withdrawals = load_withdrawals()
+        report = publish_claims(
+            sessionmaker(engine), store, _utc_now, verifier_model=model, withdrawals=withdrawals
+        )
         indications = publish_indications(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()
