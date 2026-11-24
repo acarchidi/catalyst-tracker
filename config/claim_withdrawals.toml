@@ -53,3 +53,39 @@ claim = "b5e4fea1"
 reason = "Gossamer's quote is a financing closing condition, not a company expectation of a filing acceptance"
 evidence = "own source"
 added = 2026-11-24
+
+[[withdrawal]]
+claim = "0ab19edd-b118-45c3-8072-5ba268b82479"
+reason = "Viatris's acquisition of Pacira BioSciences already closed on 17 November 2026"
+evidence = "https://finviz.com/news/424033/viatris-completes-acquisition-of-pacira-biosciences"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "eb4d7ce8-57b8-4df9-87de-d10fe82c010f"
+reason = "Duplicate: Cullinan's December CLN-049 dose-escalation update is the same event as the dated 13 December 2026 presentation (claim 888bc3be)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "96f28b6e-2ea2-4afc-8958-0d2e563b59cf"
+reason = "Duplicate: Immunome's initial IM-1021 lymphoma data in 2026 is the dated 14 December 2026 presentation (claim 3b192f07)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "c3ddf620-b734-4171-afcb-f3f41fdd6b29"
+reason = "Duplicate: Disc's initial Phase 1b DISC-3405 sickle cell data is the December 2026 presentation (claim 1b3cb7af)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "cf727e73-4231-435a-990a-fef9994db3b2"
+reason = "Duplicate: Akebia's ebribafusp 2027 data is the same trial and event as the newer 'ebribafusp alfa' entry (claim 591756a4)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "e7bd09fa-eaef-4034-9eba-2609852ff512"
+reason = "Drug match unconfirmed: the quote is about selcodebart in inflammatory bowel disease, not clearly DISC-0974"
+evidence = "own source"
+added = 2026-11-24

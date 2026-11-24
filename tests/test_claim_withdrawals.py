@@ -69,7 +69,10 @@ def _publish(world: World, *entries: Withdrawal, days: int = 0) -> dict[str, Any
 def test_the_shipped_list_reads_and_names_each_reviewed_claim() -> None:
     entries = load_withdrawals(DEFAULT_PATH)
     assert [e.claim for e in entries] == [
-        "04157d4b", "7d2dd75b", "6adfe759", "c6b6be58", "dbe1d11b", "274e2311", "44f4eb8e", "b5e4fea1"
+        "04157d4b", "7d2dd75b", "6adfe759", "c6b6be58", "dbe1d11b", "274e2311", "44f4eb8e", "b5e4fea1",
+        "0ab19edd-b118-45c3-8072-5ba268b82479", "eb4d7ce8-57b8-4df9-87de-d10fe82c010f",
+        "96f28b6e-2ea2-4afc-8958-0d2e563b59cf", "c3ddf620-b734-4171-afcb-f3f41fdd6b29",
+        "cf727e73-4231-435a-990a-fef9994db3b2", "e7bd09fa-eaef-4034-9eba-2609852ff512",
     ]  # fmt: skip
     assert all(e.reason and e.added == date(2026, 11, 24) for e in entries)
 
