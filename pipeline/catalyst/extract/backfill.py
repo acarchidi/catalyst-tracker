@@ -61,6 +61,15 @@ def spent_since(session: Session, day: date) -> Decimal:
     return Decimal(session.execute(query).scalar_one())
 
 
+def credit_covers_a_day(session: Session, today: date) -> bool:
+    """Say whether the credit still pays for one more whole day at the raised caps (ADR 0065, 0066).
+
+    The filing reader (ADR 0066) spends past a role's usual cap, up to its raised one, only while
+    this holds, so the raised caps never spend paid money on filings.
+    """
+    return today <= BACKFILL_LAST_DAY and spent_since(session, CREDIT_FIRST_DAY) + DAY_MOST_USD <= CREDIT_USD
+
+
 def backfill_status(session: Session, today: date) -> BackfillStatus:
     """Decide whether the backfill's model reads may run on `today` (a New York date)."""
     waiting = waiting_documents(session, since=BACKFILL_SINCE)

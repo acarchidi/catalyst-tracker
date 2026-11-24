@@ -28,6 +28,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from catalyst.db.tables import TABLES
 from catalyst.extract.agent import ROLE, catalyst_claims, extract_catalysts
 from catalyst.extract.evaluate import VERIFY_EVALS, gate_problems
+from catalyst.extract.filings import SecondReader, SpendGuard, filing_documents
 from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import document_text, read_visible
 from catalyst.llm.client import ModelClient, ModelError, SpendCapReachedError
@@ -60,6 +61,8 @@ class SecondReadingReport:
     outcomes: dict[str, int] = field(default_factory=lambda: dict.fromkeys(OUTCOME_KINDS, 0))
     stopped: str | None = None
     stopped_for_time: bool = False  # the run's time ran out; the next run reads the rest (ADR 0064)
+    filing_parts_read: int = 0  # parts of filings read a second time (ADR 0066)
+    filings_paused: str | None = None  # filings wait for tomorrow's usual cap; not a failure
 
     def summary(self) -> dict[str, Any]:
         """Return the counts as plain JSON; what either reader said stays out (ADR 0034, ADR 0062)."""
@@ -72,6 +75,10 @@ class SecondReadingReport:
             "claims_by_outcome": dict(self.outcomes),
             "stopped_early": self.stopped,
         }
+        if self.filing_parts_read:
+            counts["filing_parts_read"] = self.filing_parts_read
+        if self.filings_paused:
+            counts["filings_paused"] = self.filings_paused
         return counts | ({"stopped_for_time": True} if self.stopped_for_time else {})
 
 
@@ -101,7 +108,13 @@ def _to_read(session: Session, model: str, limit: int) -> list[Any]:
     documents, claim, reading = TABLES[SourceDocument], TABLES[Claim], TABLES[DocumentReading]
     has_claims = exists().where(claim.c.source_document_id == documents.c.id, _extracted())
     done = exists().where(reading.c.source_document_id == documents.c.id, current_reading(model))
-    query = select(documents).where(has_claims, ~done).order_by(documents.c.published_at.desc()).limit(limit)
+    # Filings are read part by part, by `SecondReader` (ADR 0066).
+    query = (
+        select(documents)
+        .where(has_claims, ~done, ~filing_documents())
+        .order_by(documents.c.published_at.desc())
+        .limit(limit)
+    )
     return list(session.execute(query).all())
 
 
@@ -243,13 +256,15 @@ def run_second_reading(
     gate: Callable[[ModelConfig], list[str]] = second_reading_problems,
     deadline: float | None = None,
     clock: Callable[[], float] = time.monotonic,
+    guard: SpendGuard | None = None,
 ) -> SecondReadingReport:
     """Read up to `limit` extracted releases a second time, then compare every read release.
 
     The verifier's model and gate come from `config`, the same config `client` calls with. When
     the gate reports a problem, nothing is read, and outcomes from older readings are removed.
     Past `deadline` (a `clock` reading) no further release is read; the comparison still runs,
-    and the next run reads the rest (ADR 0064).
+    and the next run reads the rest (ADR 0064). Fully read filings follow the releases, each read
+    only in the parts that hold an extractor claim, within `guard` (ADR 0066).
     """
     model = config.roles[VERIFIER_ROLE].model
     problems = gate(config)
@@ -290,6 +305,21 @@ def run_second_reading(
         with session_factory.begin() as session:
             _record(session, UUID(str(row.id)), model, claims, len(reading.catalysts), at)
         report.documents_read += 1
+    if report.stopped is None and not report.stopped_for_time:
+
+        def out_of_time() -> bool:
+            return deadline is not None and clock() > deadline
+
+        reader = SecondReader(
+            session_factory, store, client, model, VERIFIER_ROLE, VERIFIER_PROMPT, now, out_of_time, guard
+        )
+        filings = reader.run(limit)
+        report.documents_read += filings.documents_read
+        report.documents_failed += filings.documents_failed
+        report.filing_parts_read = filings.parts_read
+        report.stopped = filings.stopped
+        report.filings_paused = filings.paused
+        report.stopped_for_time = filings.stopped_for_time
     with session_factory.begin() as session:
         _compare_all(session, model, now(), report)
     log_event(_log, "second_reading_done", **report.summary())

@@ -30,8 +30,9 @@ from catalyst.api.read import published, read_session
 from catalyst.api.views import CatalystDetail, SourceView
 from catalyst.collectors.documents import new_york_midnight
 from catalyst.db.tables import TABLES
+from catalyst.extract.filings import reader_text
 from catalyst.extract.run import NEW_YORK
-from catalyst.extract.text import find_quote, visible_text
+from catalyst.extract.text import find_quote
 from catalyst.llm.client import InputTooLargeError, ModelClient, ModelError, SpendCapReachedError
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import log_event
@@ -252,7 +253,13 @@ def _done(session: Session, week: date, model: str) -> set[UUID]:
 def _documents(session: Session, claims: list[UUID]) -> dict[UUID, Any]:
     claim, document = TABLES[Claim], TABLES[SourceDocument]
     query = (
-        select(claim.c.id, document.c.snapshot_key, document.c.content_type, document.c.published_at)
+        select(
+            claim.c.id,
+            document.c.snapshot_key,
+            document.c.content_type,
+            document.c.published_at,
+            document.c.document_type,
+        )
         .join(document, document.c.id == claim.c.source_document_id)
         .where(claim.c.id.in_(claims))
     )
@@ -282,7 +289,8 @@ def _check_record(
         for source in detail.sources:
             if points := points_for(detail, source):
                 row = documents[source.claim_id]
-                text = visible_text(store.get(row.snapshot_key), row.content_type)
+                content = store.get(row.snapshot_key)
+                text = reader_text(content, row.content_type, row.document_type, source.quote)
                 asks.append((source, points, text))
     except (SnapshotStoreError, httpx.HTTPError) as error:
         log_event(_log, "sample_check_failed", catalyst_id=str(detail.id), error=type(error).__name__)
