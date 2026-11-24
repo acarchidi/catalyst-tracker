@@ -141,6 +141,13 @@ def _extract_problems(summary: dict[str, Any], stops_expected: bool = False) -> 
         ("error" in _mapping(summary.get("published")), "Writing the published catalysts did not finish."),
     ]
     problems = [text.format(_plural(int(n), "document")) for n, text in found if n]
+    if waiting := _count(_mapping(summary.get("decisions")), "withdrawals_waiting"):
+        problems.append(
+            f"The publish decisions were skipped, so {_plural(waiting, 'claim')} on the withdrawal list "
+            "(config/claim_withdrawals.toml) still wait to be held or taken down (ADR 0070)."
+        )
+    if _mapping(summary.get("decisions")).get("withdrawals_unchecked"):
+        problems.append("The publish decisions were skipped, and the withdrawal list could not be checked.")
     if large := _count(summary, "documents_skipped_too_large"):
         verb = "was" if large == 1 else "were"
         problems.append(

@@ -12,9 +12,10 @@ from catalyst.alerts import _extract_problems  # pyright: ignore[reportPrivateUs
 from catalyst.api.access import Access
 from catalyst.api.read import catalyst as read_catalyst
 from catalyst.api.read import published
-from catalyst.cli import decide_after_checks
+from catalyst.cli import decide_after_checks, withdrawals_waiting
 from catalyst.export import build_export
 from catalyst.publish.gate import Decision
+from catalyst.publish.indication import write_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.withdrawals import (
     DEFAULT_PATH,
@@ -23,11 +24,20 @@ from catalyst.publish.withdrawals import (
     load_withdrawals,
     resolve,
     withdraw,
+    withdrawals_pending,
 )
-from catalyst.publish.write import publish_claims
-from catalyst.schemas import Catalyst, CatalystChange, ClaimDecision, GateDecision
+from catalyst.publish.write import WITHDRAWN_EVENT, publish_claims
+from catalyst.schemas import (
+    Catalyst,
+    CatalystChange,
+    ClaimCheck,
+    ClaimDecision,
+    GateDecision,
+    IndicationAttempt,
+    IndicationResult,
+)
 from catalyst.snapshots import LocalSnapshotStore
-from test_publish_writer import NOW, VERIFIER_MODEL, World
+from test_publish_writer import NOW, OCT_14, OCT_16, VERIFIER_MODEL, World
 
 
 def _entry(claim: UUID | str, reason: str = "the date has passed") -> Withdrawal:
@@ -140,3 +150,71 @@ def test_a_bad_entry_stops_the_run_and_raises_an_alert(world: World) -> None:
     decisions = decide_after_checks(world.factory, world.store, {})
     assert "error" in decisions
     assert "The publish decisions did not finish." in _extract_problems({"decisions": decisions})
+
+
+# --- A withdrawn event does not come back (Opus review of PR #151) ---
+
+
+def test_an_older_claim_about_the_same_event_does_not_bring_it_back(world: World) -> None:
+    first = world.claim("second half of 2027", published=OCT_14)
+    older = world.claim("second half of 2027", published=OCT_14 - timedelta(days=1))
+    assert _publish(world)["catalysts_created"] == 1  # the older one stays marked, never cited
+    summary = _publish(world, _entry(first), days=1)
+    assert (summary["catalysts_withdrawn"], summary["catalysts_created"]) == (1, 0)
+    assert summary["top_reasons"] == {WITHDRAWN_EVENT: 1}
+    held = [r for r in world.rows(ClaimCheck) if r.claim_id == older and r.check_name == "safe_to_write"]
+    assert [(r.outcome, r.reason) for r in held] == [("fail", WITHDRAWN_EVENT)]
+    assert _publish(world, _entry(first), days=2)["catalysts_created"] == 0
+    assert [row.status for row in world.rows(Catalyst)] == ["withdrawn"]
+
+
+def test_a_claim_from_a_newer_document_may_publish_the_event_again(world: World) -> None:
+    first = world.claim("second half of 2027", published=OCT_14)
+    _publish(world)
+    _publish(world, _entry(first), days=1)
+    world.claim("first half of 2028", published=OCT_16)
+    assert _publish(world, _entry(first), days=2)["catalysts_created"] == 1
+    assert sorted(row.status for row in world.rows(Catalyst)) == ["upcoming", "withdrawn"]
+
+
+def test_no_indication_is_written_to_a_withdrawn_catalyst(world: World) -> None:
+    claim = world.claim("second half of 2027")
+    _publish(world)
+    (live,) = world.rows(Catalyst)
+    _publish(world, _entry(claim), days=1)
+    attempt = IndicationAttempt(
+        catalyst_id=live.id,
+        claim_id=claim,
+        outcome=IndicationResult.FOUND,
+        indication_claim_id=claim,
+        reader_prompt_version="v1",
+        checker_prompt_version="v1",
+        reader_model="m",
+        checker_model="m",
+        attempted_at=NOW,
+    )
+    world.add(attempt)
+    with world.factory.begin() as session:
+        report = write_indications(session, world.store, NOW)
+    assert (report.written, report.held) == (0, {})
+    assert world.rows(Catalyst)[0].indication_id is None
+
+
+def test_a_skipped_decision_with_withdrawals_waiting_raises_an_alert(world: World) -> None:
+    claim = world.claim("second half of 2027")
+    with world.factory() as session:
+        assert withdrawals_pending(session, [_entry(claim)]) == 1  # still marked to publish
+    _publish(world, _entry(claim))
+    decide_claims(world.factory, world.store, lambda: NOW, [_entry(claim)])
+    with world.factory() as session:
+        assert withdrawals_pending(session, [_entry(claim)]) == 0
+    decisions = {"skipped": "a check ran out of time", "withdrawals_waiting": 2}
+    (problem,) = _extract_problems({"decisions": decisions})
+    assert "2 claims on the withdrawal list" in problem
+    stopped = decide_after_checks(world.factory, world.store, {"drug": {"stopped_for_time": True}})
+    assert "withdrawals_waiting" not in stopped  # counted by the caller, from the shipped list:
+    # it names claims this test database lacks, so the count cannot be read, and the alert says so.
+    counted = withdrawals_waiting(world.factory, stopped)
+    assert counted == stopped | {"withdrawals_unchecked": True}
+    assert "could not be checked" in _extract_problems({"decisions": counted})[0]
+    assert withdrawals_waiting(world.factory, {"error": "x"}) == {"error": "x"}

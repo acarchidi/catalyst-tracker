@@ -30,6 +30,7 @@ from catalyst.schemas import (
     CatalystStatus,
     CatalystTrial,
     Claim,
+    ClaimDecision,
     GateDecision,
 )
 
@@ -80,6 +81,24 @@ def load_withdrawn(session: Session, withdrawals: Sequence[Withdrawal]) -> dict[
     if not withdrawals:
         return {}
     return resolve(withdrawals, session.execute(select(TABLES[Claim].c.id)).scalars())
+
+
+def withdrawals_pending(session: Session, withdrawals: Sequence[Withdrawal]) -> int:
+    """Count listed claims not yet applied: still marked to publish, or behind a catalyst not withdrawn."""
+    withdrawn = load_withdrawn(session, withdrawals)
+    if not withdrawn:
+        return 0
+    decision, change, catalyst = TABLES[ClaimDecision], TABLES[CatalystChange], TABLES[Catalyst]
+    ids = list(withdrawn)
+    marked = select(decision.c.claim_id).where(
+        decision.c.claim_id.in_(ids), decision.c.decision == GateDecision.PUBLISH.value
+    )
+    shown = (
+        select(change.c.claim_id)
+        .join(catalyst, catalyst.c.id == change.c.catalyst_id)
+        .where(change.c.claim_id.in_(ids), catalyst.c.status != CatalystStatus.WITHDRAWN.value)
+    )
+    return len({*session.execute(marked).scalars(), *session.execute(shown).scalars()})
 
 
 def withdraw(decision: Decision, entry: Withdrawal | None) -> Decision:

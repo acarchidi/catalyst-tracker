@@ -52,8 +52,6 @@ WINDOW_CHECK = "window_not_past"
 LIVE_REASON = "the catalyst is already published; a date that has passed is for the outcome tracker"
 if WINDOW_CHECK not in gate.RULE_CHECKS or WINDOW_CHECK not in gate.MAY_NOT_APPLY:
     raise RuntimeError(f"{WINDOW_CHECK} must be a rule check that may not apply")
-# A resolved or withdrawn catalyst takes no more claims (ADR 0070).
-CLOSED = (CatalystStatus.RESOLVED.value, CatalystStatus.WITHDRAWN.value)
 SEVERAL = "the claim matches more than one published catalyst"
 OTHER_INDICATION = "the indication differs from the published one"
 # The fields whose newest change row names the claim behind the current dates (B1; round 2, N1).
@@ -182,6 +180,23 @@ class LiveIndex:
 
     cited: Mapping[UUID, UUID]  # claim -> catalyst
     catalysts: Sequence[LiveCatalyst]
+    # Withdrawn catalysts (ADR 0070), each `source` the withdrawn claim's document, not its window's.
+    withdrawn: Sequence[LiveCatalyst] = ()
+
+    def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
+        """Say whether the claim's event was withdrawn after review and its source is no newer.
+
+        Matched like `place`, but on company, type, drugs and trials only: a stated indication
+        never lets a stale event back in. Only a document published after the withdrawn claim's is new.
+        """
+        same = [
+            c
+            for c in self.withdrawn
+            if (c.key.company_id, c.key.catalyst_type, c.key.drugs)
+            == (key.company_id, key.catalyst_type, key.drugs)
+            and (c.key.trials == key.trials or not c.key.trials or not key.trials)
+        ]
+        return any(published_at <= c.source.published_at for c in same)
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
@@ -210,6 +225,7 @@ def load_live(session: Session) -> LiveIndex:
     window_source: dict[UUID, Rank] = {}
     indication: dict[UUID, str] = {}
     last_learned: dict[UUID, datetime] = {}
+    status_source: dict[UUID, Rank] = {}
     changes = (
         select(
             change.c.catalyst_id,
@@ -229,12 +245,16 @@ def load_live(session: Session) -> LiveIndex:
         last_learned[row.catalyst_id] = row.learned_at
         if row.field in WINDOW_FIELDS:
             window_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
+        elif row.field == CatalystField.STATUS.value:  # the last one withdrew a withdrawn catalyst
+            status_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
-    for row in session.execute(select(catalyst).where(catalyst.c.status.not_in(CLOSED))):
+    withdrawn: list[LiveCatalyst] = []
+    for row in session.execute(select(catalyst).where(catalyst.c.status != CatalystStatus.RESOLVED.value)):
         live = Catalyst.model_validate(row, from_attributes=True)
-        source = window_source.get(live.id)
+        gone = live.status is CatalystStatus.WITHDRAWN
+        source = (status_source if gone else window_source).get(live.id)
         if source is None:  # no change row: not written by the gate, so never matched to a claim
             continue
         key = Key(
@@ -244,8 +264,8 @@ def load_live(session: Session) -> LiveIndex:
             frozenset(trials[live.id]),
             indication.get(live.id, ""),
         )
-        found.append(LiveCatalyst(live, key, source, last_learned[live.id]))
-    return LiveIndex(cited=cited, catalysts=found)
+        (withdrawn if gone else found).append(LiveCatalyst(live, key, source, last_learned[live.id]))
+    return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn)
 
 
 def excuse_passed_window(claim_id: UUID, checks: Iterable[ClaimCheck], at: datetime) -> list[ClaimCheck]:

@@ -129,6 +129,7 @@ DATE_FIELDS = (
 )
 INVALID = "the claim's values do not make a valid catalyst"
 _DECIDED_WHILE_WRITING = "decided as the writer places the claim"
+WITHDRAWN_EVENT = "the event was withdrawn after review"  # ADR 0070; no person's approval lifts it
 
 _log = logging.getLogger(__name__)
 
@@ -478,6 +479,13 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
     today = run.at.astimezone(NEW_YORK).date()
     catalysts = list(live.catalysts)
     for item in sorted(ready, key=_Ready.order):
+        if live.was_withdrawn(item.key, item.candidate.rank.published_at):
+            # A claim from no newer a document must not bring a withdrawn event back as a new
+            # catalyst (Opus review of PR #151).
+            result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, WITHDRAWN_EVENT)
+            run.results.setdefault(item.claim.id, []).append(result)
+            _hold(run, item, WITHDRAWN_EVENT)
+            continue
         where = place(item.key, catalysts)
         result = safe_to_write(item.candidate, where, today)
         if result.outcome is CheckOutcome.PASS and where.catalyst is None and _ended(item, today):
