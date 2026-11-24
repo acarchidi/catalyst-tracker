@@ -11,7 +11,7 @@ from sqlalchemy import Engine, text
 from conftest import alembic_config, truncate_all
 
 REVISION = "c3d5e7f9a1b2"
-BEFORE = "a64c0de5e7a1"
+BEFORE = "1b7e8f9c6561"
 COLUMNS = {"display_name", "display_name_document_id", "display_name_inputs"}
 
 

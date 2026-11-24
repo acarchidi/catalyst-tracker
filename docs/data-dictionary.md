@@ -20,10 +20,13 @@ One primary document we retrieved, with a hash of the private copy we stored.
 | `sha256` | text, up to 64 characters | yes | SHA-256 hash of the stored copy, lowercase hex. |
 | `snapshot_key` | text | yes | Where the private copy is kept in the snapshot store. |
 | `content_type` | text, up to 200 characters | yes | Media type the publisher sent, for example 'text/html'. |
+| `fully_read_at` | date and time (with time zone) | no | When the extractor finished reading every part of this filing or exhibit (ADR 0066); it is never read again. Empty until then, and for press releases. |
+| `copy_deleted_at` | date and time (with time zone) | no | When the stored copy was deleted, because the document was fully read and backs no claim (ADR 0066). Empty while the copy is kept. |
 
 Rules:
 
 - Unique: `source_key`
+- Database check `deleted_only_after_read`: `copy_deleted_at IS NULL OR fully_read_at IS NOT NULL`
 
 ## `company`
 
@@ -388,6 +391,34 @@ A person's decision on one claim the publish gate holds (spec: Human review; ADR
 Rules:
 
 - Database check `lists_reasons_seen`: `CASE WHEN jsonb_typeof(reasons_seen) = 'array' THEN jsonb_array_length(reasons_seen) > 0 ELSE false END`
+
+## `document_part_reading`
+
+One reader's pass over one part of a long filing or exhibit (ADR 0066). A 10-Q, a 10-K, or an exhibit is read part by part; each part read is kept, so a run that stops part-way goes on with the next part, and no part is paid for twice. A part is known by the hash of its words, so the same words are never read twice by the same reader and prompt.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `source_document_id` | link to `source_document` | yes | The document the part is from. |
+| `agent` | text, up to 100 characters | yes | Which reader, for example 'extractor'. |
+| `prompt_id` | text, up to 100 characters | yes | Prompt used. |
+| `prompt_version` | text, up to 100 characters | yes | Version of that prompt. |
+| `model` | text, up to 100 characters | yes | Model that answered. |
+| `section` | text, up to 100 characters | yes | Which section the part is from, for example 'Management's discussion and analysis'. |
+| `part` | whole number | yes | The part's place among the document's parts, from 0. |
+| `parts` | whole number | yes | How many parts the document has to read. |
+| `part_start` | whole number | yes | Where the part starts in the document's visible text, in characters. |
+| `part_end` | whole number | yes | Where the part ends in the visible text. |
+| `part_sha256` | text, up to 64 characters | yes | SHA-256 of the part's words, lowercase hex. |
+| `catalysts` | whole number | yes | How many catalysts the reader proposed in it. |
+| `read_at` | date and time (with time zone) | yes | When the part was read. |
+
+Rules:
+
+- Unique: `source_document_id`, `agent`, `prompt_id`, `prompt_version`, `part_sha256`
+- Database check `catalysts_not_negative`: `catalysts >= 0`
+- Database check `part_in_range`: `part >= 0 AND part < parts`
+- Database check `forward_span`: `part_start >= 0 AND part_end > part_start`
 
 ## `document_reading`
 

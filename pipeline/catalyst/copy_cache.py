@@ -62,6 +62,16 @@ class CachedStore:
                 self._bytes += len(content)
         return content
 
+    def delete_copy(self, key: str) -> None:
+        """Delete the copy at `key` from the underlying store, and forget it here (ADR 0066)."""
+        delete = getattr(self._store, "delete_copy", None)
+        if delete is None:
+            raise SnapshotStoreError("this snapshot store cannot delete copies")
+        delete(key)
+        with self._lock:
+            kept = self._kept.pop(key, None)
+            self._bytes -= len(kept) if kept is not None else 0
+
     def _try(self, key: str) -> bool:
         try:
             self.get(key)

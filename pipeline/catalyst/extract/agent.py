@@ -200,6 +200,8 @@ def extract_catalysts(
     differs: bool = False,
     role: str = ROLE,
     prompt_ref: tuple[str, str] = EXTRACTOR_PROMPT,
+    shown: str | None = None,
+    hide_text: str | None = None,
 ) -> Extraction:
     """Ask a reader for the catalysts in `text` (published on `published`) and check each one.
 
@@ -210,9 +212,16 @@ def extract_catalysts(
     The extractor is the default; the verifier's second reading uses its own role and prompt.
     When the text addresses models, or the page hides words from readers, every proposal is
     flagged, since no code can tell which of them the text changed.
+
+    A long filing is read part by part (ADR 0066): `shown` is then the part of `visible` the
+    reader sees, while quotes are still placed in the whole `text` and checked against the whole
+    `visible`. `hide_text` is the text the hiding check compares with `visible` in place of
+    `text`: for an SEC filing, `text` without the inline XBRL header, which the SEC has filers
+    hide and which holds the filing's data tags, not words for a reader.
     """
     prompt = load_prompt(*prompt_ref)
-    shown = text if visible is None else visible
+    if shown is None:
+        shown = text if visible is None else visible
     result = client.run(role, prompt, model_input(shown, published))
     items: list[dict[str, Any]] = result.data["catalysts"]
     catalysts = tuple(check_proposal(item, text, published, visible) for item in items)
@@ -222,7 +231,10 @@ def extract_catalysts(
         instructions = tuple(dict.fromkeys((*instructions, *instruction_markers(visible))))
     flags = [Problem.SOURCE_INSTRUCTS_MODELS] if instructions else []
     # The page hides words; or the reader saw letters the stored text lacks, which no honest page does.
-    if differs or (visible is not None and (hidden_letters(text, visible) or hidden_letters(visible, text))):
+    compared = text if hide_text is None else hide_text
+    if differs or (
+        visible is not None and (hidden_letters(compared, visible) or hidden_letters(visible, text))
+    ):
         flags.append(Problem.SOURCE_HIDES_TEXT)
     if flags:
         catalysts = tuple(replace(c, problems=(*c.problems, *flags)) for c in catalysts)

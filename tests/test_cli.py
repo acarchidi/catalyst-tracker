@@ -11,12 +11,13 @@ import httpx
 import pytest
 from sqlalchemy.exc import OperationalError
 
-from catalyst import cli
+from catalyst import cli, store_cleanup
 from catalyst.audit.sample import SampleReport
 from catalyst.cli import main
 from catalyst.collectors.coverage import CoverageEntry, Listing
 from catalyst.collectors.sec.press_release import NoPressReleaseError
 from catalyst.extract.evaluate import Scores
+from catalyst.extract.filings import FilingReport, FilingResult
 from catalyst.extract.indicate import IndicationReport
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
@@ -26,6 +27,7 @@ from catalyst.publish.sanity import SafeReport
 from catalyst.publish.write import PublishReport
 from catalyst.resolve_claims import MatchReport
 from catalyst.snapshots import SnapshotStoreError
+from catalyst.store_cleanup import CleanupReport
 from catalyst.verify.advisory import AdvisoryReport
 from catalyst.verify.company import CompanyReport
 from catalyst.verify.drug import DrugReport
@@ -125,6 +127,13 @@ def _indication_jobs_stand_in(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stand in for the indication job and the writer's indication pass, which need a database."""
     monkeypatch.setattr(cli, "indicate_catalysts", lambda *_args, **_kw: IndicationReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
     monkeypatch.setattr(cli, "publish_indications", lambda *_args, **_kw: IndicationWrites())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+
+
+@pytest.fixture(autouse=True)
+def _filing_jobs_stand_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stand in for the filing reader and the store clean-up (ADR 0066), which need a database."""
+    monkeypatch.setattr(cli, "read_filings", lambda *_args, **_kw: FilingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "clean_store", lambda *_args, **_kw: CleanupReport(deleting=True))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
 
 
 class _FakeEngine:
@@ -1110,3 +1119,112 @@ def test_no_indication_is_asked_for_when_publishing_did_not_finish(
 def test_the_extract_run_refuses_a_limit_below_one(limit: str) -> None:
     with pytest.raises(SystemExit):
         main(["extract-catalysts", "--limit", limit])
+
+
+def _quiet_pipeline(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CATALYST_ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "extract_documents", lambda *_args, **_options: ExtractionReport(documents=[]))  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "resolve_claims", lambda *_args: MatchReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_checks", lambda *_args: CheckReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "run_second_reading", lambda *_args, **_options: SecondReadingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "decide_claims", lambda *_args: DecisionReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "publish_claims", lambda *_args, **_kw: PublishReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+
+
+@pytest.mark.parametrize(("setting", "deletes"), [(None, False), ("false", False), ("true", True)])
+def test_extract_catalysts_reads_filings_after_the_releases_and_cleans_the_store_last(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+    setting: str | None,
+    deletes: bool,
+) -> None:
+    """ADR 0066: filings share the reading time and the usual caps; the clean-up deletes only when on.
+
+    Deleting live data is "dry run first, counts only": with `delete_read_copies` off, or no
+    setting at all, the nightly step only counts.
+    """
+    _quiet_pipeline(monkeypatch)
+    settings_file = tmp_path / "store_cleanup.toml"
+    if setting is not None:
+        settings_file.write_text(f"delete_read_copies = {setting}\n")
+    monkeypatch.setattr(store_cleanup, "SETTINGS_PATH", settings_file)
+    asked: dict[str, Any] = {}
+
+    def filings(*_args: object, **options: Any) -> FilingReport:
+        asked.update(options)
+        return FilingReport(waiting=7)
+
+    def cleanup(*_args: object, **options: Any) -> CleanupReport:
+        asked["delete"] = options["delete"]
+        return CleanupReport(deleting=options["delete"], copies_to_delete=2)
+
+    monkeypatch.setattr(cli, "read_filings", filings)
+    monkeypatch.setattr(cli, "clean_store", cleanup)
+    assert main(["extract-catalysts", "--limit", "60"]) == 0
+    assert asked["limit"] == 60
+    assert asked["deadline"] > datetime.now(UTC)
+    assert asked["guard"] is not None
+    assert asked["delete"] is deletes
+    summary = json.loads(capsys.readouterr().out)
+    assert summary["filings"]["filings_waiting"] == 7
+    assert summary["store_cleanup"] == {
+        "deleting": deletes,
+        "copies_to_delete": 2,
+        "copies_deleted": 0,
+        "copies_failed": 0,
+        "by_document_type": {},
+    }
+
+
+def test_the_committed_setting_keeps_the_nightly_clean_up_a_dry_run() -> None:
+    """Until the owner has seen a dry run's counts, the nightly run deletes nothing (ADR 0066)."""
+    assert store_cleanup.nightly_deletes() is False
+
+
+def test_a_setting_that_is_not_true_or_false_stops_the_clean_up(tmp_path: Path) -> None:
+    settings_file = tmp_path / "store_cleanup.toml"
+    settings_file.write_text('delete_read_copies = "yes"\n')
+    with pytest.raises(ValueError, match="true or false"):
+        store_cleanup.nightly_deletes(settings_file)
+
+
+def test_a_filing_that_could_not_be_read_or_a_copy_not_deleted_fails_the_run(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _quiet_pipeline(monkeypatch)
+    failed = FilingReport()
+    failed.documents.append(_filing_result_with_error())
+    monkeypatch.setattr(cli, "read_filings", lambda *_args, **_kw: failed)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == 1
+    capsys.readouterr()
+    monkeypatch.setattr(cli, "read_filings", lambda *_args, **_kw: FilingReport())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    broken = CleanupReport(deleting=True, copies_failed=1)
+    monkeypatch.setattr(cli, "clean_store", lambda *_args, **_kw: broken)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    assert main(["extract-catalysts"]) == 1
+
+
+def _filing_result_with_error() -> FilingResult:
+    """Return a filing whose copy could not be read."""
+    return FilingResult(
+        "sec:q", "https://www.sec.gov/q.htm", None, date(2026, 11, 5), error="SnapshotStoreError: gone"
+    )
+
+
+@pytest.mark.parametrize(("flag", "deleting"), [([], False), (["--delete"], True)])
+def test_snapshots_clean_is_a_dry_run_unless_told_to_delete(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], flag: list[str], deleting: bool
+) -> None:
+    asked: list[bool] = []
+
+    def cleanup(*_args: object, **options: Any) -> CleanupReport:
+        asked.append(options["delete"])
+        return CleanupReport(deleting=options["delete"], copies_to_delete=3)
+
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "clean_store", cleanup)
+    assert main(["snapshots-clean", *flag]) == 0
+    assert asked == [deleting]
+    summary = json.loads(capsys.readouterr().out)
+    assert (summary["deleting"], summary["copies_to_delete"]) == (deleting, 3)

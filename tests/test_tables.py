@@ -108,6 +108,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("claim_decision", "claim_id", "claim"),
     ("review_decision", "claim_id", "claim"),
     ("document_reading", "source_document_id", "source_document"),
+    ("document_part_reading", "source_document_id", "source_document"),
 }
 
 

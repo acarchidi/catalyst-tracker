@@ -6,7 +6,7 @@ change. The downgrade drops them; the SEC names stay, and the code before this r
 them as it always did.
 
 Revision ID: c3d5e7f9a1b2
-Revises: a64c0de5e7a1
+Revises: 1b7e8f9c6561
 Create Date: 2026-11-24 14:54:41.657168
 """
 
@@ -16,7 +16,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "c3d5e7f9a1b2"
-down_revision: str | None = "a64c0de5e7a1"
+down_revision: str | None = "1b7e8f9c6561"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
