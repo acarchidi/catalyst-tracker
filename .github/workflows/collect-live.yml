@@ -10,6 +10,10 @@ name: Collect (live)
 # what compressing the older plain copies would save and changes nothing; snapshots-compress
 # replaces each plain copy with its checked compressed copy, then prints the size again. It is
 # safe to stop and re-run; a run that reaches its time limit leaves the rest for the next run.
+# snapshots-clean-dry-run counts, by document type, the copies of fully read 10-Qs, 10-Ks and
+# 8-K exhibits that back no claim, and deletes nothing; snapshots-clean deletes those copies,
+# keeping every copy a claim rests on, published or held (ADR 0066). The nightly extraction
+# already does this for each filing it finishes; these modes are for checking and catching up.
 # They print counts and sizes only, never content.
 # A weekday schedule (ADR 0051) collects the last 10 days of SEC filings for every covered
 # company. It keeps the free Supabase project from pausing for inactivity, at no cost.
@@ -22,9 +26,10 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "collect, or work on the stored copies: snapshots-usage, snapshots-compress-dry-run, snapshots-compress"
+        description: "collect, or work on the stored copies: snapshots-usage, snapshots-compress-dry-run, snapshots-compress, snapshots-clean-dry-run, snapshots-clean"
         type: choice
-        options: [collect, snapshots-usage, snapshots-compress-dry-run, snapshots-compress]
+        options:
+          [collect, snapshots-usage, snapshots-compress-dry-run, snapshots-compress, snapshots-clean-dry-run, snapshots-clean]
         default: collect
       companies:
         description: "collect only: gate1 (50 companies) or coverage (all 466 companies)"
@@ -130,6 +135,10 @@ jobs:
               uv run catalyst snapshots-compress --dry-run --max-minutes 140 > "$RUNNER_TEMP/snapshots.json" ;;
             snapshots-compress)
               uv run catalyst snapshots-compress --max-minutes 140 > "$RUNNER_TEMP/snapshots.json" ;;
+            snapshots-clean-dry-run)
+              uv run catalyst snapshots-clean --snapshot-store supabase > "$RUNNER_TEMP/snapshots.json" ;;
+            snapshots-clean)
+              uv run catalyst snapshots-clean --delete --snapshot-store supabase > "$RUNNER_TEMP/snapshots.json" ;;
             *) echo "unknown mode: $MODE"; exit 2 ;;
           esac
           status=$?
