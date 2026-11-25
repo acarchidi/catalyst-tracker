@@ -673,7 +673,7 @@ class CatalystChange(Entity):
 
 
 class CatalystMergedSource(Entity):
-    """A claim behind an entry merged into another as the same event, shown as its extra source (ADR 0081).
+    """A claim behind an entry merged into another as the same event, shown as its extra source (ADR 0082).
 
     The merged entry keeps every row of its own; this link only adds its claims to the kept entry's
     sources. Written by plain code in the same transaction as the merged entry's status change.

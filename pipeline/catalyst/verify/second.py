@@ -215,7 +215,7 @@ def _drugs_agree(first: Reading, second: Reading, same_drug: SameDrug) -> bool:
 def drug_names_agree(first: str | None, second: str | None, same_drug: SameDrug = _never) -> bool:
     """Say whether two drug names are one drug or the same combination (ADR 0062); a missing name never is.
 
-    Also used to find two entries of one event (ADR 0081), so both rules always read drugs alike.
+    Also used to find two entries of one event (ADR 0082), so both rules always read drugs alike.
     """
     a, b = first or "", second or ""
     if not name_key(a) or not name_key(b):

@@ -13,7 +13,7 @@ already cites is about that change's catalyst. Resolved catalysts are left out, 
 the same kind (a new FDA date after a refusal) becomes a new catalyst; but a deal that plain code
 found closed (ADR 0080) is kept aside, like a withdrawn one, so an older release of its "expected to
 close" date never makes it a new catalyst again. An entry merged into another as the same event
-(ADR 0081) is open no more; a claim that would fit only it is placed on the entry it was merged into.
+(ADR 0082) is open no more; a claim that would fit only it is placed on the entry it was merged into.
 
 Once a catalyst is live, its date passing is a change for the outcome tracker, not a reason to
 hold a claim about it, so `window_not_past` does not apply to such claims.
@@ -68,7 +68,7 @@ WINDOW_FIELDS = frozenset(
 )
 # The plain-code role whose claims close a deal that a stored document says was completed (ADR 0080).
 DEAL_CLOSER = "deal_closer"
-# The plain-code role whose claims mark an entry merged into another as the same event (ADR 0081).
+# The plain-code role whose claims mark an entry merged into another as the same event (ADR 0082).
 DEDUPLICATOR = "deduplicator"
 _TIERS: tuple[SourceTier, ...] = tuple(SourceTier)  # highest first (spec: Provenance, source ranking)
 _WORD = re.compile(r"\w+")
@@ -149,7 +149,7 @@ class LiveCatalyst:
     # A closed deal's names (ADR 0080): its counterparty names and the company's own; else empty.
     names: frozenset[str] = frozenset()
     parties: frozenset[str] = frozenset()  # a closed deal's counterparty names alone; else empty
-    into: UUID | None = None  # a merged entry's kept entry (ADR 0081); else empty
+    into: UUID | None = None  # a merged entry's kept entry (ADR 0082); else empty
 
     @property
     def window(self) -> tuple[date, date]:
@@ -186,7 +186,7 @@ def place(key: Key, catalysts: Iterable[LiveCatalyst]) -> Place:
 
 
 def place_among(key: Key, catalysts: Sequence[LiveCatalyst], merged: Sequence[LiveCatalyst] = ()) -> Place:
-    """Place a claim like `place`; a new event that fits a merged entry is its kept entry's (ADR 0081).
+    """Place a claim like `place`; a new event that fits a merged entry is its kept entry's (ADR 0082).
 
     So a later release naming the event as the merged entry named it updates the kept entry, and
     never brings the duplicate back. A claim fitting several merged entries waits for a person.
@@ -217,7 +217,7 @@ class LiveIndex:
     # Deals found closed (ADR 0080); each `source.published_at` is when its completion document was
     # published, and `names` are the counterparty names it matched.
     closed: Sequence[LiveCatalyst] = ()
-    # Entries merged into another as the same event (ADR 0081), each with `into` set.
+    # Entries merged into another as the same event (ADR 0082), each with `into` set.
     merged: Sequence[LiveCatalyst] = ()
 
     def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
@@ -273,7 +273,7 @@ def _listed(stated: Mapping[str, Any], parts: Iterable[str]) -> frozenset[str]:
 
 
 def _merged_into(catalyst_id: UUID, agent: str, value: object) -> dict[UUID, UUID]:
-    """Return {entry: kept entry} for a status change that merged an entry (ADR 0081); else nothing."""
+    """Return {entry: kept entry} for a status change that merged an entry (ADR 0082); else nothing."""
     kept = claim_value(value).get("kept") if agent == DEDUPLICATOR else None
     return {catalyst_id: UUID(kept)} if isinstance(kept, str) else {}
 

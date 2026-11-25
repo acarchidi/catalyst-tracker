@@ -1,4 +1,4 @@
-# 0081 — Two open entries that are one event become one
+# 0082 — Two open entries that are one event become one
 
 - **Status:** accepted
 - **Date:** 2026-11-25

@@ -44,7 +44,7 @@ Next, every open merger or acquisition entry that a later stored document of its
 completed is closed (`catalyst.publish.closed_deals`, ADR 0080), with a status change citing that
 document's sentence; a claim naming that deal's counterparty, from a document published no later
 than the completion document, is then held, so the deal never comes back. Last, two open entries
-that are surely one event are made one (`catalyst.publish.duplicates`, ADR 0081): one is kept as it
+that are surely one event are made one (`catalyst.publish.duplicates`, ADR 0082): one is kept as it
 is, the other marked merged, with a status change in its history and its claims shown as the kept
 entry's extra sources; a later claim that fits only the merged entry is placed on the kept one.
 """
@@ -163,7 +163,7 @@ class PublishReport:
     published_by_approval: int = 0  # claims a person approved that this run wrote
     catalysts_withdrawn: int = 0  # unpublished now by the reviewed withdrawal list (ADR 0070)
     deals_closed: int = 0  # closed now by a stored completion document (ADR 0080)
-    duplicates_merged: int = 0  # open entries merged now into another of the same event (ADR 0081)
+    duplicates_merged: int = 0  # open entries merged now into another of the same event (ADR 0082)
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:

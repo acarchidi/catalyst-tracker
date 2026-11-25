@@ -1,4 +1,4 @@
-"""Duplicate entries (ADR 0081): two open entries that are one event become one.
+"""Duplicate entries (ADR 0082): two open entries that are one event become one.
 
 The weekly issue sometimes listed one real event twice for a company: the same drug's conference
 presentation, or the same readout from two releases that named the drug two ways. The rule is

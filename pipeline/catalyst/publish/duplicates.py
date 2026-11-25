@@ -1,4 +1,4 @@
-"""Two open entries that are one event: keep one, mark the other merged (ADR 0081).
+"""Two open entries that are one event: keep one, mark the other merged (ADR 0082).
 
 The writer places a claim on an open entry only when the company, type and matched drugs are the
 same (`catalyst.publish.live.place`). One drug matched to two drug records ("pegozafermin" and

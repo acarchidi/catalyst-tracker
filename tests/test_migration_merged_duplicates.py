@@ -1,4 +1,4 @@
-"""The duplicate-entries migration adds a status and a table; its downgrade never loses a merge (ADR 0081)."""
+"""The duplicate-entries migration adds a status and a table; its downgrade never loses a merge (ADR 0082)."""
 
 from collections.abc import Iterator
 

@@ -1,4 +1,4 @@
-"""Duplicate entries can be merged: one event listed twice becomes one entry (ADR 0081).
+"""Duplicate entries can be merged: one event listed twice becomes one entry (ADR 0082).
 
 `catalyst.status` gains `merged` (an entry kept in another's place as the same event), and the new
 table `catalyst_merged_source` links the kept entry to each claim of the merged one, so those claims
@@ -98,7 +98,7 @@ def upgrade() -> None:
         ),
         comment=(
             "A claim behind an entry merged into another as the same event, shown as its extra source "
-            "(ADR 0081)."
+            "(ADR 0082)."
         ),
     )
     op.execute(f'ALTER TABLE "{TABLE}" ENABLE ROW LEVEL SECURITY')
@@ -113,6 +113,6 @@ def downgrade() -> None:
         )
     )
     if used.scalar_one():
-        raise RuntimeError("entries are merged (ADR 0081); downgrading would show both entries again")
+        raise RuntimeError("entries are merged (ADR 0082); downgrading would show both entries again")
     op.drop_table(TABLE)
     _status(NEW_STATUS, OLD_STATUS, OLD_COMMENT, NEW_COMMENT)

@@ -5,7 +5,7 @@ review queue (ADR 0003). Claims are read only through `catalyst_change` rows. A 
 only when every value, its drug links included, matches its field's latest change, and each drug
 link cites the claim of one of the catalyst's `drugs` changes. A trial is shown only when its link
 cites a claim one of the catalyst's changes cites (ADR 0039). Review and check tables are never read.
-An entry merged into another as the same event (ADR 0081) is never shown; while it stays merged, its
+An entry merged into another as the same event (ADR 0082) is never shown; while it stays merged, its
 claims are listed among the kept entry's sources, each with the field `same_event`.
 """
 
@@ -82,7 +82,7 @@ BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.D
 DRUGS = CatalystField.DRUGS.value
 INDICATION = CatalystField.INDICATION_ID.value
 TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0039)
-SAME_EVENT = "same_event"  # a source's `fields` entry for a merged entry's claim (ADR 0081)
+SAME_EVENT = "same_event"  # a source's `fields` entry for a merged entry's claim (ADR 0082)
 HIDDEN_STATUSES = (CatalystStatus.WITHDRAWN.value, CatalystStatus.MERGED.value)
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
@@ -291,7 +291,7 @@ def _source(row: Row[Any], fields: list[str]) -> SourceView:
 def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]:
     """Build each catalyst with its sources; leave out, and log, any with an unbacked value.
 
-    A withdrawn catalyst (ADR 0070) or a merged one (ADR 0081) is never shown, by any read.
+    A withdrawn catalyst (ADR 0070) or a merged one (ADR 0082) is never shown, by any read.
     """
     rows = [row for row in rows if row.status not in HIDDEN_STATUSES]
     ids = [row.id for row in rows]
