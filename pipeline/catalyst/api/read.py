@@ -5,6 +5,8 @@ review queue (ADR 0003). Claims are read only through `catalyst_change` rows. A 
 only when every value, its drug links included, matches its field's latest change, and each drug
 link cites the claim of one of the catalyst's `drugs` changes. A trial is shown only when its link
 cites a claim one of the catalyst's changes cites (ADR 0039). Review and check tables are never read.
+An entry merged into another as the same event (ADR 0081) is never shown; while it stays merged, its
+claims are listed among the kept entry's sources, each with the field `same_event`.
 """
 
 import base64
@@ -45,6 +47,7 @@ from catalyst.schemas import (
     CatalystChange,
     CatalystDrug,
     CatalystField,
+    CatalystMergedSource,
     CatalystStatus,
     CatalystTrial,
     CatalystType,
@@ -72,12 +75,15 @@ _DRUG_NAME = TABLES[DrugName]
 _INDICATION = TABLES[Indication]
 _TRIAL_LINK = TABLES[CatalystTrial]
 _TRIAL = TABLES[Trial]
+_MERGED = TABLES[CatalystMergedSource]
 
 OPEN_STATUSES = (CatalystStatus.UPCOMING, CatalystStatus.SLIPPED)
 BACKED_FIELDS = tuple(f.value for f in CatalystField if f is not CatalystField.DRUGS)
 DRUGS = CatalystField.DRUGS.value
 INDICATION = CatalystField.INDICATION_ID.value
 TRIALS = "trials"  # a source's `fields` entry for the quote that names a trial (ADR 0039)
+SAME_EVENT = "same_event"  # a source's `fields` entry for a merged entry's claim (ADR 0081)
+HIDDEN_STATUSES = (CatalystStatus.WITHDRAWN.value, CatalystStatus.MERGED.value)
 DATE_FIELDS = frozenset(f.value for f in CatalystField if f.value.startswith("window_"))
 MAX_LIMIT = 200
 _BATCH = 1000  # catalysts per `published` read
@@ -285,9 +291,9 @@ def _source(row: Row[Any], fields: list[str]) -> SourceView:
 def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]:
     """Build each catalyst with its sources; leave out, and log, any with an unbacked value.
 
-    A withdrawn catalyst (ADR 0070) is never shown, by any read.
+    A withdrawn catalyst (ADR 0070) or a merged one (ADR 0081) is never shown, by any read.
     """
-    rows = [row for row in rows if row.status != CatalystStatus.WITHDRAWN.value]
+    rows = [row for row in rows if row.status not in HIDDEN_STATUSES]
     ids = [row.id for row in rows]
     changes: dict[UUID, list[Row[Any]]] = defaultdict(list)
     for change in session.execute(
@@ -314,17 +320,36 @@ def _details(session: Session, rows: Sequence[Row[Any]]) -> list[CatalystDetail]
     for link in session.execute(linked.where(_TRIAL_LINK.c.catalyst_id.in_(ids))):
         trial_links[link.catalyst_id].append(link)
     trials = trial_views(session, list({link.trial_id for links in trial_links.values() for link in links}))
+    merged = _merged_sources(session, ids)
     companies = company_views(session, list({row.company_id for row in rows}))
     indications = _indications(session, [row.indication_id for row in rows if row.indication_id])
     built: list[CatalystDetail] = []
     for row in rows:
         shown_trials = _cited_trials(row.id, trial_links[row.id], changes[row.id], trials)
-        detail = _build(row, changes[row.id], drugs[row.id], shown_trials, companies, indications)
+        detail = _build(
+            row, changes[row.id], drugs[row.id], shown_trials, companies, indications, merged[row.id]
+        )
         if detail is None:
             log_event(_log, "catalyst_withheld", catalyst_id=str(row.id), reason="a value has no source")
         else:
             built.append(detail)
     return built
+
+
+def _merged_sources(session: Session, ids: list[UUID]) -> dict[UUID, list[Row[Any]]]:
+    """Each kept entry's extra sources: the claims of the entries merged into it that are still merged."""
+    found: dict[UUID, list[Row[Any]]] = defaultdict(list)
+    query: Select[*tuple[Any, ...]] = (
+        select(_MERGED.c.catalyst_id, _MERGED.c.claim_id, *_SOURCE_COLUMNS)
+        .join(_CLAIM, _CLAIM.c.id == _MERGED.c.claim_id)
+        .join(_DOC, _DOC.c.id == _CLAIM.c.source_document_id)
+        .join(_CATALYST, _CATALYST.c.id == _MERGED.c.merged_id)
+        .where(_MERGED.c.catalyst_id.in_(ids), _CATALYST.c.status == CatalystStatus.MERGED.value)
+        .order_by(_DOC.c.published_at, _MERGED.c.claim_id)
+    )
+    for row in session.execute(query):
+        found[row.catalyst_id].append(row)
+    return found
 
 
 def _cited_trials(
@@ -356,6 +381,7 @@ def _build(
     trials: list[tuple[UUID, TrialView]],
     companies: dict[UUID, CompanyView],
     indications: dict[UUID, IndicationView],
+    merged: Sequence[Row[Any]] = (),
 ) -> CatalystDetail | None:
     current = Catalyst.model_validate(row, from_attributes=True).model_dump(mode="json")
     latest = {change.field: change for change in changes}  # oldest first, so the last one wins
@@ -399,7 +425,8 @@ def _build(
         date_confidence=row.date_confidence,
         status=row.status,
         latest_date_change=_latest_move(changes),
-        sources=[_source(source, fields) for source, fields in backing.values()],
+        sources=[_source(source, fields) for source, fields in backing.values()]
+        + [_source(source, [SAME_EVENT]) for source in merged if source.claim_id not in backing],
         history=history,
     )
 

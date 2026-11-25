@@ -43,7 +43,10 @@ stands behind is withdrawn, with a status change in its history; a listed claim 
 Next, every open merger or acquisition entry that a later stored document of its company says was
 completed is closed (`catalyst.publish.closed_deals`, ADR 0080), with a status change citing that
 document's sentence; a claim naming that deal's counterparty, from a document published no later
-than the completion document, is then held, so the deal never comes back.
+than the completion document, is then held, so the deal never comes back. Last, two open entries
+that are surely one event are made one (`catalyst.publish.duplicates`, ADR 0081): one is kept as it
+is, the other marked merged, with a status change in its history and its claims shown as the kept
+entry's extra sources; a later claim that fits only the merged entry is placed on the kept one.
 """
 
 from __future__ import annotations
@@ -68,6 +71,7 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.publish import gate
 from catalyst.publish.closed_deals import CLOSED_EVENT, claim_deal_names, close_deals
+from catalyst.publish.duplicates import merge_duplicates
 from catalyst.publish.live import (
     Key,
     LiveCatalyst,
@@ -78,7 +82,7 @@ from catalyst.publish.live import (
     claim_value,
     excuse_passed_window,
     load_live,
-    place,
+    place_among,
     ranks_above,
 )
 from catalyst.publish.sanity import (
@@ -159,6 +163,7 @@ class PublishReport:
     published_by_approval: int = 0  # claims a person approved that this run wrote
     catalysts_withdrawn: int = 0  # unpublished now by the reviewed withdrawal list (ADR 0070)
     deals_closed: int = 0  # closed now by a stored completion document (ADR 0080)
+    duplicates_merged: int = 0  # open entries merged now into another of the same event (ADR 0081)
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
@@ -499,7 +504,7 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
             run.results.setdefault(item.claim.id, []).append(result)
             _hold(run, item, CLOSED_EVENT)
             continue
-        where = place(item.key, catalysts)
+        where = place_among(item.key, catalysts, live.merged)
         result = safe_to_write(item.candidate, where, today)
         if result.outcome is CheckOutcome.PASS and where.catalyst is None and _ended(item, today):
             # `window_not_past` may have been excused because the claim fitted a live catalyst when
@@ -626,5 +631,6 @@ def publish_claims(
         if todo:
             _write(session, _recheck(session, store, todo, live, verifier_model, run), live, run)
             report.checks_updated = _store_changed(session, run.results, run.at)
+        report.duplicates_merged = merge_duplicates(session, run.at)
     log_event(_log, "claims_published", **report.summary())
     return report

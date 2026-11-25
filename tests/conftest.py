@@ -10,7 +10,7 @@ import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
-from sqlalchemy import Engine, create_engine, make_url
+from sqlalchemy import Engine, create_engine, inspect, make_url
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.db.tables import metadata
@@ -52,9 +52,13 @@ def engine(database_url: str) -> Iterator[Engine]:
 
 
 def truncate_all(engine: Engine) -> None:
-    """Empty every table in the test database."""
-    names = ", ".join(table.name for table in metadata.sorted_tables)
+    """Empty every table in the test database.
+
+    Only tables that exist now: a migration test may stand at an older revision, before a newer table.
+    """
     with engine.begin() as connection:
+        present = set(inspect(connection).get_table_names())
+        names = ", ".join(table.name for table in metadata.sorted_tables if table.name in present)
         connection.exec_driver_sql(f"TRUNCATE {names}")
 
 

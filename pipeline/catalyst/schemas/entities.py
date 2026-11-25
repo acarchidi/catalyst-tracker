@@ -306,7 +306,7 @@ class Catalyst(Entity):
     status: CatalystStatus = Field(
         description=(
             "Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), "
-            "or withdrawn after review."
+            "withdrawn after review, or merged (the same event as another entry, kept in its place)."
         )
     )
 
@@ -670,6 +670,25 @@ class CatalystChange(Entity):
         if self.old_value == self.new_value:
             raise ValueError("new_value must differ from old_value")
         return self
+
+
+class CatalystMergedSource(Entity):
+    """A claim behind an entry merged into another as the same event, shown as its extra source (ADR 0081).
+
+    The merged entry keeps every row of its own; this link only adds its claims to the kept entry's
+    sources. Written by plain code in the same transaction as the merged entry's status change.
+    """
+
+    __tablename__ = "catalyst_merged_source"
+    __unique__ = (("catalyst_id", "claim_id"),)
+    __checks__: ClassVar[dict[str, str]] = {"not_itself": "catalyst_id <> merged_id"}
+
+    catalyst_id: Annotated[UUID, References("catalyst")] = Field(description="The entry kept.")
+    merged_id: Annotated[UUID, References("catalyst")] = Field(description="The entry marked merged into it.")
+    claim_id: Annotated[UUID, References("claim")] = Field(
+        description="A claim behind the merged entry, now also a source of the kept one."
+    )
+    learned_at: AwareDatetime = Field(description="When the two entries were found to be one event.")
 
 
 class SampleCheck(Entity):

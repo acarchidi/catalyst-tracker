@@ -86,7 +86,9 @@ def _latest_found(session: Session) -> list[Any]:
         .where(
             latest.c.outcome == IndicationResult.FOUND.value,
             catalyst.c.indication_id.is_(None),
-            catalyst.c.status != CatalystStatus.WITHDRAWN.value,  # never touched again (ADR 0070)
+            catalyst.c.status.not_in(  # never touched again (ADR 0070, ADR 0081)
+                (CatalystStatus.WITHDRAWN.value, CatalystStatus.MERGED.value)
+            ),
         )
         .order_by(latest.c.catalyst_id)
     )
