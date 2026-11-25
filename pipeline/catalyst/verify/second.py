@@ -206,10 +206,18 @@ def _parts(drug: str) -> list[str]:
 
 
 def _drugs_agree(first: Reading, second: Reading, same_drug: SameDrug) -> bool:
-    a, b = first.drug or "", second.drug or ""
-    if not name_key(a) and not name_key(b):
+    if not name_key(first.drug) and not name_key(second.drug):
         # A deal need not name a drug; any other event with no drug in either reading goes to review.
         return first.catalyst_type == second.catalyst_type == _NO_DRUG_TYPE
+    return drug_names_agree(first.drug, second.drug, same_drug)
+
+
+def drug_names_agree(first: str | None, second: str | None, same_drug: SameDrug = _never) -> bool:
+    """Say whether two drug names are one drug or the same combination (ADR 0062); a missing name never is.
+
+    Also used to find two entries of one event (ADR 0082), so both rules always read drugs alike.
+    """
+    a, b = first or "", second or ""
     if not name_key(a) or not name_key(b):
         return False
     if _same_name(a, b, same_drug):

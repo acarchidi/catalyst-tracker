@@ -12,7 +12,9 @@ person: plain code cannot tell a reworded indication from another event. A claim
 already cites is about that change's catalyst. Resolved catalysts are left out, so a new event of
 the same kind (a new FDA date after a refusal) becomes a new catalyst; but a deal that plain code
 found closed (ADR 0080) is kept aside, like a withdrawn one, so an older release of its "expected to
-close" date never makes it a new catalyst again.
+close" date never makes it a new catalyst again. An entry merged into another as the same event
+(ADR 0082) is open no more; a claim that would fit only it waits for a person, and when the entry it
+was merged into is withdrawn or closed, the merged entry is set aside with it.
 
 Once a catalyst is live, its date passing is a change for the outcome tracker, not a reason to
 hold a claim about it, so `window_not_past` does not apply to such claims.
@@ -23,7 +25,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -56,6 +58,7 @@ if WINDOW_CHECK not in gate.RULE_CHECKS or WINDOW_CHECK not in gate.MAY_NOT_APPL
     raise RuntimeError(f"{WINDOW_CHECK} must be a rule check that may not apply")
 SEVERAL = "the claim matches more than one published catalyst"
 OTHER_INDICATION = "the indication differs from the published one"
+MERGED_EVENT = "the claim fits only an entry merged into another as the same event; a person must decide"
 # The fields whose newest change row names the claim behind the current dates (B1; round 2, N1).
 WINDOW_FIELDS = frozenset(
     {
@@ -67,6 +70,8 @@ WINDOW_FIELDS = frozenset(
 )
 # The plain-code role whose claims close a deal that a stored document says was completed (ADR 0080).
 DEAL_CLOSER = "deal_closer"
+# The plain-code role whose claims mark an entry merged into another as the same event (ADR 0082).
+DEDUPLICATOR = "deduplicator"
 _TIERS: tuple[SourceTier, ...] = tuple(SourceTier)  # highest first (spec: Provenance, source ranking)
 _WORD = re.compile(r"\w+")
 
@@ -146,6 +151,7 @@ class LiveCatalyst:
     # A closed deal's names (ADR 0080): its counterparty names and the company's own; else empty.
     names: frozenset[str] = frozenset()
     parties: frozenset[str] = frozenset()  # a closed deal's counterparty names alone; else empty
+    into: UUID | None = None  # a merged entry's kept entry (ADR 0082); else empty
 
     @property
     def window(self) -> tuple[date, date]:
@@ -181,6 +187,19 @@ def place(key: Key, catalysts: Iterable[LiveCatalyst]) -> Place:
     return Place(catalyst=fit[0]) if fit else Place(hold=OTHER_INDICATION)
 
 
+def place_among(key: Key, catalysts: Sequence[LiveCatalyst], merged: Sequence[LiveCatalyst] = ()) -> Place:
+    """Place a claim like `place`; one that would be a new event but fits a merged entry waits (ADR 0082).
+
+    It is never sent to the kept entry: the merged entry may have named no trial, so the claim may be
+    another trial's event (Opus review of 66ecb0f, finding 2). A person decides.
+    """
+    where = place(key, catalysts)
+    if where.catalyst is not None or where.hold is not None or not merged:
+        return where
+    alias = place(key, merged)
+    return Place(hold=MERGED_EVENT) if alias.catalyst is not None or alias.hold is not None else where
+
+
 @dataclass(frozen=True)
 class LiveIndex:
     """Every open published catalyst, and the catalyst each cited claim is about."""
@@ -192,6 +211,8 @@ class LiveIndex:
     # Deals found closed (ADR 0080); each `source.published_at` is when its completion document was
     # published, and `names` are the counterparty names it matched.
     closed: Sequence[LiveCatalyst] = ()
+    # Entries merged into another as the same event (ADR 0082), each with `into` set.
+    merged: Sequence[LiveCatalyst] = ()
 
     def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
         """Say whether the claim's event was withdrawn after review and its source is no newer.
@@ -216,7 +237,7 @@ class LiveIndex:
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
-        return place(key, self.catalysts) if key is not None else Place()
+        return place_among(key, self.catalysts, self.merged) if key is not None else Place()
 
     def is_live(self, claim_id: UUID, key: Key | None) -> bool:
         """Say whether the claim is about a catalyst that is already published."""
@@ -245,6 +266,12 @@ def _listed(stated: Mapping[str, Any], parts: Iterable[str]) -> frozenset[str]:
     )
 
 
+def _merged_into(catalyst_id: UUID, agent: str, value: object) -> dict[UUID, UUID]:
+    """Return {entry: kept entry} for a status change that merged an entry (ADR 0082); else nothing."""
+    kept = claim_value(value).get("kept") if agent == DEDUPLICATOR else None
+    return {catalyst_id: UUID(kept)} if isinstance(kept, str) else {}
+
+
 def load_live(session: Session) -> LiveIndex:
     """Read every published catalyst with its links, its indication, and the source of its window."""
     catalyst, change, claim, document = (
@@ -267,6 +294,7 @@ def load_live(session: Session) -> LiveIndex:
     status_agent: dict[UUID, str] = {}
     status_names: dict[UUID, frozenset[str]] = {}
     status_parties: dict[UUID, frozenset[str]] = {}
+    status_into: dict[UUID, UUID] = {}
     changes = (
         select(
             change.c.catalyst_id,
@@ -296,17 +324,20 @@ def load_live(session: Session) -> LiveIndex:
             stated = claim_value(row.value) if closer else {}
             status_parties[row.catalyst_id] = _listed(stated, ("names", "deal_names"))  # its counterparties
             status_names[row.catalyst_id] = status_parties[row.catalyst_id] | _listed(stated, ("own_names",))
+            status_into.update(_merged_into(row.catalyst_id, row.agent, row.value))
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
     withdrawn: list[LiveCatalyst] = []
     closed: list[LiveCatalyst] = []
+    merged: list[LiveCatalyst] = []
     for row in session.execute(select(catalyst)):
         live = Catalyst.model_validate(row, from_attributes=True)
         gone = live.status is CatalystStatus.WITHDRAWN
         done = live.status is CatalystStatus.RESOLVED
-        if done and status_agent.get(live.id) != DEAL_CLOSER:  # resolved another way: left out
-            continue
+        joined = live.status is CatalystStatus.MERGED
+        if (done and status_agent.get(live.id) != DEAL_CLOSER) or (joined and live.id not in status_into):
+            continue  # resolved or merged another way: left out
         source = (status_source if gone or done else window_source).get(live.id)
         if source is None:  # no change row: not written by the gate, so never matched to a claim
             continue
@@ -317,7 +348,7 @@ def load_live(session: Session) -> LiveIndex:
             frozenset(trials[live.id]),
             indication.get(live.id, ""),
         )
-        (withdrawn if gone else closed if done else found).append(
+        (merged if joined else withdrawn if gone else closed if done else found).append(
             LiveCatalyst(
                 live,
                 key,
@@ -325,9 +356,38 @@ def load_live(session: Session) -> LiveIndex:
                 last_learned[live.id],
                 status_names.get(live.id, frozenset()),
                 status_parties.get(live.id, frozenset()),
+                status_into.get(live.id),
             )
         )
-    return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed)
+    merged = _set_aside_with_kept(merged, withdrawn, closed)
+    return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed, merged=merged)
+
+
+def _set_aside_with_kept(
+    merged: list[LiveCatalyst], withdrawn: list[LiveCatalyst], closed: list[LiveCatalyst]
+) -> list[LiveCatalyst]:
+    """Set each merged entry aside as its kept entry is, withdrawn or closed (Opus review, finding 3).
+
+    It takes the kept entry's cutoff (when it was withdrawn, or when its completion document was
+    published) and a closed deal's names, so a claim fitting only the merged entry is held by the
+    same rules as ADR 0070 and ADR 0080. Return the merged entries whose kept entry is still open.
+    """
+    by_id = {c.row.id: c for c in merged}
+    aside = {c.row.id: c for c in withdrawn} | {c.row.id: c for c in closed}
+    gone = {c.row.id for c in withdrawn}
+    still: list[LiveCatalyst] = []
+    for entry in merged:
+        target, seen = entry.into, {entry.row.id}
+        while target is not None and target in by_id and target not in seen:  # merged again: follow it
+            seen.add(target)
+            target = by_id[target].into
+        kept = aside.get(target) if target is not None else None
+        if kept is None:
+            still.append(entry)
+            continue
+        moved = replace(entry, source=kept.source, names=kept.names, parties=kept.parties)
+        (withdrawn if kept.row.id in gone else closed).append(moved)
+    return still
 
 
 def excuse_passed_window(claim_id: UUID, checks: Iterable[ClaimCheck], at: datetime) -> list[ClaimCheck]:
