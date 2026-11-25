@@ -375,6 +375,7 @@ class _Deal:
     live: LiveCatalyst
     names: frozenset[str]  # its own counterparty names, less those another open deal gives
     own: frozenset[str]
+    named: frozenset[str]  # every counterparty name its claims give, kept on the closing
 
 
 @dataclass(frozen=True)
@@ -437,7 +438,7 @@ def _deals(
         names = named[c.row.id] - others
         if names:  # a claim that names no counterparty, or only a shared one, is never closed: unsure
             own = _own(own_names.get(c.key.company_id, []))
-            deals[c.key.company_id].append(_Deal(c, names, own))
+            deals[c.key.company_id].append(_Deal(c, names, own, named[c.row.id]))
     return deals
 
 
@@ -506,6 +507,9 @@ def _close(
         "status": CatalystStatus.RESOLVED.value,
         "event": "deal_closed",
         "names": list[JsonValue](sorted(matched)),
+        # Every party of the deal, so the writer holds any older claim naming only these (ADR 0080, 8).
+        "deal_names": list[JsonValue](sorted(deal.named)),
+        "own_names": list[JsonValue](sorted(deal.own)),
         "item": found.item,
         "document_type": str(row.document_type),
         "text_version": TEXT_VERSION,

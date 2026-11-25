@@ -143,7 +143,8 @@ class LiveCatalyst:
     key: Key
     source: Rank  # the claim behind its current window
     last_learned: datetime  # its newest change row's time; a later change must come after it
-    names: frozenset[str] = frozenset()  # a closed deal's counterparty names (ADR 0080); else empty
+    # A closed deal's parties (ADR 0080): its counterparty names and the company's own; else empty.
+    names: frozenset[str] = frozenset()
 
     @property
     def window(self) -> tuple[date, date]:
@@ -203,12 +204,13 @@ class LiveIndex:
     def was_closed(self, key: Key, published_at: datetime, names: frozenset[str]) -> bool:
         """Say whether the claim is about a deal found closed, from a source no newer (ADR 0080).
 
-        Matched on company, type, drugs and trials as `was_withdrawn` is, and also on the deal's
-        counterparty: the claim must name one of the closed deal's names after a deal word, so a
-        claim about another deal of the company is never held (Opus review of PR #163, B3). Only a
-        document published after the completion document is new.
+        Matched on company, type, drugs and trials as `was_withdrawn` is, and held by default: a
+        claim goes through only when a deal party it names (`names`) is none of the closed deal's
+        own (its counterparties and the company's own names), so it is about another deal of the
+        company (Opus reviews of PR #163). Only a document published after the completion document
+        is new.
         """
-        return _set_aside([c for c in self.closed if c.names & names], key, published_at)
+        return _set_aside([c for c in self.closed if not names - c.names], key, published_at)
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
@@ -277,11 +279,13 @@ def load_live(session: Session) -> LiveIndex:
                 SourceTier(row.source_tier), row.published_at if closer else row.learned_at
             )
             status_agent[row.catalyst_id] = row.agent
-            listed = claim_value(row.value).get("names") if closer else None
-            status_names[row.catalyst_id] = (
-                frozenset(n for n in cast(list[object], listed) if isinstance(n, str))
-                if isinstance(listed, list)
-                else frozenset()
+            stated = claim_value(row.value) if closer else {}
+            status_names[row.catalyst_id] = frozenset(
+                name
+                for part in ("names", "deal_names", "own_names")  # every party of the closed deal
+                if isinstance(listed := stated.get(part), list)
+                for name in cast(list[object], listed)
+                if isinstance(name, str)
             )
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))

@@ -654,9 +654,51 @@ def test_the_hold_follows_the_counterparty_and_the_completion_date() -> None:
         }
     )
     closing = NOW + 19 * DAY
-    done = LiveCatalyst(row, key, Rank(SourceTier.REGULATOR_OR_SEC, closing), LATER, frozenset({"mentari"}))
+    known = frozenset({"mentari", "inmed", "inm"})  # the deal's counterparties and the company's own names
+    done = LiveCatalyst(row, key, Rank(SourceTier.REGULATOR_OR_SEC, closing), LATER, known)
     index = LiveIndex(cited={}, catalysts=(), closed=(done,))
     assert index.was_closed(key, closing - DAY, frozenset({"mentari"}))
-    assert not index.was_closed(key, closing - DAY, frozenset({"zentara"}))
-    assert not index.was_closed(key, closing - DAY, frozenset())
+    assert index.was_closed(key, closing - DAY, frozenset({"inmed"}))  # only the company's own name
+    assert index.was_closed(key, closing - DAY, frozenset())  # names no one: held by default
+    assert not index.was_closed(key, closing - DAY, frozenset({"zentara"}))  # another deal
+    assert not index.was_closed(key, closing - DAY, frozenset({"mentari", "zentara"}))
     assert not index.was_closed(key, closing + DAY, frozenset({"mentari"}))  # newer than the completion
+
+
+@pytest.mark.parametrize(
+    ("side", "completion", "sentence", "title"),
+    [
+        (  # Opus re-review of PR #163: the bought company's own older release names only itself
+            "pacira",
+            "viatris-pacira-ex99-1.htm",
+            "The acquisition is expected to close in the fourth quarter of 2026.",
+            "Closing of Viatris acquisition of Pacira",
+        ),
+        (
+            "pacira",
+            "viatris-pacira-ex99-1.htm",
+            "The acquisition is expected to close in the fourth quarter of 2026.",
+            "",
+        ),
+        (  # the mirror: the buyer's older release names the bought company
+            "viatris",
+            "Viatris Inc. today announced that it has completed its acquisition of Pacira BioSciences.",
+            "Viatris expects the acquisition to close in the fourth quarter of 2026.",
+            "Viatris to acquire Pacira",
+        ),
+    ],
+)
+def test_an_older_release_naming_only_this_deal_s_parties_is_held(
+    world: World, side: str, completion: str, sentence: str, title: str
+) -> None:
+    catalyst = _pacira(world) if side == "pacira" else _viatris(world)
+    page = completion if completion in PAGES else _page(completion)
+    _document(world, page, NOW + 30 * DAY)
+    older = _deal(world, sentence, title, published=OCT_14 - DAY)
+    summary = _publish(world, LATER)
+    assert (summary["deals_closed"], summary["catalysts_created"]) == (1, 0)
+    assert summary["top_reasons"] == {CLOSED_EVENT: 1}
+    held = [r for r in world.rows(ClaimCheck) if r.claim_id == older and r.check_name == "safe_to_write"]
+    assert [(r.outcome, r.reason) for r in held] == [("fail", CLOSED_EVENT)]
+    assert [r.status for r in world.rows(Catalyst)] == ["resolved"]
+    assert _status(world, catalyst) == "resolved"
