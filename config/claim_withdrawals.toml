@@ -95,3 +95,15 @@ claim = "2ccc4ee2-846e-45fe-8886-2932c7becb41"
 reason = "Palisade's PALI-2108 Crohn's disease IND was already submitted: the FDA cleared it on 22 September 2026"
 evidence = "https://finviz.com/news/394263/palisade-bio-receives-fda-clearance-of-ind-for-pali-2108-in-crohns-disease-expanding-phase-2-development-across-ibd"
 added = 2026-11-24
+
+[[withdrawal]]
+claim = "9fdf4f20-b3cf-4a2f-9000-974edb5898ec"
+reason = "Harrow's acquisition of TYRVAYA already closed on 1 October 2026"
+evidence = "https://globenewswire.com/news-release/2026/10/05/3374393/0/en/harrow-closes-acquisition-of-tyrvaya.html"
+added = 2026-11-25
+
+[[withdrawal]]
+claim = "06dcbad8-1f08-45c3-ba2d-92f5c0b92de4"
+reason = "InMed's merger with Mentari Therapeutics already closed on 6 November 2026"
+evidence = "https://finviz.com/news/418608/inmed-pharmaceuticals-completes-closing-of-merger-with-mentari-therapeutics"
+added = 2026-11-25
