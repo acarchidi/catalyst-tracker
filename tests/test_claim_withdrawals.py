@@ -74,8 +74,9 @@ def test_the_shipped_list_reads_and_names_each_reviewed_claim() -> None:
         "96f28b6e-2ea2-4afc-8958-0d2e563b59cf", "c3ddf620-b734-4171-afcb-f3f41fdd6b29",
         "cf727e73-4231-435a-990a-fef9994db3b2", "e7bd09fa-eaef-4034-9eba-2609852ff512",
         "2ccc4ee2-846e-45fe-8886-2932c7becb41",
+        "9fdf4f20-b3cf-4a2f-9000-974edb5898ec", "06dcbad8-1f08-45c3-ba2d-92f5c0b92de4",
     ]  # fmt: skip
-    assert all(e.reason and e.added == date(2026, 11, 24) for e in entries)
+    assert all(e.reason and e.added in (date(2026, 11, 24), date(2026, 11, 25)) for e in entries)
 
 
 def test_a_prefix_shorter_than_eight_or_a_malformed_file_is_refused(tmp_path: Path) -> None:
