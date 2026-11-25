@@ -160,7 +160,9 @@ jobs:
               | tee -a "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          uv run catalyst publish-estimates --dry-run --snapshot-store supabase \
+          # Reading every stored copy one by one outran 30 minutes (run 45719571305): a repeatable
+          # sample of 400, scaled up, stopped cleanly at 20 minutes with the counts so far.
+          uv run catalyst publish-estimates --dry-run --snapshot-store supabase --sample 400 --max-minutes 20 \
             --sample-out "$RUNNER_TEMP/estimates-sample.json" > "$RUNNER_TEMP/estimates-counts.json"
           { echo "## Estimated dates: what would publish (nothing was written)"; echo '```json'
             cat "$RUNNER_TEMP/estimates-counts.json"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"

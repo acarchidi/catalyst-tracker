@@ -937,7 +937,7 @@ def test_progress_lines_give_counts_only(
     finally:
         estimates.PROGRESS_EVERY = 100
     lines = [r for r in caplog.records if r.getMessage() == "estimates_progress"]
-    fields = [getattr(r, "catalyst_fields") for r in lines]
+    fields = [r.__dict__["catalyst_fields"] for r in lines]
     assert [(f["checked"], f["of"]) for f in fields] == [(4, 10), (8, 10)]
     for found in fields:
         assert all(isinstance(value, int) for value in found.values())  # numbers only, no trial named

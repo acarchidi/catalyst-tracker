@@ -35,7 +35,9 @@ import calendar
 import hashlib
 import json
 import logging
+import random
 import re
+import time
 from collections import Counter, defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -118,6 +120,7 @@ PAST = "the new estimate has passed while the published one has not"
 UNREADABLE = "the stored copy could not be read or did not match its hash"
 NOT_ONCE = "the field is not written once in the stored copy"
 SAMPLE_ROWS = 50
+PROGRESS_EVERY = 100  # a progress line, counts only, after this many copies read
 
 _log = logging.getLogger(__name__)
 
@@ -644,19 +647,37 @@ def _note(run: _Run, event: str, **fields: str) -> None:
         log_event(_log, event, **fields)
 
 
-def _one(run: _Run, row: Any, company_id: UUID) -> None:
-    """Read one trial's latest record and take the step it calls for."""
-    report, today = run.report, run.at.astimezone(NEW_YORK).date()
+@dataclass(frozen=True)
+class _Pending:
+    """A trial whose step needs its stored copy read."""
+
+    row: Any
+    company_id: UUID
+    trial: Any
+    live: _Live | None
+    company_claim: UUID | None
+
+
+def _settle(run: _Run, row: Any, company_id: UUID) -> _Pending | None:
+    """Count a trial whose step is known without its copy, or return it to be read."""
     trial = run.trials.get(row.source_key.split(":")[1])
     if trial is None:
-        report.left["the trial is not in the trial table"] += 1
-        return
+        run.report.left["the trial is not in the trial table"] += 1
+        return None
     live = run.estimates.get(trial.id)
     company_claim = run.company_dates.get((trial.id, company_id))
     known = _unchanged(trial, live, row.id, company_claim is not None)
     if known is not None:
-        report.left[known] += 1  # nothing the record says could change it: no copy is read
-        return
+        run.report.left[known] += 1  # nothing the record says could change it: no copy is read
+        return None
+    return _Pending(row, company_id, trial, live, company_claim)
+
+
+def _one(run: _Run, pending: _Pending) -> None:
+    """Read one trial's latest record and take the step it calls for."""
+    report, today = run.report, run.at.astimezone(NEW_YORK).date()
+    row, company_id, trial, live = pending.row, pending.company_id, pending.trial, pending.live
+    company_claim = pending.company_claim
     record = _read(run.store, row, company_id)
     if record is None:
         report.copies_unreadable += 1
@@ -688,14 +709,56 @@ def _one(run: _Run, row: Any, company_id: UUID) -> None:
         report.left[reason if step is Step.NONE else NOT_ONCE] += 1
 
 
+@dataclass(frozen=True)
+class Limits:
+    """How much of the set a dry run checks: a repeatable random sample, and a time limit."""
+
+    sample: int | None = None
+    seed: int = 0
+    deadline: float | None = None  # on `clock`, in seconds
+    clock: Callable[[], float] = time.monotonic
+
+
+@dataclass
+class Progress:
+    """How many trials needed their copy read, and how many were."""
+
+    to_check: int = 0
+    checked: int = 0
+    stopped_early: bool = False
+
+
+def _progress_line(report: EstimateReport, checked: int, of: int) -> None:
+    held = sum(report.held.values())
+    log_event(
+        _log,
+        "estimates_progress",
+        checked=checked,
+        of=of,
+        created=report.created,
+        moved=report.moved,
+        held=held,
+        resolved=report.resolved,
+        replaced=report.replaced,
+        unreadable=report.copies_unreadable,
+    )
+
+
 def _every_trial(
     session: Session,
     store: SnapshotStore,
     at: datetime,
     report: EstimateReport,
     preview: EstimatePreview | None,
-) -> None:
-    """Take, or for a dry run only count, the step each covered trial's latest record calls for."""
+    limits: Limits | None = None,
+) -> Progress:
+    """Take, or for a dry run only count, the step each covered trial's latest record calls for.
+
+    Trials settled without their copy come first, all counted. Then the copies are read one by
+    one, the slow part: a dry run may read only a repeatable random sample of them, and stop
+    cleanly at a time limit.
+    """
+    limits = limits or Limits()
     session.execute(select(func.pg_advisory_xact_lock(LOCK)))
     documents = _latest_documents(session)
     sponsors = _sponsors(session, [row.id for row in documents])
@@ -713,12 +776,30 @@ def _every_trial(
         company_dates=_company_dates(session),
         preview=preview,
     )
+    pending: list[_Pending] = []
     for row in documents:
         companies = sponsors.get(row.id, set())
         if len(companies) != 1:
             report.left["the record is not linked to exactly one covered company"] += 1
             continue
-        _one(run, row, next(iter(companies)))
+        found = _settle(run, row, next(iter(companies)))
+        if found is not None:
+            pending.append(found)
+    progress = Progress(to_check=len(pending))
+    if preview is not None:
+        preview.settled = Counter(report.left)  # counted exactly, never scaled
+    if limits.sample is not None and limits.sample < len(pending):
+        # Repeatable, not secret: the same seed picks the same trials from the same rows.
+        pending = random.Random(limits.seed).sample(pending, limits.sample)  # noqa: S311
+    for found in pending:
+        if limits.deadline is not None and limits.clock() >= limits.deadline:
+            progress.stopped_early = True
+            break
+        _one(run, found)
+        progress.checked += 1
+        if progress.checked % PROGRESS_EVERY == 0:
+            _progress_line(report, progress.checked, len(pending))
+    return progress
 
 
 def publish_estimates(
@@ -774,6 +855,17 @@ class EstimatePreview:
     today: date
     entries: list[_Entry] = field(default_factory=list[_Entry])
     companies: dict[UUID, CompanyView] = field(default_factory=dict[UUID, CompanyView])
+    progress: Progress = field(default_factory=Progress)
+    sample_size: int | None = None
+    settled: Counter[str] = field(default_factory=Counter[str])  # skips found without a read: exact
+
+    @property
+    def scale(self) -> float:
+        """How much each checked trial stands for: 1, unless a sample checked only part of the set."""
+        checked, total = self.progress.checked, self.progress.to_check
+        if self.sample_size is None or not checked or checked >= total:
+            return 1.0
+        return total / checked
 
     def keep(self, record: _Record, trial: Any, start: date, end: date, change: str) -> None:
         """Keep an entry the job would write, or move to a new date."""
@@ -799,10 +891,16 @@ class EstimatePreview:
 
     def counts(self) -> dict[str, Any]:
         """Return the counts as plain JSON: no trial is named, so they may go to a public log."""
-        report = self.report
-        skipped = Counter(report.left)
+        report, scale = self.report, self.scale
+
+        def up(count: int) -> int:
+            return round(count * scale)
+
+        skipped = Counter(self.settled)
+        for reason, count in (report.left - self.settled).items():
+            skipped[reason] += up(count)
         if report.copies_unreadable:
-            skipped[UNREADABLE] += report.copies_unreadable
+            skipped[UNREADABLE] += up(report.copies_unreadable)
         months = [
             (self.today.year + (self.today.month - 1 + i) // 12, (self.today.month - 1 + i) % 12 + 1)
             for i in range(12)
@@ -813,19 +911,25 @@ class EstimatePreview:
             by_month[key if key in by_month else "later"] += 1
         companies = Counter(entry.company_id for entry in self.entries)
         ranked = sorted(companies.items(), key=lambda item: (-item[1], self._company(item[0])[0]))
+        progress = self.progress
         return {
             "nothing_written": True,
+            "checked": progress.checked,
+            "to_check": progress.to_check,
+            "stopped_early": progress.stopped_early,
+            "sample_size": self.sample_size,
+            "scaled_up": scale != 1.0,
             "trials_read": report.trials_read,
-            "would_create": report.created,
-            "would_move": report.moved,
-            "would_hold_over_6_months": report.held[TOO_FAR],
-            "would_hold_passed": report.held[PAST],
-            "would_close": report.resolved,
-            "would_be_replaced_by_company_date": report.replaced,
+            "would_create": up(report.created),
+            "would_move": up(report.moved),
+            "would_hold_over_6_months": up(report.held[TOO_FAR]),
+            "would_hold_passed": up(report.held[PAST]),
+            "would_close": up(report.resolved),
+            "would_be_replaced_by_company_date": up(report.replaced),
             "skipped": dict(skipped.most_common()),
-            "by_month": by_month,
+            "by_month": {key: up(count) for key, count in by_month.items()},
             "by_company_top_20": [
-                {"company": name, "ticker": ticker, "count": count}
+                {"company": name, "ticker": ticker, "count": up(count)}
                 for company_id, count in ranked[:20]
                 for name, ticker in [self._company(company_id)]
             ],
@@ -852,13 +956,27 @@ class EstimatePreview:
 
 
 def preview_estimates(
-    session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    now: Callable[[], datetime],
+    *,
+    sample: int | None = None,
+    seed: int = 0,
+    max_minutes: float | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> EstimatePreview:
-    """Run every step and check of `publish_estimates` in a read-only transaction; write nothing."""
+    """Run every step and check of `publish_estimates` in a read-only transaction; write nothing.
+
+    With `sample`, only that many of the trials whose copy must be read are read, picked at
+    random but the same for the same `seed`, and the counts are scaled up to the whole set. With
+    `max_minutes`, reading stops cleanly at that time and the counts so far are kept.
+    """
     at = now()
-    preview = EstimatePreview(EstimateReport(), at.astimezone(NEW_YORK).date())
+    deadline = clock() + max_minutes * 60 if max_minutes is not None else None
+    limits = Limits(sample=sample, seed=seed, deadline=deadline, clock=clock)
+    preview = EstimatePreview(EstimateReport(), at.astimezone(NEW_YORK).date(), sample_size=sample)
     with read_session(session_factory) as session:
-        _every_trial(session, store, at, preview.report, preview)
+        preview.progress = _every_trial(session, store, at, preview.report, preview, limits)
         preview.companies = company_views(session, sorted({entry.company_id for entry in preview.entries}))
     log_event(_log, "estimates_previewed", **preview.report.summary())
     return preview
