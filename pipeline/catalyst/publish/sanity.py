@@ -10,12 +10,11 @@ when a person must decide:
   new window lies inside the old one (spec: Change sanity);
 - a source of the same rank gives other dates for the same event: another claim not yet
   published (both wait), or the published one's source (CP4 review, O2). A tie decides nothing;
-- it outranks a published merger or acquisition and would move its close window, no other reason
-  holds it, and its quote dates another step of the deal (a vote, a waiting period or regulatory
-  clearance, a tender offer's expiry, a record date) or has no closing words for the deal (ADR
-  0083, `catalyst.publish.deal_steps`). Only the automatic move is blocked: a person may approve
-  it. A claim another reason already holds keeps that reason's text alone, so approvals already
-  given still match it (Opus review of PR #173, B2).
+- it outranks a published merger or acquisition and would move its close window, and its quote
+  dates another step of the deal (a vote, a waiting period or regulatory clearance, a tender
+  offer's expiry, a record date) or has no closing words for the deal (ADR 0083,
+  `catalyst.publish.deal_steps`). It is listed beside any other reason, so a person approving a
+  move sees it. Only the automatic move is blocked: a person may approve it.
 
 Against a published catalyst, every failing reason is given, in order, joined by "; ". When one
 of them is a date move or a window that does not overlap, both windows follow ("(from
@@ -272,10 +271,10 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
             reasons.append(PASSED)
         if too_far(live.window, window):
             reasons.append(TOO_FAR)
-        if not reasons and live.key.catalyst_type == CatalystType.MERGER_ACQUISITION.value:
+        if live.key.catalyst_type == CatalystType.MERGER_ACQUISITION.value:
             # A vote, waiting period, tender expiry or record date never replaces the close on its
-            # own (ADR 0083). Only a move that would happen by itself needs this hold; a claim held
-            # already keeps its reason's text, so an approval given before still matches it.
+            # own (ADR 0083). The reason is listed beside any other, so a person approving a long
+            # move sees the vote too (Opus re-review of PR #173 at ffd136d).
             date_text = candidate.value.get("date_text")
             step = deal_step_hold(candidate.quote, date_text if isinstance(date_text, str) else None)
             if step is not None:

@@ -112,6 +112,20 @@ def test_closing_words_for_the_deal_may_move_its_window(quote: str, date_text: s
             "a waiting period or regulatory clearance",
         ),
         (
+            "The acquisition is expected to close after the European Commission clears it on "
+            "December 9, 2026.",
+            "December 9, 2026",
+            "a waiting period or regulatory clearance",
+        ),
+        *(
+            (
+                f"The merger is expected to close after the {who} review ends on December 9, 2026.",
+                "December 9, 2026",
+                "a waiting period or regulatory clearance",
+            )
+            for who in ("EC", "CMA", "SAMR", "competition authorities'")
+        ),
+        (
             "The merger is expected to close once stockholder approval is obtained on December 9, 2026.",
             "December 9, 2026",
             "a stockholder vote",
@@ -260,27 +274,48 @@ def test_a_step_reason_beside_one_no_person_may_lift_still_holds() -> None:
 @pytest.mark.parametrize(
     ("quote", "date_text", "window", "reason"),
     [
+        # Closing words for the deal: the hold a person could approve before keeps its text.
         (
-            "Closing is now expected in the first quarter of 2027.",
+            "The merger is now expected to close in the first quarter of 2027.",
             "first quarter of 2027",
             (date(2027, 1, 1), date(2027, 3, 31)),
             f"{NOT_OVERLAPPING} (from 2026-10-01..2026-12-31 to 2027-01-01..2027-03-31)",
         ),
         (
-            "The merger is now expected by the third quarter of 2027.",
+            "The merger is now expected to close by the third quarter of 2027.",
             "by the third quarter of 2027",
             (date(2026, 12, 1), date(2027, 9, 30)),
             f"{TOO_FAR} (from 2026-10-01..2026-12-31 to 2026-12-01..2027-09-30)",
         ),
+        # No closing words for the deal: the reason now says so too, and must be approved again
+        # (Opus re-review of PR #173 at ffd136d).
+        (
+            "Closing is now expected in the first quarter of 2027.",
+            "first quarter of 2027",
+            (date(2027, 1, 1), date(2027, 3, 31)),
+            f"{NOT_OVERLAPPING}; {NO_CLOSING_WORDS} (from 2026-10-01..2026-12-31 to 2027-01-01..2027-03-31)",
+        ),
     ],
 )
-def test_a_hold_a_person_could_approve_before_keeps_its_text(
+def test_every_date_reason_is_listed_and_a_person_may_approve_them(
     quote: str, date_text: str, window: tuple[date, date], reason: str
 ) -> None:
-    """Approvals already given name the old text word for word, so it must not change."""
     found = _merger_result(quote, date_text, window)
     assert found == reason
     assert person_may_approve(found)
+
+
+JUNE_VOTE = "The special meeting of NextCure stockholders to vote on the merger will be held on June 9, 2027."
+
+
+def test_a_vote_held_for_a_long_move_shows_the_vote_too() -> None:
+    """Opus re-review of PR #173 at ffd136d: a person approving the move must see the vote."""
+    june_9 = (date(2027, 6, 9), date(2027, 6, 9))
+    reason = _merger_result(JUNE_VOTE, "June 9, 2027", june_9)
+    assert TOO_FAR in reason
+    assert "another step of the deal (a stockholder vote)" in reason
+    assert reason.endswith("(from 2026-10-01..2026-12-31 to 2027-06-09..2027-06-09)")
+    assert person_may_approve(reason)
 
 
 def test_a_claim_that_loses_to_the_source_still_passes() -> None:
@@ -397,6 +432,8 @@ def _decide(world: World) -> dict[UUID, tuple[str, list[str]]]:
             ("2026-12-01", "2026-12-31"),
         ),
         (NEXTCURE_VOTE, "December 9, 2026", ("2026-12-09", "2026-12-09")),
+        # Held for a long move and for the vote: approved with both in view, it moves.
+        (JUNE_VOTE, "June 9, 2027", ("2027-06-09", "2027-06-09")),
     ],
 )
 def test_a_person_may_approve_a_held_deal_date_and_it_moves(
@@ -407,6 +444,10 @@ def test_a_person_may_approve_a_held_deal_date_and_it_moves(
     assert _publish(world)["held_by_writer"] == 1
     decision, reasons = _decide(world)[claim]
     assert decision == "review"
+    if sentence == JUNE_VOTE:  # the person sees every reason, the vote among them
+        (reason,) = reasons
+        assert TOO_FAR in reason
+        assert "a stockholder vote" in reason
     record_decision(world.factory, claim, ReviewAction.APPROVE, "acarchidi", reasons, lambda: NOW)
     _decide(world)
     summary = _publish(world)

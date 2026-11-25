@@ -2,9 +2,9 @@
 
 A merger or acquisition has several dated steps before it closes: the stockholder vote at a special
 meeting (or the stockholders' approval), the end of the HSR waiting period or another regulator's
-clearance, the expiry of a tender offer, the record date for the vote. An extractor claim of type
-`merger_acquisition` can carry any of these dates, and the writer would move an open entry's close
-window to it (NextCure: a 9 December vote inside a fourth-quarter
+clearance (US or foreign), the expiry of a tender offer, the record date for the vote. An extractor
+claim of type `merger_acquisition` can carry any of these dates, and the writer would move an open
+entry's close window to it (NextCure: a 9 December vote inside a fourth-quarter
 close; Opus review of PR #164).
 
 Plain code reads the quote. A claim may move an open deal entry's window only when its quote ties
@@ -70,6 +70,8 @@ _STEPS: tuple[tuple[str, re.Pattern[str]], ...] = (
             rf"(?-i:\bHSR\b)|\bHart{_DASH}Scott{_DASH}Rodino\b|\bwaiting\s+period\b|"
             # A regulator's clearance or approval (Opus review of PR #173, B1).
             r"(?-i:\bFTC\b|\bDOJ\b)|\bFederal\s+Trade\s+Commission\b|\bDepartment\s+of\s+Justice\b|"
+            # Regulators outside the US (Opus re-review of PR #173 at ffd136d).
+            r"(?-i:\bEC\b|\bCMA\b|\bSAMR\b)|\bEuropean\s+Commission\b|\bcompetition\s+authorit(?:y|ies)\b|"
             r"\b(?:regulatory|antitrust|competition)\s+(?:clearances?|approvals?)\b",
             re.IGNORECASE,
         ),
