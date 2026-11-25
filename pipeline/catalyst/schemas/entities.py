@@ -74,6 +74,24 @@ class Company(Entity):
     sic_code: SicCode | None = Field(
         default=None, description="SEC industry code, for example 2834 (pharmaceutical preparations)."
     )
+    display_name: Name | None = Field(
+        default=None,
+        description=(
+            "Name shown to readers (ADR 0068): the company's own spelling in its own stored press "
+            "releases, else the SEC name without its state suffix. Empty until first computed."
+        ),
+    )
+    display_name_document_id: Annotated[UUID, References("source_document")] | None = Field(
+        default=None,
+        description="The stored press release that spells the display name; empty when it is the SEC name.",
+    )
+    display_name_inputs: Sha256Hex | None = Field(
+        default=None,
+        description=(
+            "SHA-256 of what the display name was computed from: the code, the SEC name, and the "
+            "releases read (ADR 0068); a run recomputes it only when this changes."
+        ),
+    )
 
 
 class CompanyDocument(Entity):
@@ -286,7 +304,10 @@ class Catalyst(Entity):
     window_raw_text: Name = Field(description="The date exactly as the source wrote it, for example '2H26'.")
     date_confidence: DateConfidence = Field(description="Who stands behind the date.")
     status: CatalystStatus = Field(
-        description="Upcoming, slipped, resolved, or replaced (a registry estimate a company date replaced)."
+        description=(
+            "Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), "
+            "or withdrawn after review."
+        )
     )
 
     @model_validator(mode="after")
@@ -573,6 +594,49 @@ class DocumentReading(Entity):
     skipped: ReadingSkip | None = Field(
         default=None, description="Why no model read the document; empty when a model read it."
     )
+
+
+class DocumentPartReading(Entity):
+    """One reader's pass over one part of a long filing or exhibit (ADR 0066).
+
+    A 10-Q, a 10-K, or an exhibit is read part by part; each part read is kept, so a run that stops
+    part-way goes on with the next part, and no part is paid for twice. A part is known by the
+    hash of its words, so the same words are never read twice by the same reader and prompt.
+    """
+
+    __tablename__ = "document_part_reading"
+    __unique__ = (("source_document_id", "agent", "prompt_id", "prompt_version", "part_sha256"),)
+    __checks__: ClassVar[dict[str, str]] = {
+        "catalysts_not_negative": "catalysts >= 0",
+        "part_in_range": "part >= 0 AND part < parts",
+        "forward_span": "part_start >= 0 AND part_end > part_start",
+    }
+
+    source_document_id: Annotated[UUID, References("source_document")] = Field(
+        description="The document the part is from."
+    )
+    agent: ShortText = Field(description="Which reader, for example 'extractor'.")
+    prompt_id: ShortText = Field(description="Prompt used.")
+    prompt_version: ShortText = Field(description="Version of that prompt.")
+    model: ShortText = Field(description="Model that answered.")
+    section: ShortText = Field(
+        description="Which section the part is from, for example 'Management's discussion and analysis'."
+    )
+    part: Annotated[int, Field(ge=0)] = Field(
+        description="The part's place among the document's parts, from 0."
+    )
+    parts: Annotated[int, Field(gt=0)] = Field(description="How many parts the document has to read.")
+    part_start: Annotated[int, Field(ge=0)] = Field(
+        description="Where the part starts in the document's visible text, in characters."
+    )
+    part_end: Annotated[int, Field(gt=0)] = Field(description="Where the part ends in the visible text.")
+    part_sha256: str = Field(
+        pattern=r"^[0-9a-f]{64}$", max_length=64, description="SHA-256 of the part's words, lowercase hex."
+    )
+    catalysts: Annotated[int, Field(ge=0)] = Field(
+        description="How many catalysts the reader proposed in it."
+    )
+    read_at: AwareDatetime = Field(description="When the part was read.")
 
 
 class CatalystChange(Entity):

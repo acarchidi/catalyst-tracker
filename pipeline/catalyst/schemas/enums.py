@@ -128,6 +128,7 @@ class CatalystStatus(StrEnum):
     SLIPPED = "slipped"
     RESOLVED = "resolved"
     REPLACED = "replaced"  # a registry estimate a company-stated date took the place of (ADR 0067)
+    WITHDRAWN = "withdrawn"  # unpublished after review (ADR 0070); never shown
 
 
 class ClaimSubject(StrEnum):

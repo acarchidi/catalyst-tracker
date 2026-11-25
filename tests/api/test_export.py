@@ -177,6 +177,7 @@ def test_held_claims_are_listed_apart_with_their_reasons(
     assert held["company"] == {
         "id": str(seed.other),
         "name": "Other Therapeutics",
+        "display_name": "Other Therapeutics",  # ADR 0068: not computed yet, so the plain SEC name
         "cik": 2222,
         "ticker": "OTH",
     }

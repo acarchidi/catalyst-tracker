@@ -37,7 +37,9 @@ with it (`person_may_approve`). A claim whose latest decision by a person is a r
 
 Safe to re-run: a claim a change row already cites is done, and the job holds a database lock
 while it runs, so two runs never both create one catalyst. Everything is written in one
-transaction, so a failure leaves nothing half written. It never deletes or unpublishes.
+transaction, so a failure leaves nothing half written. It never deletes, and it unpublishes only
+what the reviewed withdrawal list names (ADR 0070): first, every live catalyst a listed claim
+stands behind is withdrawn, with a status change in its history; a listed claim is then held.
 """
 
 from __future__ import annotations
@@ -86,6 +88,7 @@ from catalyst.publish.sanity import (
     same_dates,
 )
 from catalyst.publish.title import TitleNames, load_title_names
+from catalyst.publish.withdrawals import Withdrawal, load_withdrawn, unpublish, withdraw
 from catalyst.review import Review, apply_review, latest_reviews
 from catalyst.schemas import (
     Catalyst,
@@ -126,6 +129,7 @@ DATE_FIELDS = (
 )
 INVALID = "the claim's values do not make a valid catalyst"
 _DECIDED_WHILE_WRITING = "decided as the writer places the claim"
+WITHDRAWN_EVENT = "the event was withdrawn after review"  # ADR 0070; no person's approval lifts it
 
 _log = logging.getLogger(__name__)
 
@@ -148,6 +152,7 @@ class PublishReport:
     copies_unreadable: int = 0
     checks_updated: int = 0
     published_by_approval: int = 0  # claims a person approved that this run wrote
+    catalysts_withdrawn: int = 0  # unpublished now by the reviewed withdrawal list (ADR 0070)
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
@@ -259,6 +264,7 @@ class _Run:
     reviews: dict[UUID, Review] = field(default_factory=dict[UUID, Review])
     stored: dict[UUID, list[ClaimCheck]] = field(default_factory=dict[UUID, list[ClaimCheck]])
     results: dict[UUID, list[CheckResult]] = field(default_factory=dict[UUID, list[CheckResult]])
+    withdrawn: dict[UUID, Withdrawal] = field(default_factory=dict[UUID, Withdrawal])
 
 
 def _recheck(
@@ -295,6 +301,7 @@ def _recheck(
                 checks = excuse_passed_window(claim.id, checks, at)
             decision = gate.decide(claim, checks, gate.match_quote(claim, copy))
             decision = apply_review(decision, run.reviews.get(claim.id), checks, person_may_approve)
+            decision = withdraw(decision, run.withdrawn.get(claim.id))
             if decision.decision is not GateDecision.PUBLISH:
                 report.held_on_recheck += 1
                 report.reasons.update(hold.label for hold in decision.holds)
@@ -472,6 +479,13 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
     today = run.at.astimezone(NEW_YORK).date()
     catalysts = list(live.catalysts)
     for item in sorted(ready, key=_Ready.order):
+        if live.was_withdrawn(item.key, item.candidate.rank.published_at):
+            # A claim from a document published before the withdrawal must not bring the event back as a new
+            # catalyst (Opus review of PR #151).
+            result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, WITHDRAWN_EVENT)
+            run.results.setdefault(item.claim.id, []).append(result)
+            _hold(run, item, WITHDRAWN_EVENT)
+            continue
         where = place(item.key, catalysts)
         result = safe_to_write(item.candidate, where, today)
         if result.outcome is CheckOutcome.PASS and where.catalyst is None and _ended(item, today):
@@ -576,16 +590,20 @@ def publish_claims(
     now: Callable[[], datetime],
     *,
     verifier_model: str,
+    withdrawals: Sequence[Withdrawal] = (),
 ) -> PublishReport:
     """Check again, decide again, and write the live catalysts every fresh publish allows.
 
     `verifier_model` is the second reading's configured model: only its readings vouch.
+    `withdrawals` is the reviewed list; an entry naming no claim or several stops the run.
     """
     run = _Run(at=now(), report=PublishReport())
     report = run.report
     with session_factory.begin() as session:
         session.execute(select(func.pg_advisory_xact_lock(LOCK)))
         run.reviews = latest_reviews(session)
+        run.withdrawn = load_withdrawn(session, withdrawals)
+        report.catalysts_withdrawn = unpublish(session, run.withdrawn, run.at)
         rows = _marked(session)
         report.claims_marked_publish = len(rows)
         live = load_live(session)

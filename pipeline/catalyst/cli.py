@@ -36,6 +36,7 @@ from catalyst.collectors.sec.backfill import backfill_press_releases
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sec.press_release import NoPressReleaseError, collect_latest_press_release
 from catalyst.collectors.sources.mesh import stored_index
+from catalyst.company_names import recompute_display_names
 from catalyst.copy_cache import CachedStore, claim_copy_keys
 from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
@@ -51,6 +52,7 @@ from catalyst.extract.disease import (
     score_record,
 )
 from catalyst.extract.evaluate import EVALS, evaluate, load_gold, scores_record
+from catalyst.extract.filings import SpendGuard, read_filings
 from catalyst.extract.indicate import indicate_catalysts
 from catalyst.extract.run import extract_documents
 from catalyst.gate1 import companies_toml, sample_markdown, sample_records, select_companies
@@ -76,6 +78,7 @@ from catalyst.publish.estimates import publish_estimates
 from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
+from catalyst.publish.withdrawals import load_withdrawals, withdrawals_pending
 from catalyst.publish.write import publish_claims
 from catalyst.resolve_claims import resolve_claims
 from catalyst.sealed import SealError, generate_keypair, seal, unseal
@@ -88,6 +91,7 @@ from catalyst.snapshots import (
     VerifyReport,
     verify_snapshots,
 )
+from catalyst.store_cleanup import clean_store, nightly_deletes
 from catalyst.verify.advisory import check_advisory_meetings
 from catalyst.verify.company import check_company_named
 from catalyst.verify.drug import check_drug_named
@@ -260,6 +264,11 @@ def _parser() -> argparse.ArgumentParser:
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
+    names = commands.add_parser(
+        "company-names",
+        help="Store each company's own spelling of its name, from its stored releases (free; ADR 0068).",
+    )
+    _store_arguments(names)
     drugs = commands.add_parser(
         "load-drugs",
         help=(
@@ -320,6 +329,19 @@ def _parser() -> argparse.ArgumentParser:
         "--calendar-limit",
         type=int,
         help=f"Most other catalysts to list (free {DEFAULT_CALENDAR_LIMIT}, paid {PAID_CALENDAR_LIMIT}).",
+    )
+    review = commands.add_parser(
+        "review-issue",
+        help="Run the pre-publication checks on a built issue, its pages, and the note "
+        "(docs/issue-review.md). Prints counts only; exits 1 on any failure.",
+    )
+    review.add_argument("--free-json", type=Path, required=True, help="The free digest JSON.")
+    review.add_argument("--paid-json", type=Path, required=True, help="The paid digest JSON.")
+    review.add_argument("--free-page", type=Path, required=True, help="The free page.")
+    review.add_argument("--paid-page", type=Path, required=True, help="The paid page.")
+    review.add_argument("--note", type=Path, required=True, help="The promotional note, plain text.")
+    review.add_argument(
+        "--out", type=Path, required=True, help="Write every finding here (JSON); keep it private."
     )
     keygen = commands.add_parser(
         "seal-keygen",
@@ -450,6 +472,19 @@ def _snapshot_space_arguments(commands: Any) -> None:
         default=None,
         help="Start no new copy after this many minutes; a later run finishes the rest.",
     )
+    clean = commands.add_parser(
+        "snapshots-clean",
+        help=(
+            "Count, by document type, the stored copies of fully read filings that back no claim; "
+            "with --delete, delete them (ADR 0066)."
+        ),
+    )
+    clean.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete those copies. Without it nothing is deleted; the counts are printed (a dry run).",
+    )
+    _store_arguments(clean)
     usage = commands.add_parser(
         "snapshots-usage", help="Print the Supabase bucket's size in total, by format, and by source."
     )
@@ -492,6 +527,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "resolve-claims": _resolve,
         "load-drugs": _load_drugs,
         "verify-claims": _verify_claims,
+        "company-names": _company_names,
         "alerts": _alerts,
         "post-issues": _post_issues,
         "decide-claims": _decide_claims,
@@ -501,6 +537,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mcp": _serve,
         "export-catalysts": _export,
         "digest": _digest,
+        "review-issue": _review_issue,
         "seal-keygen": _seal_keygen,
         "seal": _seal,
         "unseal": _unseal,
@@ -511,6 +548,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "snapshots-compress": _snapshots_space,
         "snapshots-usage": _snapshots_space,
         "backfill-status": _backfill_status,
+        "snapshots-clean": _snapshots_clean,
     }
     if args.command in standalone:
         return standalone[args.command](args)
@@ -621,6 +659,7 @@ SECOND_SHARE = 0.7
 CHECKS_SHARE = 0.9
 INDICATION_SHARE = 0.85
 OUT_OF_TIME = "the run's time ran out first; the next run goes on"
+STOPPED_FOR_TIME = "a check ran out of time, so nothing was decided; the next run goes on"
 
 
 @dataclass(frozen=True)
@@ -664,14 +703,13 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         config = load_config()
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
+        reading_ends = _utc_now() + timedelta(minutes=plan.reading)
         report = extract_documents(
-            sessionmaker(engine),
-            store,
-            client,
-            limit=args.limit,
-            since=args.since,
-            deadline=_utc_now() + timedelta(minutes=plan.reading),
+            sessionmaker(engine), store, client, limit=args.limit, since=args.since, deadline=reading_ends
         )
+        # Filings after the releases, inside the same reading time and the usual caps (ADR 0066).
+        guard = SpendGuard(config, DatabaseLedger(engine), _utc_now().astimezone(NEW_YORK).date())
+        filings = _filings_after(sessionmaker(engine), store, client, args, reading_ends, guard)
         # The extraction stands if a later step fails; each re-runs next time.
         _prefetch(sessionmaker(engine), store)
         matches, checks = _match_and_check(sessionmaker(engine), store, plan.by(CHECKS_SHARE))
@@ -685,6 +723,7 @@ def _extract(args: argparse.Namespace) -> int:
                 limit=args.limit,
                 now=_utc_now,
                 deadline=plan.by(SECOND_SHARE),
+                guard=guard,
             ).summary()
         except (SQLAlchemyError, ValueError, KeyError, OSError) as error:  # a bad scores file, too
             second = {"error": f"{type(error).__name__}: the second reading did not finish"}
@@ -693,11 +732,19 @@ def _extract(args: argparse.Namespace) -> int:
             if plan.past(1.0)
             else decide_after_checks(sessionmaker(engine), store, checks)
         )
+        decisions = withdrawals_waiting(sessionmaker(engine), decisions)
         published = _publish_after(sessionmaker(engine), store, decisions, config.roles[VERIFIER_ROLE].model)
         indications = (
             {"skipped": OUT_OF_TIME}
             if plan.past(INDICATION_SHARE)
             else _indications_after(sessionmaker(engine), store, client, published, args.limit)
+        )
+        cleanup = _cleanup_after(sessionmaker(engine), store)
+        # Last and free: each company's own spelling of its name, for the issue (ADR 0068).
+        names = (
+            {"skipped": OUT_OF_TIME}
+            if plan.past(1.0)
+            else _display_names(sessionmaker(engine), store, plan.by(1.0))
         )
     finally:
         engine.dispose()
@@ -705,12 +752,15 @@ def _extract(args: argparse.Namespace) -> int:
         documents = [asdict(d) | {"published": d.published.isoformat()} for d in report.documents]
         args.out.write_text(json.dumps(documents, indent=2, ensure_ascii=False), encoding="utf-8")
     summary = report.summary() | {
+        "filings": filings,
         "matches": matches,
         "checks": checks,
         "second_reading": second,
         "decisions": decisions,
         "published": published,
         "indications": indications,
+        "store_cleanup": cleanup,
+        "display_names": names,
         "minutes_used": round(plan.budget.minutes_used(), 1),
     }
     print(json.dumps(summary, indent=2))
@@ -720,8 +770,68 @@ def _extract(args: argparse.Namespace) -> int:
     stopped = not args.stop_is_expected and (cap_stop or second.get("stopped_early"))
     second_failed = "error" in second or second.get("documents_failed")
     gate_failed = "error" in decisions or "error" in published or "error" in indications
-    failed = summary["documents_failed"] or stopped or second_failed or gate_failed
+    upkeep_failed = "error" in filings or filings.get("filings_failed") or _cleanup_failed(cleanup)
+    failed = summary["documents_failed"] or stopped or second_failed or gate_failed or upkeep_failed
     return 1 if failed else 0
+
+
+def _filings_after(
+    session_factory: sessionmaker[Session],
+    store: SnapshotStore,
+    client: ModelClient,
+    args: argparse.Namespace,
+    deadline: datetime,
+    guard: SpendGuard,
+) -> dict[str, Any]:
+    """Read 10-Qs, 10-Ks and other 8-K exhibits part by part after the releases (ADR 0066).
+
+    A stop at the usual cap or the time limit is this step's normal end; the next run goes on.
+    """
+    try:
+        return read_filings(
+            session_factory,
+            store,
+            client,
+            limit=args.limit,
+            since=args.since,
+            now=_utc_now,
+            deadline=deadline,
+            guard=guard,
+        ).summary()
+    except (SQLAlchemyError, SnapshotStoreError, httpx.HTTPError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the filing reader did not finish"}
+
+
+def _cleanup_after(session_factory: sessionmaker[Session], store: CachedStore) -> dict[str, Any]:
+    """Count, by type, the copies of fully read filings that back no claim, last of all (ADR 0066).
+
+    They are deleted only once `delete_read_copies` is on in config/store_cleanup.toml: deleting
+    live data comes after a dry run's counts have been seen. Off, this is that dry run.
+    """
+    try:
+        return clean_store(session_factory, store, delete=nightly_deletes(), now=_utc_now).summary()
+    except (SQLAlchemyError, SnapshotStoreError, httpx.HTTPError, OSError, ValueError) as error:
+        return {"error": f"{type(error).__name__}: the store clean-up did not finish"}
+
+
+def _cleanup_failed(cleanup: dict[str, Any]) -> bool:
+    return "error" in cleanup or bool(cleanup.get("copies_failed"))
+
+
+def _snapshots_clean(args: argparse.Namespace) -> int:
+    """Count, and with --delete delete, the copies of fully read filings that back no claim."""
+    try:
+        store = CachedStore(_open_store(args, create_bucket=False))
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(settings.database_url())
+    try:
+        report = clean_store(sessionmaker(engine), store, delete=args.delete, now=_utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
+    return 1 if report.copies_failed else 0
 
 
 def _prefetch(session_factory: sessionmaker[Session], store: CachedStore) -> None:
@@ -790,11 +900,27 @@ def decide_after_checks(
     if "error" in checks or any("error" in checks.get(step, {}) for step in steps):
         return {"skipped": "the checks did not finish, so nothing was decided"}
     if any(checks.get(step, {}).get("stopped_for_time") for step in steps):
-        return {"skipped": "a check ran out of time, so nothing was decided; the next run goes on"}
+        return {"skipped": STOPPED_FOR_TIME}
     try:
-        return decide_claims(session_factory, store, _utc_now).summary()
+        return decide_claims(session_factory, store, _utc_now, load_withdrawals()).summary()
     except (SQLAlchemyError, ValueError) as error:
         return {"error": f"{type(error).__name__}: the publish decisions did not finish"}
+
+
+def withdrawals_waiting(session_factory: sessionmaker[Session], decisions: dict[str, Any]) -> dict[str, Any]:
+    """When the decisions were skipped for time, add how many listed withdrawals wait (ADR 0070).
+
+    A failed check step already raises its own alert; a stop for time does not, so without this a
+    withdrawal could wait silently. When the count cannot be read, the alert says that instead.
+    """
+    if decisions.get("skipped") not in (OUT_OF_TIME, STOPPED_FOR_TIME):
+        return decisions
+    try:
+        with session_factory() as session:
+            waiting = withdrawals_pending(session, load_withdrawals())
+    except (SQLAlchemyError, ValueError):
+        return decisions | {"withdrawals_unchecked": True}
+    return decisions | ({"withdrawals_waiting": waiting} if waiting else {})
 
 
 def _safe_to_write(session_factory: sessionmaker[Session]) -> dict[str, Any]:
@@ -819,7 +945,9 @@ def _publish_after(
     if "error" in decisions or "skipped" in decisions:
         return {"skipped": "the publish decisions did not finish, so nothing was published"}
     try:
-        return publish_claims(session_factory, store, _utc_now, verifier_model=verifier_model).summary()
+        return publish_claims(
+            session_factory, store, _utc_now, verifier_model=verifier_model, withdrawals=load_withdrawals()
+        ).summary()
     except (SQLAlchemyError, ValueError, OSError) as error:
         return {"error": f"{type(error).__name__}: publishing did not finish"}
 
@@ -923,6 +1051,32 @@ def _verify_claims(args: argparse.Namespace) -> int:
     return 0
 
 
+def _company_names(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = _display_names(sessionmaker(engine), store, None)
+    finally:
+        engine.dispose()
+    print(json.dumps(report, indent=2))
+    return 1 if "error" in report else 0
+
+
+def _display_names(
+    session_factory: sessionmaker[Session], store: SnapshotStore, deadline: float | None
+) -> dict[str, Any]:
+    """Store each company's display name (ADR 0068); a problem here never fails the steps before it."""
+    try:
+        return recompute_display_names(session_factory, store, deadline).summary()
+    except (SQLAlchemyError, ValueError, OSError) as error:
+        return {"error": f"{type(error).__name__}: the display names did not finish"}
+
+
 def _decide_claims(args: argparse.Namespace) -> int:
     try:
         database = settings.database_url()
@@ -932,7 +1086,7 @@ def _decide_claims(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        report = decide_claims(sessionmaker(engine), store, _utc_now)
+        report = decide_claims(sessionmaker(engine), store, _utc_now, load_withdrawals())
     finally:
         engine.dispose()
     print(json.dumps(report.summary(), indent=2))
@@ -949,7 +1103,10 @@ def _publish_claims(args: argparse.Namespace) -> int:
     engine = create_engine(database)
     try:
         model = load_config().roles[VERIFIER_ROLE].model
-        report = publish_claims(sessionmaker(engine), store, _utc_now, verifier_model=model)
+        withdrawals = load_withdrawals()
+        report = publish_claims(
+            sessionmaker(engine), store, _utc_now, verifier_model=model, withdrawals=withdrawals
+        )
         indications = publish_indications(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()
@@ -1061,6 +1218,40 @@ def _digest(args: argparse.Namespace) -> int:
     counts = {"issue_date": issue_date.isoformat(), "access": issue.access, **issue.counts.model_dump()}
     print(json.dumps(counts))
     return 0
+
+
+def _review_issue(args: argparse.Namespace) -> int:
+    """Run the mechanical review (ADR 0055, decision 7); print counts only, findings to --out."""
+    from catalyst.outreach.digest import Digest
+    from catalyst.outreach.review import review_digest, review_note, review_page
+
+    try:
+        free = Digest.model_validate_json(args.free_json.read_text(encoding="utf-8"))
+        paid = Digest.model_validate_json(args.paid_json.read_text(encoding="utf-8"))
+        pages = {
+            "free": args.free_page.read_text(encoding="utf-8"),
+            "paid": args.paid_page.read_text(encoding="utf-8"),
+        }
+        note = args.note.read_text(encoding="utf-8")
+    except (OSError, ValueError) as error:
+        print(f"Nothing reviewed: {type(error).__name__}: cannot read the inputs.", file=sys.stderr)
+        return 2
+    if free.access != "free" or paid.access != "paid" or free.issue_date != paid.issue_date:
+        print("Nothing reviewed: the free and paid files are not one week's pair.", file=sys.stderr)
+        return 2
+    found = {
+        "free": review_digest(free) + review_page(pages["free"]),
+        "paid": review_digest(paid) + review_page(pages["paid"]),
+        "note": review_note(note),
+    }
+    write_export(args.out, {k: [vars(f) for f in v] for k, v in found.items()})
+    counts: dict[str, dict[str, int]] = {}
+    for part, items in found.items():
+        for item in items:
+            counts.setdefault(part, {}).setdefault(item.check, 0)
+            counts[part][item.check] += 1
+    print(json.dumps({"issue_date": free.issue_date.isoformat(), "failures": counts}))
+    return 1 if any(found.values()) else 0
 
 
 def _export_details(path: Path, issue_date: date) -> list[CatalystDetail]:
@@ -1397,6 +1588,7 @@ def _verify(store: SnapshotStore, session_factory: sessionmaker[Session], worker
         "missing": report.missing,
         "changed": report.changed,
         "unreadable": report.unreadable,
+        "deleted_once_read": report.deleted,
     }
     print(json.dumps(summary, indent=2))
     return 0 if report.ok else 1

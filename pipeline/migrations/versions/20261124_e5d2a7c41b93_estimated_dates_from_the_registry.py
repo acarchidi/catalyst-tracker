@@ -8,7 +8,7 @@ The downgrade refuses while any catalyst holds either value, rather than delete 
 records or their history (ADR 0016's rule for migrations that could lose data).
 
 Revision ID: e5d2a7c41b93
-Revises: a64c0de5e7a1
+Revises: c3d5e7f9a1b2
 Create Date: 2026-11-24 12:00:00.000000
 """
 
@@ -18,7 +18,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "e5d2a7c41b93"
-down_revision: str | None = "a64c0de5e7a1"
+down_revision: str | None = "c3d5e7f9a1b2"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -32,13 +32,19 @@ NEW_TYPE = (
     "ck_catalyst_catalyst_type_allowed_4c6f0849",
     f"catalyst_type IN ({_TYPES}, 'primary_completion')",
 )
-OLD_STATUS = ("ck_catalyst_status_allowed_b8a8528d", "status IN ('upcoming', 'slipped', 'resolved')")
-NEW_STATUS = (
-    "ck_catalyst_status_allowed_0e3526f5",
-    "status IN ('upcoming', 'slipped', 'resolved', 'replaced')",
+OLD_STATUS = (
+    "ck_catalyst_status_allowed_ae034fd6",
+    "status IN ('upcoming', 'slipped', 'resolved', 'withdrawn')",
 )
-OLD_COMMENT = "Upcoming, slipped, or resolved."
-NEW_COMMENT = "Upcoming, slipped, resolved, or replaced (a registry estimate a company date replaced)."
+NEW_STATUS = (
+    "ck_catalyst_status_allowed_820c43bc",
+    "status IN ('upcoming', 'slipped', 'resolved', 'replaced', 'withdrawn')",
+)
+OLD_COMMENT = "Upcoming, slipped, resolved, or withdrawn after review."
+NEW_COMMENT = (
+    "Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), "
+    "or withdrawn after review."
+)
 
 
 def _swap(old: tuple[str, str], new: tuple[str, str]) -> None:
@@ -50,7 +56,7 @@ def _comment(comment: str, existing: str) -> None:
     op.alter_column(
         "catalyst",
         "status",
-        existing_type=sa.String(length=8),
+        existing_type=sa.String(length=9),
         existing_nullable=False,
         comment=comment,
         existing_comment=existing,

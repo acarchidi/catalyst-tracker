@@ -5,11 +5,12 @@ response cannot carry them (ADR 0025).
 """
 
 from datetime import date, datetime
-from typing import Literal
+from typing import Any, Literal, cast
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from catalyst.collectors.coverage import without_state_suffix
 from catalyst.schemas import (
     CatalystStatus,
     CatalystType,
@@ -46,8 +47,27 @@ class CompanyView(View):
 
     id: UUID = Field(description="Internal identifier.")
     name: str = Field(description="Current legal name as filed with the SEC.")
+    display_name: str = Field(
+        default="",  # never stays empty: a record without one gets the plain SEC name
+        description=(
+            "Name to show readers: the company's own spelling in its own press releases, else the SEC "
+            "name without its state suffix (ADR 0068)."
+        ),
+    )
     cik: int = Field(description="SEC Central Index Key.")
     ticker: str | None = Field(description="Current ticker, if the company has one.")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _plain_sec_name_by_default(cls, data: Any) -> Any:
+        """Give a record without a display name (an older export) the SEC name without its suffix."""
+        if not isinstance(data, dict):
+            return data
+        fields = cast(dict[str, Any], data)
+        name = fields.get("name")
+        if not fields.get("display_name") and isinstance(name, str):
+            return {**fields, "display_name": without_state_suffix(name)}
+        return fields
 
 
 class DrugView(View):

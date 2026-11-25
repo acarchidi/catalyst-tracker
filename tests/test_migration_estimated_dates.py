@@ -11,7 +11,7 @@ from sqlalchemy.exc import IntegrityError
 from conftest import alembic_config, truncate_all
 
 REVISION = "e5d2a7c41b93"
-BEFORE = "a64c0de5e7a1"
+BEFORE = "c3d5e7f9a1b2"
 _COMPANY = (
     "INSERT INTO company (id, cik, name) VALUES ('00000000-0000-0000-0000-000000000001', 1, 'Example Bio')"
 )

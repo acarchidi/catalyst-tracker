@@ -1,0 +1,6 @@
+# Whether the nightly extraction's last step deletes the stored copies of fully read filings
+# that back no claim (ADR 0066). Off until a dry run's counts have been seen: deleting live data
+# is "dry run first, counts only". While off, the nightly step only counts, by document type,
+# and logs the counts. Turning it on is this one line. `catalyst snapshots-clean --delete` acts
+# by hand whatever this says.
+delete_read_copies = false
