@@ -233,7 +233,7 @@ An expected event that can move a company's value, with its date window. These a
 | `window_precision` | one of: `day`, `month`, `quarter`, `half`, `year` | yes | How precisely the date is known. |
 | `window_raw_text` | text, up to 300 characters | yes | The date exactly as the source wrote it, for example '2H26'. |
 | `date_confidence` | one of: `company_confirmed`, `regulator_scheduled`, `registry_estimate`, `inferred` | yes | Who stands behind the date. |
-| `status` | one of: `upcoming`, `slipped`, `resolved`, `replaced`, `withdrawn` | yes | Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), or withdrawn after review. |
+| `status` | one of: `upcoming`, `slipped`, `resolved`, `replaced`, `withdrawn`, `merged` | yes | Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), withdrawn after review, or merged (the same event as another entry, kept in its place). |
 
 Rules:
 
@@ -460,6 +460,23 @@ Rules:
 
 - Database check `changes_something`: `old_value IS DISTINCT FROM new_value`
 - Database check `has_new_value`: `new_value <> 'null'::jsonb`
+
+## `catalyst_merged_source`
+
+A claim behind an entry merged into another as the same event, shown as its extra source (ADR 0082). The merged entry keeps every row of its own; this link only adds its claims to the kept entry's sources. Written by plain code in the same transaction as the merged entry's status change.
+
+| Field | Type | Required | Meaning |
+| --- | --- | --- | --- |
+| `id` | identifier | yes | Internal identifier. |
+| `catalyst_id` | link to `catalyst` | yes | The entry kept. |
+| `merged_id` | link to `catalyst` | yes | The entry marked merged into it. |
+| `claim_id` | link to `claim` | yes | A claim behind the merged entry, now also a source of the kept one. |
+| `learned_at` | date and time (with time zone) | yes | When the two entries were found to be one event. |
+
+Rules:
+
+- Unique: `catalyst_id`, `claim_id`
+- Database check `not_itself`: `catalyst_id <> merged_id`
 
 ## `outcome`
 
