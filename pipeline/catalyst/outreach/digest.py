@@ -456,7 +456,7 @@ def render_html(digest: Digest) -> str:
         f"<h1>Catalyst digest: week of {week}</h1>",
         *(["<p>Full issue for paid subscribers.</p>"] if paid else []),
         "<p>Key: " + " · ".join(f"{mark} {escape(name)}" for mark, name in _CATEGORY_KEY) + "</p>",
-        f"<h2>Rescheduled Catalysts ({digest.counts.moved})</h2>",
+        f"<h2>Rescheduled catalysts ({digest.counts.moved})</h2>",
         _list([_move_item(move, until) for move in digest.moved])
         or f"<p>No date {'on' if paid else 'in'} {where} moved this week.</p>",
         f"<h2>New ({digest.counts.new})</h2>",

@@ -415,7 +415,8 @@ def test_the_html_shows_each_listed_catalyst_in_the_owners_layout() -> None:
     assert "week of 28 September to 4 October 2026" in text
     assert text.count(NOTICE) == 1
     assert html.rstrip().endswith(f"<p><small>{NOTICE}</small></p>")
-    assert text.index("Key: ") < text.index("Rescheduled Catalysts (1)") < text.index("New (1)")
+    assert text.index("Key: ") < text.index("Rescheduled catalysts (1)") < text.index("New (1)")
+    assert "Rescheduled Catalysts" not in text  # sentence case, like every other heading
     assert "Due by 4 November 2026 (0)" in text  # the calendar is split (ADR 0063)
     for name in ("Clinical data", "Conference presentation", "Regulatory", "Trial progress"):
         assert name in text
