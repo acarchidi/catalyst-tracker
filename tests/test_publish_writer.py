@@ -65,6 +65,9 @@ NOW = datetime(2026, 10, 18, 12, tzinfo=UTC)
 OCT_14 = datetime(2026, 10, 14, 20, tzinfo=UTC)
 OCT_15 = datetime(2026, 10, 15, 20, tzinfo=UTC)
 OCT_16 = datetime(2026, 10, 16, 20, tzinfo=UTC)
+# Later on the same New York day as OCT_14: a newer source of the same rank on another day moves a
+# window that does not overlap (ADR 0069), so the tests of that hold use one of the same day.
+OCT_14_LATER = OCT_14 + timedelta(hours=2)
 VERIFIER_MODEL = "claude-sonnet-5-5"
 
 
@@ -648,7 +651,7 @@ def test_claims_first_seen_together_take_the_winners_values(world: World) -> Non
 def test_a_window_that_does_not_overlap_the_live_one_waits_for_a_person(world: World) -> None:
     world.claim("second half of 2027")
     _publish(world)
-    world.claim("first half of 2028", published=OCT_16)
+    world.claim("first half of 2028", published=OCT_14_LATER)
     summary = _publish(world)
     assert summary["held_by_writer"] == 1
     assert list(summary["top_reasons"]) == [
@@ -958,7 +961,7 @@ def test_o2_a_second_reading_counts_only_with_a_current_reading(world: World) ->
 def test_o3_the_check_job_stores_safe_to_write_for_every_claim(world: World) -> None:
     first = world.claim("second half of 2027")
     _publish(world)
-    later = world.claim("first half of 2028", published=OCT_16)
+    later = world.claim("first half of 2028", published=OCT_14_LATER)
     new = world.claim(
         "second half of 2027",
         catalyst_type="enrollment_completion",
@@ -1014,7 +1017,7 @@ def test_a_start_moved_more_than_six_months_earlier_waits(world: World) -> None:
 
 
 def test_a_losing_first_seen_claim_whose_window_does_not_overlap_waits(world: World) -> None:
-    world.claim("second half of 2027", published=OCT_16)
+    world.claim("second half of 2027", published=OCT_14_LATER)
     world.claim("first half of 2028")
     summary = _publish(world)
     assert (summary["catalysts_created"], summary["held_by_writer"]) == (1, 1)
@@ -1027,7 +1030,7 @@ def test_one_run_moves_a_catalyst_once_and_compares_the_rest_with_the_move(world
     first = world.claim("second half of 2027")
     _publish_in_order(world, first)
     world.claim("fourth quarter of 2027", published=OCT_16)
-    world.claim("third quarter of 2027", published=OCT_15)
+    world.claim("third quarter of 2027", published=OCT_16 - timedelta(hours=2))  # same day as the move
     summary = _publish(world)
     assert summary["catalysts_updated"] == 1
     assert _window(world)[2] == "fourth quarter of 2027"

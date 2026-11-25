@@ -4,7 +4,10 @@ Plain code over the claim, its matches, and the published catalysts. It fails, w
 when a person must decide:
 - the claim fits more than one published catalyst, or one except for the indication;
 - a new event's drug role is not clear from the quote;
-- its window does not overlap the published one's (a slip, or another event?);
+- its window does not overlap the published one's (a slip, or another event?), unless the two
+  sources have the same tier and were published on different New York days: the newest wins
+  (spec: Which claim wins; ADR 0069). Never for an event type with several dated steps (a
+  merger's vote, waiting period, tender, and close): there a person always decides;
 - it outranks the published source and would change the date, but its window has already ended
   while the published one has not (B2), or either end would move more than 6 months, unless the
   new window lies inside the old one (spec: Change sanity);
@@ -54,7 +57,16 @@ from catalyst.publish.live import (
     load_live,
     ranks_above,
 )
-from catalyst.schemas import CheckOutcome, Claim, Drug, DrugName, DrugRole, SourceDocument, SourceTier
+from catalyst.schemas import (
+    CatalystType,
+    CheckOutcome,
+    Claim,
+    Drug,
+    DrugName,
+    DrugRole,
+    SourceDocument,
+    SourceTier,
+)
 from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import CheckResult, Match, months_after
 from catalyst.verify.run import load_matches
@@ -63,6 +75,9 @@ MOVE_MONTHS = 6  # spec, Change sanity: a date that moves more than 6 months alw
 NO_EVENT = "the claim names no single company and type"
 ROLE_UNCLEAR = "the quote does not make clear whether the drug is tested alone or in combination"
 NOT_OVERLAPPING = "the window does not overlap the published one"
+# Event types whose one entry has several dated steps a release may name alone; recency never
+# moves a window that does not overlap for these (ADR 0069, decision 1).
+SEVERAL_STEPS = frozenset({CatalystType.MERGER_ACQUISITION})
 PASSED = "the new window has already passed"
 TOO_FAR = "the date would move more than 6 months"
 TIED = "a source of the same rank gives other dates for this event"
@@ -238,7 +253,15 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
     window = window_of(candidate.value)
     if window is None or same_dates(live, candidate.value):  # `has_window` fails a missing one
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
-    reasons = [] if overlap(window, live.window) else [NOT_OVERLAPPING]
+    # Among sources of equal rank the most recently published wins (spec: Which claim wins), so a
+    # same-tier source of another day settles a window that does not overlap: the newer one moves
+    # it, an older one loses and writes nothing (ADR 0069). Two of the same day still wait. Not
+    # for an event with several dated steps: a newer date there may be another step, such as a
+    # merger's stockholder vote rather than its close (Opus review of PR #164, B1).
+    steps = candidate.key is not None and candidate.key.catalyst_type in SEVERAL_STEPS
+    newest = newer_same_rank(candidate.rank, live.source) or newer_same_rank(live.source, candidate.rank)
+    settled = newest and not steps
+    reasons = [] if settled or overlap(window, live.window) else [NOT_OVERLAPPING]
     outranks = ranks_above(
         (candidate.rank.tier, candidate.rank.published_at), (live.source.tier, live.source.published_at)
     )
@@ -253,6 +276,15 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
     moved = f"{_WINDOWS}{_span(live.window)} to {_span(window)})" if PERSON_MAY_APPROVE & set(reasons) else ""
     return _fail("; ".join(reasons) + moved)
+
+
+def newer_same_rank(claim: Rank, other: Rank) -> bool:
+    """Say whether a source has the other's tier and was published on a later New York day (ADR 0069)."""
+    return claim.tier is other.tier and _day(claim.published_at) > _day(other.published_at)
+
+
+def _day(at: datetime) -> date:
+    return at.astimezone(NEW_YORK).date()
 
 
 def _span(window: tuple[date, date]) -> str:
