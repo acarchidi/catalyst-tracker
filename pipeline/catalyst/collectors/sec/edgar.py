@@ -37,6 +37,7 @@ class FilingRef(BaseModel):
     filed_on: date
     accepted_at: AwareDatetime
     primary_document: str
+    items: str = ""  # the 8-K items the filing list names, such as "2.01,9.01"; "" when it names none
 
     @property
     def folder_url(self) -> str:
@@ -65,6 +66,7 @@ class _RecentFilings(BaseModel):
     acceptance_date_time: list[AwareDatetime] = Field(alias="acceptanceDateTime")
     form: list[str]
     primary_document: list[str] = Field(alias="primaryDocument")
+    items: list[str] | None = None
 
 
 class _Filings(BaseModel):
@@ -93,12 +95,14 @@ def recent_filings_of(submissions_json: bytes, forms: frozenset[str]) -> list[Fi
     """Return the company's recent filings whose form is in `forms` (exact match), newest first."""
     data = _Submissions.model_validate_json(submissions_json)
     recent = data.filings.recent
+    items = recent.items if recent.items is not None else [""] * len(recent.form)
     rows = zip(
         recent.accession_number,
         recent.filing_date,
         recent.acceptance_date_time,
         recent.form,
         recent.primary_document,
+        items,
         strict=True,
     )
     filings = [
@@ -109,8 +113,9 @@ def recent_filings_of(submissions_json: bytes, forms: frozenset[str]) -> list[Fi
             filed_on=filed_on,
             accepted_at=accepted_at,
             primary_document=primary,
+            items=listed,
         )
-        for accession, filed_on, accepted_at, row_form, primary in rows
+        for accession, filed_on, accepted_at, row_form, primary, listed in rows
         if row_form in forms
     ]
     return sorted(filings, key=lambda filing: filing.accepted_at, reverse=True)

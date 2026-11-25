@@ -29,10 +29,25 @@ def source_key(filing: FilingRef, document: ExhibitRef) -> str:
     return f"sec:{filing.accession_number}:{document.url.rsplit('/', 1)[1]}"
 
 
+# An 8-K reporting a completed deal states it in the 8-K itself (ADR 0080): Item 2.01, Completion of
+# Acquisition or Disposition of Assets, and Item 5.01, Changes in Control of Registrant.
+COMPLETION_ITEMS = frozenset({"2.01", "5.01"})
+
+
 def documents_to_keep(filing: FilingRef, documents: list[ExhibitRef]) -> list[ExhibitRef]:
-    """For an 8-K keep its Exhibit 99 press releases; for other forms keep the main document."""
+    """For an 8-K keep its Exhibit 99 press releases; for other forms keep the main document.
+
+    An 8-K that reports Item 2.01 or 5.01 also keeps its main document, which no reader reads: plain
+    code finds the completed deal in it (ADR 0080).
+    """
     if filing.form == "8-K":
-        return [d for d in documents if d.type == "EX-99" or d.type.startswith("EX-99.")]
+        reported = {item.strip() for item in filing.items.split(",")}
+        main = bool(reported & COMPLETION_ITEMS)
+        return [
+            d
+            for d in documents
+            if d.type == "EX-99" or d.type.startswith("EX-99.") or (main and d.type == filing.form)
+        ]
     return [d for d in documents if d.type == filing.form]
 
 

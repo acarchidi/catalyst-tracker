@@ -40,6 +40,10 @@ while it runs, so two runs never both create one catalyst. Everything is written
 transaction, so a failure leaves nothing half written. It never deletes, and it unpublishes only
 what the reviewed withdrawal list names (ADR 0070): first, every live catalyst a listed claim
 stands behind is withdrawn, with a status change in its history; a listed claim is then held.
+Next, every open merger or acquisition entry that a later stored document of its company says was
+completed is closed (`catalyst.publish.closed_deals`, ADR 0080), with a status change citing that
+document's sentence; a claim about a closed deal from a document published before the closing was
+recorded is then held, so the deal never comes back.
 """
 
 from __future__ import annotations
@@ -63,6 +67,7 @@ from catalyst.extract.agent import ROLE
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.publish import gate
+from catalyst.publish.closed_deals import CLOSED_EVENT, close_deals
 from catalyst.publish.live import (
     Key,
     LiveCatalyst,
@@ -153,6 +158,7 @@ class PublishReport:
     checks_updated: int = 0
     published_by_approval: int = 0  # claims a person approved that this run wrote
     catalysts_withdrawn: int = 0  # unpublished now by the reviewed withdrawal list (ADR 0070)
+    deals_closed: int = 0  # closed now by a stored completion document (ADR 0080)
     reasons: Counter[str] = field(default_factory=Counter[str])
 
     def summary(self) -> dict[str, Any]:
@@ -486,6 +492,12 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
             run.results.setdefault(item.claim.id, []).append(result)
             _hold(run, item, WITHDRAWN_EVENT)
             continue
+        if live.was_closed(item.key, item.candidate.rank.published_at):
+            # A release from before the closing must not bring the closed deal back (ADR 0080).
+            result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, CLOSED_EVENT)
+            run.results.setdefault(item.claim.id, []).append(result)
+            _hold(run, item, CLOSED_EVENT)
+            continue
         where = place(item.key, catalysts)
         result = safe_to_write(item.candidate, where, today)
         if result.outcome is CheckOutcome.PASS and where.catalyst is None and _ended(item, today):
@@ -604,6 +616,7 @@ def publish_claims(
         run.reviews = latest_reviews(session)
         run.withdrawn = load_withdrawn(session, withdrawals)
         report.catalysts_withdrawn = unpublish(session, run.withdrawn, run.at)
+        report.deals_closed = close_deals(session, store, run.at)
         rows = _marked(session)
         report.claims_marked_publish = len(rows)
         live = load_live(session)
