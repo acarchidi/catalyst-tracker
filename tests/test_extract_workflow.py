@@ -85,6 +85,9 @@ def test_the_estimates_sample_is_a_dry_run_that_needs_a_key_first() -> None:
     assert "--dry-run" in command
     assert "--snapshot-store supabase" in command
     assert '--sample-out "$RUNNER_TEMP/estimates-sample.json"' in command
+    # A repeatable sample of 400 trials, stopped cleanly after 20 minutes, inside the step's 30.
+    assert "--sample 400 --max-minutes 20" in command
+    assert "timeout-minutes: 30" in sample
 
 
 def test_the_estimates_sample_prints_counts_and_seals_the_rows_like_the_export() -> None:
