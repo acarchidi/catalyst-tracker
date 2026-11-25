@@ -6,9 +6,8 @@ when a person must decide:
 - a new event's drug role is not clear from the quote;
 - its window does not overlap the published one's (a slip, or another event?), unless the two
   sources have the same tier and were published on different New York days: the newest wins
-  (spec: Which claim wins; ADR 0069);
-- it fits a catalyst only because one side states no indication, and it is not from a newer
-  source of the same rank (ADR 0069);
+  (spec: Which claim wins; ADR 0069). Never for an event type with several dated steps (a
+  merger's vote, waiting period, tender, and close): there a person always decides;
 - it outranks the published source and would change the date, but its window has already ended
   while the published one has not (B2), or either end would move more than 6 months, unless the
   new window lies inside the old one (spec: Change sanity);
@@ -49,7 +48,6 @@ from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.publish.gate import WRITER_CHECK
 from catalyst.publish.live import (
-    OTHER_INDICATION,
     Key,
     LiveCatalyst,
     Place,
@@ -59,7 +57,16 @@ from catalyst.publish.live import (
     load_live,
     ranks_above,
 )
-from catalyst.schemas import CheckOutcome, Claim, Drug, DrugName, DrugRole, SourceDocument, SourceTier
+from catalyst.schemas import (
+    CatalystType,
+    CheckOutcome,
+    Claim,
+    Drug,
+    DrugName,
+    DrugRole,
+    SourceDocument,
+    SourceTier,
+)
 from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import CheckResult, Match, months_after
 from catalyst.verify.run import load_matches
@@ -68,6 +75,9 @@ MOVE_MONTHS = 6  # spec, Change sanity: a date that moves more than 6 months alw
 NO_EVENT = "the claim names no single company and type"
 ROLE_UNCLEAR = "the quote does not make clear whether the drug is tested alone or in combination"
 NOT_OVERLAPPING = "the window does not overlap the published one"
+# Event types whose one entry has several dated steps a release may name alone; recency never
+# moves a window that does not overlap for these (ADR 0069, decision 1).
+SEVERAL_STEPS = frozenset({CatalystType.MERGER_ACQUISITION})
 PASSED = "the new window has already passed"
 TOO_FAR = "the date would move more than 6 months"
 TIED = "a source of the same rank gives other dates for this event"
@@ -227,8 +237,6 @@ def safe_to_write(candidate: Candidate, where: Place, today: date) -> CheckResul
     if candidate.tied:
         return _fail(TIED)
     live = where.catalyst
-    if live is not None and where.indication_unstated and not newer_same_rank(candidate.rank, live.source):
-        return _fail(OTHER_INDICATION)
     if live is None:
         drug = candidate.value.get("drug")
         stated = drug if isinstance(drug, str) else None
@@ -247,8 +255,12 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
     # Among sources of equal rank the most recently published wins (spec: Which claim wins), so a
     # same-tier source of another day settles a window that does not overlap: the newer one moves
-    # it, an older one loses and writes nothing (ADR 0069). Two of the same day still wait.
-    settled = newer_same_rank(candidate.rank, live.source) or newer_same_rank(live.source, candidate.rank)
+    # it, an older one loses and writes nothing (ADR 0069). Two of the same day still wait. Not
+    # for an event with several dated steps: a newer date there may be another step, such as a
+    # merger's stockholder vote rather than its close (Opus review of PR #164, B1).
+    steps = candidate.key is not None and candidate.key.catalyst_type in SEVERAL_STEPS
+    newest = newer_same_rank(candidate.rank, live.source) or newer_same_rank(live.source, candidate.rank)
+    settled = newest and not steps
     reasons = [] if settled or overlap(window, live.window) else [NOT_OVERLAPPING]
     outranks = ranks_above(
         (candidate.rank.tier, candidate.rank.published_at), (live.source.tier, live.source.published_at)

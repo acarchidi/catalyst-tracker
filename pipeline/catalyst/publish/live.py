@@ -152,18 +152,10 @@ class Place:
 
     catalyst: LiveCatalyst | None = None
     hold: str | None = None
-    # The catalyst fits except that one side states no indication: only a newer source of the
-    # same rank may update it; anything else waits as `OTHER_INDICATION` (ADR 0069).
-    indication_unstated: bool = False
 
 
 def place(key: Key, catalysts: Iterable[LiveCatalyst]) -> Place:
-    """Find the open catalyst a claim's event is, a new event, or why a person must decide.
-
-    When no catalyst has the claim's indication, the one catalyst where either side states none
-    is returned with `indication_unstated` set (ADR 0069); two stated indications that differ
-    still wait.
-    """
+    """Find the open catalyst a claim's event is, a new event, or why a person must decide."""
     same = [
         c
         for c in catalysts
@@ -179,12 +171,7 @@ def place(key: Key, catalysts: Iterable[LiveCatalyst]) -> Place:
     fit = [c for c in pool if c.key.indication == key.indication]
     if len(fit) > 1:
         return Place(hold=SEVERAL)
-    if fit:
-        return Place(catalyst=fit[0])
-    unstated = [c for c in pool if not c.key.indication or not key.indication]
-    if len(unstated) == 1:
-        return Place(catalyst=unstated[0], indication_unstated=True)
-    return Place(hold=OTHER_INDICATION)
+    return Place(catalyst=fit[0]) if fit else Place(hold=OTHER_INDICATION)
 
 
 @dataclass(frozen=True)

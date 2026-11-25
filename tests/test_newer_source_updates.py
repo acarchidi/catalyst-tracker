@@ -8,11 +8,12 @@ and writes nothing.
 
 Holds stay for real conflicts: two sources of the same day, a newer source of a lower tier, a
 move of more than 6 months, a forecast window that has since passed (B2, in
-`test_publish_writer.py`), and two indications that are both stated and differ.
+`test_publish_writer.py`), any difference in the indication, and, for a merger (an event with
+several dated steps), any window that does not overlap the published one.
 
 The owner's NextCure case is modelled on the real filings, in our own words: an 8-K of 25
 September 2026 said the merger would close in November 2026; a later 8-K set the stockholder vote
-for 9 December 2026.
+for 9 December 2026. The vote is another step of the deal, so it waits for a person.
 """
 
 from datetime import UTC, date, datetime, timedelta
@@ -41,6 +42,7 @@ CLOSE_IN_NOVEMBER = (
 VOTE_ON_DECEMBER_9 = (
     "The special meeting of NextCure stockholders to vote on the merger will be held on December 9, 2026."
 )
+SLIPS_TO_Q1_2027 = "The merger is now expected to close in the first quarter of 2027."
 
 
 @pytest.fixture
@@ -88,27 +90,69 @@ def _sections(world: World, issue: date) -> dict[str, list[tuple[str, str]]]:
 # --- The owner's case, and the calendar ---
 
 
-def test_nextcure_the_newer_8k_moves_the_close_past_november_and_keeps_the_old_window_in_history(
+def test_nextcure_the_newer_8k_about_the_vote_waits_and_the_close_stays_in_november(world: World) -> None:
+    """The vote is another milestone of the deal, not a later close (Opus review of PR #164, B1).
+
+    A merger has several dated steps (vote, antitrust waiting period, tender, close), each with its
+    own words, so recency never lifts "does not overlap" for `merger_acquisition`: a person decides.
+    """
+    _deal(world, "November 2026", CLOSE_IN_NOVEMBER, SEP_25)
+    _publish(world, SEP_25 + timedelta(days=1))
+    vote = _deal(world, "December 9, 2026", VOTE_ON_DECEMBER_9, NOV_10)
+    check_safe_to_write(world.factory, lambda: NOVEMBER_24)
+    assert _check(world, vote) == (
+        "fail",
+        f"{NOT_OVERLAPPING} (from 2026-11-01..2026-11-30 to 2026-12-09..2026-12-09)",
+    )
+    summary = _publish(world, NOVEMBER_24)
+    assert (summary["catalysts_updated"], summary["held_by_writer"]) == (0, 1)
+    (detail,) = _details(world)
+    assert (detail.window.start.isoformat(), detail.window.end.isoformat()) == ("2026-11-01", "2026-11-30")
+    assert [c.source.quote for c in detail.history if c.field == "window_end"] == [CLOSE_IN_NOVEMBER]
+    assert _sections(world, date(2026, 11, 23))["due"] == [("2026-11-01", "2026-11-30")]
+
+
+def test_a_newer_merger_close_date_that_does_not_overlap_also_waits(world: World) -> None:
+    """Even a plain slip of the close waits: plain code cannot tell the deal's steps apart by date."""
+    _deal(world, "November 2026", CLOSE_IN_NOVEMBER, SEP_25)
+    _publish(world, SEP_25 + timedelta(days=1))
+    slip = _deal(world, "first quarter of 2027", SLIPS_TO_Q1_2027, NOV_10)
+    summary = _publish(world, NOVEMBER_24)
+    assert (summary["catalysts_updated"], summary["held_by_writer"]) == (0, 1)
+    assert (
+        _check(world, slip)[1] == f"{NOT_OVERLAPPING} (from 2026-11-01..2026-11-30 to 2027-01-01..2027-03-31)"
+    )
+
+
+def test_a_newer_merger_close_date_that_overlaps_still_updates(world: World) -> None:
+    _deal(
+        world,
+        "fourth quarter of 2026",
+        "The merger is expected to close in the fourth quarter of 2026.",
+        SEP_25,
+    )
+    _publish(world, SEP_25 + timedelta(days=1))
+    _deal(world, "December 2026", "The merger is now expected to close in December 2026.", NOV_10)
+    assert _publish(world, NOVEMBER_24)["catalysts_updated"] == 1
+    (detail,) = _details(world)
+    assert (detail.window.start.isoformat(), detail.window.end.isoformat()) == ("2026-12-01", "2026-12-31")
+
+
+def test_a_newer_readout_window_that_does_not_overlap_moves_and_keeps_the_old_window_in_history(
     world: World,
 ) -> None:
-    old = _deal(world, "November 2026", CLOSE_IN_NOVEMBER, SEP_25)
-    _publish(world, SEP_25 + timedelta(days=1))
-    assert _sections(world, date(2026, 11, 23))["due"] == [("2026-11-01", "2026-11-30")]
-    new = _deal(world, "December 9, 2026", VOTE_ON_DECEMBER_9, NOV_10)
-    check_safe_to_write(world.factory, lambda: NOVEMBER_24)
+    old = world.claim("second half of 2027")
+    _publish(world, OCT_16)
+    new = world.claim("first half of 2028", published=OCT_16)
+    check_safe_to_write(world.factory, lambda: OCT_16 + timedelta(hours=1))
     assert _check(world, new) == ("pass", None)
-    summary = _publish(world, NOVEMBER_24)
+    summary = _publish(world, OCT_16 + timedelta(hours=1))
     assert (summary["catalysts_updated"], summary["held_by_writer"]) == (1, 0)
     (detail,) = _details(world)
-    assert (detail.window.start.isoformat(), detail.window.end.isoformat()) == ("2026-12-09", "2026-12-09")
+    assert (detail.window.start.isoformat(), detail.window.end.isoformat()) == ("2028-01-01", "2028-06-30")
     rows = sorted(world.rows(CatalystChange), key=lambda c: c.learned_at)
     ends = [(c.old_value, c.new_value, c.claim_id) for c in rows if c.field == "window_end"]
-    assert ends == [(None, "2026-11-30", old), ("2026-11-30", "2026-12-09", new)]  # both sources kept
-    history = [c for c in detail.history if c.field == "window_end"]
-    assert [c.source.quote for c in history] == [CLOSE_IN_NOVEMBER, VOTE_ON_DECEMBER_9]
-    sections = _sections(world, date(2026, 11, 30))
-    assert ("2026-11-01", "2026-11-30") not in sections["due"] + sections["open"]
-    assert sections["due"] == [("2026-12-09", "2026-12-09")]
+    assert ends == [(None, "2027-12-31", old), ("2027-12-31", "2028-06-30", new)]  # both sources kept
 
 
 def test_an_entry_whose_window_has_fully_ended_is_in_no_section(world: World) -> None:
@@ -173,18 +217,29 @@ def test_an_older_source_of_the_same_rank_loses_and_writes_nothing(world: World)
 # --- Another indication ---
 
 
-def test_a_newer_source_that_names_no_indication_updates_the_entry(world: World) -> None:
+def test_a_newer_source_that_names_no_indication_still_waits(world: World) -> None:
+    """Recency never settles the indication: the writer writes only dates (Opus review of PR #164, B2)."""
     world.claim("second half of 2027", indication="MASH")
     _publish(world, OCT_16)
-    world.claim("first half of 2028", published=OCT_16, indication=None)
-    assert _publish(world, OCT_16 + timedelta(hours=1))["catalysts_updated"] == 1
+    newer = world.claim("first half of 2028", published=OCT_16, indication=None)
+    assert _publish(world, OCT_16 + timedelta(hours=1))["held_by_writer"] == 1
+    assert _check(world, newer) == ("fail", "the indication differs from the published one")
 
 
-def test_a_newer_source_that_first_names_the_indication_updates_the_entry(world: World) -> None:
+def test_a_newer_source_that_first_names_the_indication_still_waits(world: World) -> None:
     world.claim("second half of 2027", indication=None)
     _publish(world, OCT_16)
-    world.claim("fourth quarter of 2027", published=OCT_16, indication="MASH")
-    assert _publish(world, OCT_16 + timedelta(hours=1))["catalysts_updated"] == 1
+    newer = world.claim("fourth quarter of 2027", published=OCT_16, indication="MASH")
+    assert _publish(world, OCT_16 + timedelta(hours=1))["held_by_writer"] == 1
+    assert _check(world, newer) == ("fail", "the indication differs from the published one")
+
+
+def test_a_newer_source_with_another_stated_indication_still_waits(world: World) -> None:
+    world.claim("second half of 2027", indication="MASH")
+    _publish(world, OCT_16)
+    newer = world.claim("fourth quarter of 2027", published=OCT_16, indication="severe hypertriglyceridemia")
+    assert _publish(world, OCT_16 + timedelta(hours=1))["held_by_writer"] == 1
+    assert _check(world, newer) == ("fail", "the indication differs from the published one")
 
 
 def test_an_older_source_that_names_no_indication_still_waits(world: World) -> None:
