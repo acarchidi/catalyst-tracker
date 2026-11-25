@@ -107,3 +107,27 @@ claim = "06dcbad8-1f08-45c3-ba2d-92f5c0b92de4"
 reason = "InMed's merger with Mentari Therapeutics already closed on 6 November 2026"
 evidence = "https://finviz.com/news/418608/inmed-pharmaceuticals-completes-closing-of-merger-with-mentari-therapeutics"
 added = 2026-11-25
+
+[[withdrawal]]
+claim = "e82cd120-a56a-4da9-a5bd-ea58cb778f41"
+reason = "Supernus's sNDA adds a second supplier for ONAPGO, a manufacturing supplement, so 'label expansion' overstates it"
+evidence = "own source"
+added = 2026-11-25
+
+[[withdrawal]]
+claim = "47e55a67-b917-45c6-9b4a-4db0752fe4a0"
+reason = "The second claim on the same ONAPGO entry (orphan exclusivity); withdrawn with it so the entry comes down whole"
+evidence = "own source"
+added = 2026-11-25
+
+[[withdrawal]]
+claim = "15410cfa-c5e5-49aa-af52-6823fefcf73a"
+reason = "Praxis's 2027 sNDA for relutrigine depends on first-NDA approval and a positive EMERALD result; 'expects a submission in 2027' overstates it"
+evidence = "own source"
+added = 2026-11-25
+
+[[withdrawal]]
+claim = "8aa0095b-6759-4ce8-86af-20b868fb8593"
+reason = "The same conditional relutrigine sNDA, from the 13 May 8-K; listed so an approval cannot publish it"
+evidence = "own source"
+added = 2026-11-25
