@@ -1,4 +1,4 @@
-"""Does a deal claim's quote date the closing, or another step of the deal? (ADR 0081).
+"""Does a deal claim's quote date the closing, or another step of the deal? (ADR 0083).
 
 A merger or acquisition has several dated steps before it closes: the stockholder vote at a special
 meeting, the end of the HSR waiting period, the expiry of a tender offer, the record date for the

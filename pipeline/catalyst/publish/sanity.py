@@ -12,7 +12,7 @@ when a person must decide:
   published (both wait), or the published one's source (CP4 review, O2). A tie decides nothing;
 - it outranks a published merger or acquisition and would move its close window, but its quote
   dates another step of the deal (a vote, a waiting period, a tender offer's expiry, a record date)
-  or has no closing words for the deal (ADR 0081, `catalyst.publish.deal_steps`).
+  or has no closing words for the deal (ADR 0083, `catalyst.publish.deal_steps`).
 
 Against a published catalyst, every failing reason is given, in order, joined by "; ". When one
 of them is a date move or a window that does not overlap, both windows follow ("(from
@@ -263,7 +263,7 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
         if too_far(live.window, window):
             reasons.append(TOO_FAR)
         if live.key.catalyst_type == CatalystType.MERGER_ACQUISITION.value:
-            # A vote, waiting period, tender expiry or record date never replaces the close (ADR 0081).
+            # A vote, waiting period, tender expiry or record date never replaces the close (ADR 0083).
             date_text = candidate.value.get("date_text")
             step = deal_step_hold(candidate.quote, date_text if isinstance(date_text, str) else None)
             if step is not None:

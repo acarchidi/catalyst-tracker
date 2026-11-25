@@ -1,4 +1,4 @@
-"""A deal's other dated steps never replace its closing date (ADR 0081).
+"""A deal's other dated steps never replace its closing date (ADR 0083).
 
 For a `merger_acquisition` entry, a newer claim may move the close window only when its quote says
 when the deal closes. A stockholder vote, an HSR waiting period, a tender offer's expiry or a record

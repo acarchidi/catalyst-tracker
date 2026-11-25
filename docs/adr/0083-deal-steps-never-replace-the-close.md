@@ -1,4 +1,4 @@
-# 0082 — A deal's other dated steps never replace its closing date
+# 0083 — A deal's other dated steps never replace its closing date
 
 - **Status:** accepted
 - **Date:** 2026-11-25
