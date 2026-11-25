@@ -29,6 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from catalyst.collectors.http import PoliteHttpClient
 from catalyst.collectors.sec.edgar import EdgarClient
 from catalyst.collectors.sources import ctgov
+from catalyst.tickers import main_ticker
 
 SIC_CODES = (2834, 2836, 8731)
 BROWSE_URL = "https://www.sec.gov/cgi-bin/browse-edgar"
@@ -72,6 +73,11 @@ def name_words(text: str) -> str:
     A company's normalized name appears in a text exactly when it is a run of whole words here.
     """
     return " ".join(_WORD.findall(_spelled(text)))
+
+
+def without_state_suffix(name: str) -> str:
+    r"""Return the SEC name without EDGAR's state suffix ("\DE", " /DE/", "/MD"); nothing else changes."""
+    return _STATE_SUFFIX.sub("", name).strip() or name
 
 
 def normalize_name(name: str) -> str:
@@ -118,8 +124,8 @@ class Listing:
 
     @property
     def ticker(self) -> str:
-        """The main ticker: the first without a class or rights suffix, else the first."""
-        return next((t for t in self.tickers if "-" not in t), self.tickers[0])
+        """The main ticker (`catalyst.tickers.main_ticker`): the plain shares, not a warrant or right."""
+        return main_ticker([(ticker, self.exchange) for ticker in self.tickers])
 
 
 def browse_page_ciks(xml: bytes) -> tuple[list[int], bool]:

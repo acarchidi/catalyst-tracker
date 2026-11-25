@@ -94,6 +94,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("indication_attempt", "catalyst_id", "catalyst"),
     ("indication_attempt", "claim_id", "claim"),
     ("indication_attempt", "indication_claim_id", "claim"),
+    ("company", "display_name_document_id", "source_document"),  # ADR 0068
     ("company_document", "company_id", "company"),
     ("company_document", "source_document_id", "source_document"),
     ("catalyst_drug", "catalyst_id", "catalyst"),
@@ -107,6 +108,7 @@ EXPECTED_FOREIGN_KEYS = {
     ("claim_decision", "claim_id", "claim"),
     ("review_decision", "claim_id", "claim"),
     ("document_reading", "source_document_id", "source_document"),
+    ("document_part_reading", "source_document_id", "source_document"),
 }
 
 

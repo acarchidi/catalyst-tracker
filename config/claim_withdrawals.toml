@@ -1,0 +1,109 @@
+# Claims withdrawn after a person's review (ADR 0070). Reviewed like code; data is never edited by hand.
+# The publish gate holds each listed claim, and the writer unpublishes any live catalyst it stands behind,
+# with a status change in that catalyst's history. An entry only ever withholds.
+# claim: a full claim id, or a prefix of at least 8 hex characters naming exactly one claim; a prefix that
+#   names none or several stops the gate's run, and the run's alert says so.
+# reason: plain English, shown as "withdrawn after review: <reason>".
+# evidence: a web address, or "own source" when the claim's own source document shows the error.
+
+[[withdrawal]]
+claim = "04157d4b"
+reason = "PTC's ST-920 acquisition already closed (PTC 8-K, 21 Sep 2026); 'late Q3 or early Q4 2026' is stale"
+evidence = "https://www.sec.gov/Archives/edgar/data/0001070081/000107008126000023/tmb-20260921x8k.htm"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "7d2dd75b"
+reason = "Cullinan completed the zipalertinib NDA submission on 12 Nov 2026; the 'November' date is past"
+evidence = "https://www.cancernetwork.com/view/zipalertinib-chemo-nda-submission-completed-in-frontline-egfr-exon-20-nsclc"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "6adfe759"
+reason = "Iambic's IAM-C1 poster was at the EORTC-NCI-AACR meeting, 18-20 Nov 2026; the 'November' date is past"
+evidence = "https://www.biopharmawatch.com/news/IAM/iambic-preclinical-data-cdk2-4-inhibitor-iam-c1"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "c6b6be58"
+reason = "NextCure merger close 'in November 2026' is superseded: a newer 8-K sets the stockholder vote for 9 Dec 2026"
+evidence = "https://www.sec.gov/Archives/edgar/data/0001661059/000110465926125188/nxtc-ex99d1.htm"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "dbe1d11b"
+reason = "9 Dec 2026 is NextCure's stockholder vote, not the merger's close; the event type was misread"
+evidence = "https://www.sec.gov/Archives/edgar/data/0001661059/000110465926125188/nxtc-ex99d1.htm"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "274e2311"
+reason = "Palisade's PALI-2108 presentations at ACG 2026 and UEG Week 2026 are past: both meetings were in October 2026"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "44f4eb8e"
+reason = "Palisade's quote says enrollment initiation for PALI-2108, not enrollment completion"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "b5e4fea1"
+reason = "Gossamer's quote is a financing closing condition, not a company expectation of a filing acceptance"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "0ab19edd-b118-45c3-8072-5ba268b82479"
+reason = "Viatris's acquisition of Pacira BioSciences already closed on 17 November 2026"
+evidence = "https://finviz.com/news/424033/viatris-completes-acquisition-of-pacira-biosciences"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "eb4d7ce8-57b8-4df9-87de-d10fe82c010f"
+reason = "Duplicate: Cullinan's December CLN-049 dose-escalation update is the same event as the dated 13 December 2026 presentation (claim 888bc3be)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "96f28b6e-2ea2-4afc-8958-0d2e563b59cf"
+reason = "Duplicate: Immunome's initial IM-1021 lymphoma data in 2026 is the dated 14 December 2026 presentation (claim 3b192f07)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "c3ddf620-b734-4171-afcb-f3f41fdd6b29"
+reason = "Duplicate: Disc's initial Phase 1b DISC-3405 sickle cell data is the December 2026 presentation (claim 1b3cb7af)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "cf727e73-4231-435a-990a-fef9994db3b2"
+reason = "Duplicate: Akebia's ebribafusp 2027 data is the same trial and event as the newer 'ebribafusp alfa' entry (claim 591756a4)"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "e7bd09fa-eaef-4034-9eba-2609852ff512"
+reason = "Drug match unconfirmed: the quote is about selcodebart in inflammatory bowel disease, not clearly DISC-0974"
+evidence = "own source"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "2ccc4ee2-846e-45fe-8886-2932c7becb41"
+reason = "Palisade's PALI-2108 Crohn's disease IND was already submitted: the FDA cleared it on 22 September 2026"
+evidence = "https://finviz.com/news/394263/palisade-bio-receives-fda-clearance-of-ind-for-pali-2108-in-crohns-disease-expanding-phase-2-development-across-ibd"
+added = 2026-11-24
+
+[[withdrawal]]
+claim = "9fdf4f20-b3cf-4a2f-9000-974edb5898ec"
+reason = "Harrow's acquisition of TYRVAYA already closed on 1 October 2026"
+evidence = "https://globenewswire.com/news-release/2026/10/05/3374393/0/en/harrow-closes-acquisition-of-tyrvaya.html"
+added = 2026-11-25
+
+[[withdrawal]]
+claim = "06dcbad8-1f08-45c3-ba2d-92f5c0b92de4"
+reason = "InMed's merger with Mentari Therapeutics already closed on 6 November 2026"
+evidence = "https://finviz.com/news/418608/inmed-pharmaceuticals-completes-closing-of-merger-with-mentari-therapeutics"
+added = 2026-11-25

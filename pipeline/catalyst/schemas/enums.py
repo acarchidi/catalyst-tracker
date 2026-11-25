@@ -119,6 +119,7 @@ class CatalystStatus(StrEnum):
     UPCOMING = "upcoming"
     SLIPPED = "slipped"
     RESOLVED = "resolved"
+    WITHDRAWN = "withdrawn"  # unpublished after review (ADR 0070); never shown
 
 
 class ClaimSubject(StrEnum):
