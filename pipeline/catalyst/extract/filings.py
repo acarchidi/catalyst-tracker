@@ -11,9 +11,13 @@ publish gate, as a press release's. Only the reading differs: a long filing is r
   last part's claims. A fully read document is never read again, whatever the prompt version.
 - A copy no model can read (a PDF) or with almost no words is kept as a reading with its reason,
   as for press releases (ADR 0038).
-- Spending: always within each role's usual daily cap (`daily_cap_usd`), never a raised one: the
-  raised caps are the press-release backfill's alone (owner, 2026-11-23; ADR 0065). The client's
-  own caps apply to every call as well.
+- Spending: within each role's usual daily cap (`daily_cap_usd`). Only on a raised-cap day with
+  a `filings_share` in config/models.toml, and only while the promotional credit still pays for
+  the day (`credit_holds`), the line is that share of the raised cap instead, counted on the role's
+  whole spend that day, so the press-release backfill keeps the rest (owner, in writing,
+  2026-11-25; ADR 0081). The client's own caps apply to every call as well.
+- Order: started filings first, then the newest filing date, 10-Q before 10-K before exhibits on
+  the same date (ADR 0081).
 
 Each reading is the strict visible text (`strict_text.visible_text`): its result never depends on
 a time limit, so the parts of a document come out the same on every run.
@@ -31,7 +35,7 @@ from typing import Any
 from uuid import UUID
 
 import httpx
-from sqlalchemy import and_, exists, func, or_, select, update
+from sqlalchemy import and_, case, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.sql.elements import ColumnElement
@@ -73,7 +77,10 @@ EXHIBITS = "8-K EX-99%"  # every other Exhibit 99 of an 8-K the collector keeps
 # Room for the prompt and the publication date ahead of a part, in characters (the extractor's
 # prompt is about 7,000).
 PROMPT_CHARS = 8_000
-USUAL_CAP_STOP = "the usual daily cap is reached; filings never use a raised cap (ADR 0066)"
+USUAL_CAP_STOP = "the usual daily cap is reached; filings wait for the next run (ADR 0066)"
+SHARE_STOP = "the filings' share of today's raised cap is reached; the rest is the backfill's (ADR 0081)"
+# On a raised-cap day, which kind of filing goes first among those filed on the same date.
+TYPE_ORDER = {"10-Q": 0, "10-K": 1}
 
 _log = logging.getLogger(__name__)
 
@@ -139,16 +146,36 @@ def part_call_most(config: ModelConfig, role: str) -> Decimal:
 
 @dataclass(frozen=True)
 class SpendGuard:
-    """How far filing reads may spend today: each role's usual daily cap, never a raised one."""
+    """How far filing reads may spend today (ADR 0066, ADR 0081).
+
+    The line is the role's usual daily cap, except on a day whose raised cap gives filings a share
+    and while `credit_holds` (the promotional credit still pays for the day): then it is that share
+    of the raised cap. Either way it is compared with the role's whole spend today, releases
+    included, so filings never take more than their share of the day.
+    """
 
     config: ModelConfig
     ledger: SpendLedger
     today: date
+    credit_holds: bool = False  # the backfill's credit check (`catalyst.extract.backfill.credit_holds`)
+
+    def line(self, role: str) -> Decimal:
+        """Return the most `role`'s spend today may reach with a filing part's call."""
+        settings = self.config.roles[role]
+        share = settings.filings_line(self.today) if self.credit_holds else None
+        return share if share is not None else settings.daily_cap_usd
+
+    def on_credit(self) -> bool:
+        """Say whether the extractor reads filings on its share of a raised cap today."""
+        return self.credit_holds and self.config.roles[ROLE].filings_line(self.today) is not None
 
     def allows(self, role: str) -> bool:
-        """Say whether `role` may start one more part's call today within its usual cap."""
-        cap = self.config.roles[role].daily_cap_usd
-        return self.ledger.spent(role, self.today) + part_call_most(self.config, role) <= cap
+        """Say whether `role` may start one more part's call today within its line."""
+        return self.ledger.spent(role, self.today) + part_call_most(self.config, role) <= self.line(role)
+
+    def stop_reason(self) -> str:
+        """Say why filings stopped when the guard refused a part."""
+        return SHARE_STOP if self.on_credit() else USUAL_CAP_STOP
 
 
 @dataclass
@@ -226,11 +253,17 @@ def filings_waiting(session: Session, since: date | None = None) -> int:
 
 
 def _candidates(session: Session, since: date | None, limit: int) -> list[Any]:
-    """Return the filings to work on: started ones first, then the newest; then the re-checks."""
+    """Return the filings to work on: started ones first, then the newest; then the re-checks.
+
+    Newest is by New York filing date, and on one date a 10-Q goes before a 10-K before an exhibit
+    (ADR 0081): a quarterly report says most about the next months for the least money.
+    """
     documents, parts = TABLES[SourceDocument], TABLES[DocumentPartReading]
     started = _extractor_rows(parts)
     query = select(documents).where(*_unread(since))
-    order = (started.desc(), documents.c.published_at.desc(), documents.c.id)
+    filed = func.date(func.timezone(NEW_YORK.key, documents.c.published_at))
+    kind = case(TYPE_ORDER, value=documents.c.document_type, else_=len(TYPE_ORDER))
+    order = (started.desc(), filed.desc(), kind, documents.c.published_at.desc(), documents.c.id)
     fresh = session.execute(query.where(~_recheck()).order_by(*order).limit(limit)).all()
     again = session.execute(query.where(_recheck()).order_by(*order).limit(limit)).all()
     return [*fresh, *again]
@@ -314,7 +347,7 @@ def part_reading(
 
 
 class _Stop(Exception):
-    """The run stops starting parts: a cap, the usual-cap guard, or the time limit."""
+    """The run stops starting parts: a cap, the spending guard, or the time limit."""
 
 
 @dataclass
@@ -334,7 +367,7 @@ class _Run:
             self.report.stopped_for_time = True
             raise _Stop
         if self.guard is not None and not self.guard.allows(ROLE):
-            self.report.stopped = USUAL_CAP_STOP
+            self.report.stopped = self.guard.stop_reason()
             raise _Stop
 
     def read(self, row: Any) -> None:
@@ -464,7 +497,7 @@ class SecondFilingReport:
     documents_failed: int = 0
     parts_read: int = 0
     stopped: str | None = None  # a role at its cap: as for press releases
-    paused: str | None = None  # the usual-cap guard: a normal end, the next run goes on
+    paused: str | None = None  # the spending guard: a normal end, the next run goes on
     stopped_for_time: bool = False
 
 
@@ -547,7 +580,7 @@ class SecondReader:
             self.report.stopped_for_time = True
             raise _Stop
         if self.guard is not None and not self.guard.allows(self.agent):
-            self.report.paused = USUAL_CAP_STOP
+            self.report.paused = self.guard.stop_reason()
             raise _Stop
 
     def _document(self, row: Any) -> None:

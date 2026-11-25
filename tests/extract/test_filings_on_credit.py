@@ -34,7 +34,9 @@ from extract.filing_pages import ANNUAL, QUARTERLY
 NOW = datetime(2026, 11, 26, 6, tzinfo=UTC)  # 01:00 in New York
 TODAY = date(2026, 11, 26)
 LAST_DAY = date(2026, 12, 8)
-EXHIBIT = b"<html><body><p>" + b"Acme Bio presents new data at a medical meeting. " * 20 + b"</p></body></html>"
+EXHIBIT = (
+    b"<html><body><p>" + b"Acme Bio presents new data at a medical meeting. " * 20 + b"</p></body></html>"
+)
 
 
 @dataclass
@@ -66,7 +68,11 @@ def _config(share: str | None = "0.5", cap: str = "2", raised: str = "8") -> Mod
         ),
     )
     role = RoleConfig(
-        provider="fake", model="claude-sonnet-5-5", max_tokens=1000, daily_cap_usd=Decimal(cap), raised_caps=raises
+        provider="fake",
+        model="claude-sonnet-5-5",
+        max_tokens=1000,
+        daily_cap_usd=Decimal(cap),
+        raised_caps=raises,
     )
     return ModelConfig(
         version="test", pricing={"claude-sonnet-5-5": price}, roles={"extractor": role, "verifier": role}
@@ -137,10 +143,14 @@ def test_a_started_filing_still_comes_first_and_goes_on_with_its_next_part(
     ledger._extra[("extractor", TODAY)] = Decimal(2) - part_call_most(config, "extractor") - Decimal("0.001")  # pyright: ignore[reportPrivateUsage]
     client = ModelClient(config, {"fake": _Fake()}, ledger, now=lambda: NOW)
     guard = SpendGuard(config, ledger, TODAY)
-    first = read_filings(session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600)
+    first = read_filings(
+        session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600
+    )
     assert first.summary()["filing_parts_read"] == 1
     assert first.summary()["stopped_early"] == USUAL_CAP_STOP
-    newer = _store(session_factory, store, "n", "10-Q", datetime(2026, 11, 20, 21, tzinfo=UTC), QUARTERLY + b" ")
+    newer = _store(
+        session_factory, store, "n", "10-Q", datetime(2026, 11, 20, 21, tzinfo=UTC), QUARTERLY + b" "
+    )
     assert _order(session_factory, store, part_chars=600) == [older, newer]  # the started one first
 
 
@@ -163,7 +173,9 @@ def test_while_the_credit_holds_filings_spend_up_to_half_the_raised_cap_and_no_m
     assert guard.line("extractor") == Decimal(4)  # half of $8
     assert guard.line("verifier") == Decimal(4)  # the test gives both roles the same $8
     assert guard.on_credit()
-    report = read_filings(session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600)
+    report = read_filings(
+        session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600
+    )
     assert len(fake.shown) == 1  # one part fits under $4; the next would not
     assert report.summary()["stopped_early"] == SHARE_STOP
     assert ledger.spent("extractor", TODAY) + worst > Decimal(4)
@@ -287,7 +299,9 @@ def test_every_filing_call_counts_toward_the_credit_and_a_spent_credit_ends_the_
         assert credit_holds(session, TODAY)
         guard = SpendGuard(config, ledger, TODAY, credit_holds=credit_holds(session, TODAY))
     client = ModelClient(config, {"fake": _Fake()}, ledger, now=lambda: NOW)
-    report = read_filings(session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600)
+    report = read_filings(
+        session_factory, store, client, limit=10, now=lambda: NOW, guard=guard, part_chars=600
+    )
     parts = report.summary()["filing_parts_read"]
     assert parts == 4
     with session_factory() as session:

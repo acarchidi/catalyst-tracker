@@ -143,7 +143,10 @@ def _record_the_reading_order(monkeypatch: pytest.MonkeyPatch, credit: bool) -> 
 
 def test_on_the_credit_filings_go_first_with_half_the_reading_time(monkeypatch: pytest.MonkeyPatch) -> None:
     order = _record_the_reading_order(monkeypatch, credit=True)
-    assert main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"]) == 0
+    assert (
+        main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"])
+        == 0
+    )
     assert [name for name, _ in order] == ["filings", "guard", "releases"]
     assert order[0][1] == NOW + timedelta(minutes=60)  # half the reading time; the releases keep the rest
     assert order[2][1] == NOW + timedelta(minutes=120)
@@ -152,7 +155,10 @@ def test_on_the_credit_filings_go_first_with_half_the_reading_time(monkeypatch: 
 
 def test_off_the_credit_filings_follow_the_releases_as_before(monkeypatch: pytest.MonkeyPatch) -> None:
     order = _record_the_reading_order(monkeypatch, credit=False)
-    assert main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"]) == 0
+    assert (
+        main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"])
+        == 0
+    )
     assert [name for name, _ in order] == ["releases", "filings", "guard"]
     assert order[0][1] == order[1][1] == NOW + timedelta(minutes=120)
     assert not order[2][1].on_credit()

@@ -1,6 +1,7 @@
 # 0065 — Backfill of 2025 and 2026 press releases, paid by the promotional credit until 2026-12-08
 
 - **Status:** accepted
+- **Amended by:** ADR 0081 (2026-11-25), decision 7: filings may use at most half of each raised cap while the credit holds; the backfill keeps the rest.
 - **Date:** 2026-11-23
 - **Roadmap item:** none; a one-off catch-up of Phase 1 "Collectors" and "Catalyst extractor" (owner request 2026-11-23)
 - **Amends:** ADR 0051, decision 1 (one more scheduled job, until 2026-12-08) and ADR 0022 (two caps raised for a dated period)

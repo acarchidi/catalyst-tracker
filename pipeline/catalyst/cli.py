@@ -42,7 +42,7 @@ from catalyst.drug_list_store import SOURCES as DRUG_SOURCES
 from catalyst.drug_list_store import load_drugs
 from catalyst.export import build_export, write_export
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
-from catalyst.extract.backfill import backfill_status
+from catalyst.extract.backfill import backfill_status, credit_holds
 from catalyst.extract.disease import (
     CHECKER_PROMPT,
     READER_PROMPT,
@@ -60,7 +60,7 @@ from catalyst.issues import API, plan_markdown, post
 from catalyst.links import DEAD, check_links, link_client, link_summary, links_markdown, published_urls
 from catalyst.llm import anthropic_adapter
 from catalyst.llm.client import ModelClient
-from catalyst.llm.config import load_config
+from catalyst.llm.config import ModelConfig, load_config
 from catalyst.llm.ledger import DatabaseLedger
 from catalyst.llm.prompts import load_prompt
 from catalyst.logs import configure_logging
@@ -658,6 +658,8 @@ EXTRACT_SHARE = 0.45
 SECOND_SHARE = 0.7
 CHECKS_SHARE = 0.9
 INDICATION_SHARE = 0.85
+# On the credit, filings read first and stop at this share of the reading time (ADR 0081).
+FILINGS_FIRST_SHARE = 0.5
 OUT_OF_TIME = "the run's time ran out first; the next run goes on"
 STOPPED_FOR_TIME = "a check ran out of time, so nothing was decided; the next run goes on"
 
@@ -703,13 +705,22 @@ def _extract(args: argparse.Namespace) -> int:
     try:
         config = load_config()
         client = ModelClient(config, {adapter.name: adapter}, DatabaseLedger(engine))
-        reading_ends = _utc_now() + timedelta(minutes=plan.reading)
+        started = _utc_now()
+        reading_ends = started + timedelta(minutes=plan.reading)
+        guard = _filing_guard(sessionmaker(engine), config, DatabaseLedger(engine), started)
+        filings: dict[str, Any] = {}
+        if guard.on_credit():
+            # On the credit, filings go first, within their share of the raised caps and half the
+            # reading time; the releases keep the rest of both (owner, 2026-11-25; ADR 0081).
+            filings_end = started + timedelta(minutes=plan.reading * FILINGS_FIRST_SHARE)
+            filings = _filings_after(sessionmaker(engine), store, client, args, filings_end, guard)
         report = extract_documents(
             sessionmaker(engine), store, client, limit=args.limit, since=args.since, deadline=reading_ends
         )
-        # Filings after the releases, inside the same reading time and the usual caps (ADR 0066).
-        guard = SpendGuard(config, DatabaseLedger(engine), _utc_now().astimezone(NEW_YORK).date())
-        filings = _filings_after(sessionmaker(engine), store, client, args, reading_ends, guard)
+        if not guard.on_credit():
+            # Otherwise filings after the releases, inside the same reading time and the usual caps
+            # (ADR 0066).
+            filings = _filings_after(sessionmaker(engine), store, client, args, reading_ends, guard)
         # The extraction stands if a later step fails; each re-runs next time.
         _prefetch(sessionmaker(engine), store)
         matches, checks = _match_and_check(sessionmaker(engine), store, plan.by(CHECKS_SHARE))
@@ -773,6 +784,23 @@ def _extract(args: argparse.Namespace) -> int:
     upkeep_failed = "error" in filings or filings.get("filings_failed") or _cleanup_failed(cleanup)
     failed = summary["documents_failed"] or stopped or second_failed or gate_failed or upkeep_failed
     return 1 if failed else 0
+
+
+def _filing_guard(
+    session_factory: sessionmaker[Session], config: ModelConfig, ledger: DatabaseLedger, at: datetime
+) -> SpendGuard:
+    """Build the filings' spending guard for the New York day of `at` (ADR 0066, ADR 0081).
+
+    Filings use their share of a raised cap only while the promotional credit still pays for the
+    day. A credit check that cannot be made keeps them at the usual caps.
+    """
+    today = at.astimezone(NEW_YORK).date()
+    try:
+        with session_factory() as session:
+            on_credit = credit_holds(session, today)
+    except SQLAlchemyError:
+        on_credit = False
+    return SpendGuard(config, ledger, today, credit_holds=on_credit)
 
 
 def _filings_after(
