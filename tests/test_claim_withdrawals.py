@@ -75,6 +75,8 @@ def test_the_shipped_list_reads_and_names_each_reviewed_claim() -> None:
         "cf727e73-4231-435a-990a-fef9994db3b2", "e7bd09fa-eaef-4034-9eba-2609852ff512",
         "2ccc4ee2-846e-45fe-8886-2932c7becb41",
         "9fdf4f20-b3cf-4a2f-9000-974edb5898ec", "06dcbad8-1f08-45c3-ba2d-92f5c0b92de4",
+        "e82cd120-a56a-4da9-a5bd-ea58cb778f41", "47e55a67-b917-45c6-9b4a-4db0752fe4a0",
+        "15410cfa-c5e5-49aa-af52-6823fefcf73a", "8aa0095b-6759-4ce8-86af-20b868fb8593",
     ]  # fmt: skip
     assert all(e.reason and e.added in (date(2026, 11, 24), date(2026, 11, 25)) for e in entries)
 
