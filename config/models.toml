@@ -5,7 +5,7 @@
 # Prices: US dollars per million tokens, from https://platform.claude.com/docs/en/about-claude/pricing
 # (read 2026-10-16). cache_write is the 5-minute cache write price.
 
-version = "2026-11-23.1"
+version = "2026-11-25.1"
 
 [pricing.claude-haiku-5-5]
 input = "0.10"
@@ -45,6 +45,12 @@ output = "20"
 # with the promotional API credit (about $96, expiring 2026-12-08): the extractor at $8.00 and the
 # verifier at $4.00, the verifier being about half the extractor's work (ADR 0065). Back to $2.00
 # each from 2026-12-09.
+# A `filings_share` lets the reads of 10-Qs, 10-Ks and other 8-K exhibits use at most that part of
+# a raised cap, counted on the role's whole spend that day, and only while the promotional credit
+# still pays for the day; 0.5 is the most the code accepts. The owner's written OK (2026-11-25)
+# to read the newest filings on the same credit: half of the $8.00 and of the $4.00, so the
+# press-release backfill keeps the rest; the caps themselves do not change (ADR 0081). From
+# 2026-12-09 filings are back at the usual $2.00 with the caps.
 
 [roles.triage]
 provider = "anthropic"
@@ -65,6 +71,8 @@ cap_usd = "8.00"
 first_day = 2026-11-24
 last_day = 2026-12-08
 approved = "owner, in writing, 2026-11-23: press-release backfill on the promotional credit (ADR 0065)"
+filings_share = "0.50"
+filings_approved = "owner, in writing, 2026-11-25: newest 10-Qs, 10-Ks and other 8-K exhibits on the promotional credit, at most half of this cap (ADR 0081)"
 
 [roles.verifier]
 provider = "anthropic"
@@ -78,6 +86,8 @@ cap_usd = "4.00"
 first_day = 2026-11-24
 last_day = 2026-12-08
 approved = "owner, in writing, 2026-11-23: press-release backfill on the promotional credit (ADR 0065)"
+filings_share = "0.50"
+filings_approved = "owner, in writing, 2026-11-25: newest 10-Qs, 10-Ks and other 8-K exhibits on the promotional credit, at most half of this cap (ADR 0081)"
 
 [roles.entity_resolver]
 provider = "anthropic"

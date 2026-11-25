@@ -29,6 +29,7 @@ CREDIT_FIRST_DAY = date(2026, 11, 24)  # the backfill's first day; spend from th
 # The most one New York day can add: the extractor's and verifier's raised daily caps ($8 and $4)
 # plus every other role's cap ($2.00), config/models.toml, ADR 0065. The backfill runs only if a
 # whole such day still fits the credit, and its run starts and ends inside one New York day.
+# Filing reads spend inside those same two raised caps (ADR 0081), so the most is unchanged.
 DAY_MOST_USD = Decimal("14.00")
 
 
@@ -61,6 +62,21 @@ def spent_since(session: Session, day: date) -> Decimal:
     return Decimal(session.execute(query).scalar_one())
 
 
+def credit_fits_a_day(spent: Decimal) -> bool:
+    """Say whether one more whole day of spending still fits the credit after `spent`."""
+    return spent + DAY_MOST_USD <= CREDIT_USD
+
+
+def credit_holds(session: Session, today: date) -> bool:
+    """Say whether the credit still pays for `today` (a New York date): the backfill's own check.
+
+    True only up to `BACKFILL_LAST_DAY` and while every model call since `CREDIT_FIRST_DAY`, of
+    any role and any job (filing reads included), plus one more whole day, fits the credit.
+    Filings use their share of a raised cap only while this holds (ADR 0081).
+    """
+    return today <= BACKFILL_LAST_DAY and credit_fits_a_day(spent_since(session, CREDIT_FIRST_DAY))
+
+
 def backfill_status(session: Session, today: date) -> BackfillStatus:
     """Decide whether the backfill's model reads may run on `today` (a New York date)."""
     waiting = waiting_documents(session, since=BACKFILL_SINCE)
@@ -68,7 +84,7 @@ def backfill_status(session: Session, today: date) -> BackfillStatus:
     reason: str | None = None
     if today > BACKFILL_LAST_DAY:
         reason = f"the backfill ended on {BACKFILL_LAST_DAY.isoformat()}, when the credit expired"
-    elif spent + DAY_MOST_USD > CREDIT_USD:
+    elif not credit_fits_a_day(spent):
         reason = (
             f"${spent:.2f} of the ${CREDIT_USD} credit is spent; another day could pass it, so the backfill "
             "stops here"

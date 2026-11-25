@@ -1,6 +1,7 @@
 # 0066 — Every stored 10-Q, 10-K and 8-K exhibit is read, part by part; a read copy that backs no claim is deleted
 
 - **Status:** accepted
+- **Amended by:** ADR 0081 (2026-11-25), decisions 8 and 9: until 2026-12-08, while the promotional credit holds, filings are read first, newest date first (10-Q, then 10-K, then exhibits), on at most half of the raised caps.
 - **Date:** 2026-11-24
 - **Roadmap item:** none; a catch-up of Phase 1 "Extractor agents" and an upkeep change to the snapshot store, at the owner's request
 - **Amends:** ADR 0008 (consequence "Copies are never deleted by this code"), ADR 0038 (which documents a run reads), ADR 0041 decision 9 (what the sample checker reads), ADR 0046 decision 8 (copies nothing reads are kept)
