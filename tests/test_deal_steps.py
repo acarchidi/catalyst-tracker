@@ -2,9 +2,10 @@
 
 For a `merger_acquisition` entry, a newer claim may move the close window only when its quote says
 when the deal closes. A stockholder vote, an HSR waiting period, a tender offer's expiry or a record
-date is another step of the deal: such a claim is held with the reason, and the close stays. The
-NextCure case is the one the Opus review of PR #164 found: a 9 December vote inside a fourth-quarter
-close moved the close to 9 December. The sentences are shaped like the real ones, not copies.
+date is another step of the deal: such a claim is held with the reason, and the close stays until a
+person approves the move (the review the spec asks for). The NextCure case is the one the Opus review
+of PR #164 found: a 9 December vote inside a fourth-quarter close moved the close to 9 December. The
+sentences are shaped like the real ones, not copies.
 """
 
 from datetime import date, datetime, timedelta
@@ -17,15 +18,26 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.publish.deal_steps import NO_CLOSING_WORDS, deal_step_hold
 from catalyst.publish.live import Key, LiveCatalyst, Place, Rank
-from catalyst.publish.sanity import Candidate, person_may_approve, safe_to_write
+from catalyst.publish.run import decide_claims
+from catalyst.publish.sanity import (
+    NOT_OVERLAPPING,
+    PASSED,
+    TOO_FAR,
+    Candidate,
+    person_may_approve,
+    safe_to_write,
+)
 from catalyst.publish.write import publish_claims
+from catalyst.review import record_decision
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
     CheckOutcome,
     ClaimCheck,
+    ClaimDecision,
     Company,
     CompanyTicker,
+    ReviewAction,
     SourceTier,
 )
 from catalyst.snapshots import LocalSnapshotStore
@@ -80,13 +92,54 @@ def test_closing_words_for_the_deal_may_move_its_window(quote: str, date_text: s
         ("The HSR waiting period expired on November 3, 2026.", "November 3, 2026", "a waiting period"),
         (TENDER, "December 9, 2026", "a tender offer's expiry"),
         (RECORD, "November 2, 2026", "a record date"),
+        # Opus review of PR #173 at b07ab37, B1: a step named without "vote" or "HSR".
+        (
+            "The merger is expected to close on the second business day after stockholders approve it on "
+            "December 9, 2026.",
+            "December 9, 2026",
+            "a stockholder vote",
+        ),
+        (
+            "Stockholders will be asked to approve the merger on December 9, 2026, with closing of the "
+            "merger expected shortly thereafter.",
+            "December 9, 2026",
+            "a stockholder vote",
+        ),
+        (
+            "Completion of the acquisition is expected promptly after the FTC clears the deal, expected on "
+            "December 9, 2026.",
+            "December 9, 2026",
+            "a waiting period or regulatory clearance",
+        ),
+        (
+            "The merger is expected to close once stockholder approval is obtained on December 9, 2026.",
+            "December 9, 2026",
+            "a stockholder vote",
+        ),
+        (
+            "The merger will close after approval by the stockholders of NextCure on December 9, 2026.",
+            "December 9, 2026",
+            "a stockholder vote",
+        ),
+        (
+            "The acquisition is expected to close after the Department of Justice review ends on "
+            "December 9, 2026.",
+            "December 9, 2026",
+            "a waiting period or regulatory clearance",
+        ),
+        (
+            "Closing of the merger will follow receipt of regulatory approvals, expected on "
+            "December 9, 2026.",
+            "December 9, 2026",
+            "a waiting period or regulatory clearance",
+        ),
     ],
 )
 def test_another_step_of_the_deal_is_held_with_its_name(quote: str, date_text: str, step: str) -> None:
     reason = deal_step_hold(quote, date_text)
     assert reason is not None
     assert step in reason
-    assert "not its closing" in reason
+    assert "its closing" in reason
 
 
 def test_a_step_and_the_closing_in_one_quote_is_held() -> None:
@@ -96,6 +149,18 @@ def test_a_step_and_the_closing_in_one_quote_is_held() -> None:
     assert reason is not None
     assert "a stockholder vote" in reason
     assert "beside its closing" in reason
+
+
+@pytest.mark.parametrize(
+    "quote",
+    [
+        "Certain stockholders signed voting agreements, and the merger is expected to close in "
+        "December 2026.",
+        "The merger is expected to close by the close of business on December 15, 2026.",
+    ],
+)
+def test_voting_agreements_or_close_of_business_do_not_hold_a_plain_close(quote: str) -> None:
+    assert deal_step_hold(quote, "December 2026") is None
 
 
 def test_a_condition_that_holds_the_date_words_is_not_skipped() -> None:
@@ -162,14 +227,60 @@ def test_non_merger_types_are_unchanged_in_the_check() -> None:
         assert result.outcome is CheckOutcome.PASS
 
 
-def test_a_held_step_is_not_one_a_person_may_lift() -> None:
-    """Approving would put the vote date in place of the close, the error this fixes."""
-    dec_9 = (date(2026, 12, 9), date(2026, 12, 9))
-    candidate = _candidate(NEXTCURE_VOTE, "December 9, 2026", dec_9, "merger_acquisition")
+def _merger_result(quote: str, date_text: str, window: tuple[date, date]) -> str:
+    candidate = _candidate(quote, date_text, window, "merger_acquisition")
     result = safe_to_write(candidate, Place(catalyst=_live("merger_acquisition")), NOW.date())
     assert result.outcome is CheckOutcome.FAIL
     assert result.reason is not None
-    assert not person_may_approve(result.reason)
+    return result.reason
+
+
+def test_a_held_step_is_one_a_person_may_lift() -> None:
+    """A person's approval is the review the spec asks for; only the automatic move is blocked."""
+    dec_9 = (date(2026, 12, 9), date(2026, 12, 9))
+    reason = _merger_result(NEXTCURE_VOTE, "December 9, 2026", dec_9)
+    assert reason.endswith("not its closing (from 2026-10-01..2026-12-31 to 2026-12-09..2026-12-09)")
+    assert person_may_approve(reason)
+
+
+def test_no_closing_words_is_one_a_person_may_lift() -> None:
+    december = (date(2026, 12, 1), date(2026, 12, 31))
+    reason = _merger_result("We now expect to close in December 2026.", "December 2026", december)
+    assert reason == f"{NO_CLOSING_WORDS} (from 2026-10-01..2026-12-31 to 2026-12-01..2026-12-31)"
+    assert person_may_approve(reason)
+
+
+def test_a_step_reason_beside_one_no_person_may_lift_still_holds() -> None:
+    assert not person_may_approve(f"{NO_CLOSING_WORDS}; {PASSED} (from a to b)")
+    assert not person_may_approve(
+        "the quote dates another step of the deal (an invented step), not its closing"
+    )
+
+
+@pytest.mark.parametrize(
+    ("quote", "date_text", "window", "reason"),
+    [
+        (
+            "Closing is now expected in the first quarter of 2027.",
+            "first quarter of 2027",
+            (date(2027, 1, 1), date(2027, 3, 31)),
+            f"{NOT_OVERLAPPING} (from 2026-10-01..2026-12-31 to 2027-01-01..2027-03-31)",
+        ),
+        (
+            "The merger is now expected by the third quarter of 2027.",
+            "by the third quarter of 2027",
+            (date(2026, 12, 1), date(2027, 9, 30)),
+            f"{TOO_FAR} (from 2026-10-01..2026-12-31 to 2026-12-01..2027-09-30)",
+        ),
+    ],
+)
+def test_a_hold_a_person_could_approve_before_keeps_its_text(
+    quote: str, date_text: str, window: tuple[date, date], reason: str
+) -> None:
+    """Approvals already given name the old text word for word, so it must not change."""
+    found = _merger_result(quote, date_text, window)
+    assert found == reason
+    assert person_may_approve(found)
 
 
 def test_a_claim_that_loses_to_the_source_still_passes() -> None:
@@ -269,3 +380,35 @@ def test_a_non_merger_narrowing_still_moves_the_date(world: World) -> None:
     world.claim("December 2026", published=OCT_16)
     assert _publish(world)["catalysts_updated"] == 1
     assert _window(world)[:2] == ("2026-12-01", "2026-12-31")
+
+
+def _decide(world: World) -> dict[UUID, tuple[str, list[str]]]:
+    decide_claims(world.factory, world.store, lambda: NOW)
+    return {row.claim_id: (row.decision, list(row.reasons)) for row in world.rows(ClaimDecision)}
+
+
+@pytest.mark.parametrize(
+    ("sentence", "date_text", "window"),
+    [
+        # The writer's type check also needs a deal word in the quote.
+        (
+            "We now expect to close in December 2026, as the merger agreement provides.",
+            "December 2026",
+            ("2026-12-01", "2026-12-31"),
+        ),
+        (NEXTCURE_VOTE, "December 9, 2026", ("2026-12-09", "2026-12-09")),
+    ],
+)
+def test_a_person_may_approve_a_held_deal_date_and_it_moves(
+    world: World, sentence: str, date_text: str, window: tuple[str, str]
+) -> None:
+    _nextcure(world)
+    claim = _deal(world, sentence, date_text, OCT_16)
+    assert _publish(world)["held_by_writer"] == 1
+    decision, reasons = _decide(world)[claim]
+    assert decision == "review"
+    record_decision(world.factory, claim, ReviewAction.APPROVE, "acarchidi", reasons, lambda: NOW)
+    _decide(world)
+    summary = _publish(world)
+    assert (summary["catalysts_updated"], summary["published_by_approval"]) == (1, 1)
+    assert _window(world)[:2] == window

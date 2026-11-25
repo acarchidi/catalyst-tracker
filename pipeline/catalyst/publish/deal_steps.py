@@ -1,20 +1,23 @@
 """Does a deal claim's quote date the closing, or another step of the deal? (ADR 0083).
 
 A merger or acquisition has several dated steps before it closes: the stockholder vote at a special
-meeting, the end of the HSR waiting period, the expiry of a tender offer, the record date for the
-vote. An extractor claim of type `merger_acquisition` can carry any of these dates, and the writer
-would move an open entry's close window to it (NextCure: a 9 December vote inside a fourth-quarter
+meeting (or the stockholders' approval), the end of the HSR waiting period or another regulator's
+clearance, the expiry of a tender offer, the record date for the vote. An extractor claim of type
+`merger_acquisition` can carry any of these dates, and the writer would move an open entry's close
+window to it (NextCure: a 9 December vote inside a fourth-quarter
 close; Opus review of PR #164).
 
 Plain code reads the quote. A claim may move an open deal entry's window only when its quote ties
 closing words to the deal, as ADR 0080 ties completion words to it: a deal word and then the
 closing verb ("the merger is expected to close", "the transaction ... to be consummated"), or the
 closing words and then the deal word ("close the acquisition", "closing of the merger", "completion
-of the acquisition"). "Close of business" and "closing conditions" are not closing words. A quote
+of the acquisition"). "Close of business" and "closing conditions" are not closing words, and
+"voting agreements" and "close of business" name no step. A quote
 that names another step is held with that step's name, even beside closing words, since plain code
 cannot tell which of the two its date is for. A step named only in a condition after the date words
 ("..., subject to approval at a special meeting and the expiration of the HSR waiting period")
-dates nothing and is not read. When unsure, the window stays.
+dates nothing and is not read. When unsure, the window stays until a person approves the move:
+every reason here is a yes-or-no question about the claim's own date (Opus review of PR #173, B2).
 """
 
 from __future__ import annotations
@@ -50,15 +53,24 @@ _STEPS: tuple[tuple[str, re.Pattern[str]], ...] = (
     (
         "a stockholder vote",
         re.compile(
-            r"\bvot(?:e|es|ed|ing)\b|\b(?:special|annual)\s+meeting\b|"
-            r"\b(?:stockholders?|shareholders?)['\u2019]?\s+meeting\b",
+            # "voting agreements" are signed support, not the vote (Opus review of PR #173, nit).
+            r"\bvot(?:e|es|ed|ing)\b(?!\s+(?:and\s+support\s+)?agreements?\b)|"
+            r"\b(?:special|annual)\s+meeting\b|\b(?:stockholders?|shareholders?)['\u2019]?\s+meeting\b|"
+            # Their approval is the vote, even without the word (Opus review of PR #173, B1).
+            r"\b(?:stockholders?|shareholders?)\b[^.;]{0,40}?\bapprov(?:e|es|ed|ing|al)\b|"
+            r"\bapprov(?:e|es|ed|al)\b[^.;]{0,30}?\b(?:by|of)\s+(?:(?:the|its|our)\s+)?"
+            r"(?:[\w\-\u2019']+\s+){0,2}?(?:stockholders?|shareholders?)\b|"
+            r"\b(?:stockholder|shareholder)s?['\u2019]?\s+approvals?\b",
             re.IGNORECASE,
         ),
     ),
     (
-        "a waiting period",
+        "a waiting period or regulatory clearance",
         re.compile(
-            rf"(?-i:\bHSR\b)|\bHart{_DASH}Scott{_DASH}Rodino\b|\bwaiting\s+period\b|\bantitrust\s+clearance\b",
+            rf"(?-i:\bHSR\b)|\bHart{_DASH}Scott{_DASH}Rodino\b|\bwaiting\s+period\b|"
+            # A regulator's clearance or approval (Opus review of PR #173, B1).
+            r"(?-i:\bFTC\b|\bDOJ\b)|\bFederal\s+Trade\s+Commission\b|\bDepartment\s+of\s+Justice\b|"
+            r"\b(?:regulatory|antitrust|competition)\s+(?:clearances?|approvals?)\b",
             re.IGNORECASE,
         ),
     ),
@@ -72,7 +84,8 @@ _STEPS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ),
     (
         "a record date",
-        re.compile(r"\brecord\s+date\b|\bof\s+record\b|\bclose\s+of\s+business\b", re.IGNORECASE),
+        # "Close of business" alone is a time of day, not the record date (Opus review of PR #173, nit).
+        re.compile(r"\brecord\s+date\b|\bof\s+record\b", re.IGNORECASE),
     ),
 )
 # A condition that follows the date words: what it names is not what the date is for.
@@ -101,6 +114,20 @@ def has_closing_words(text: str) -> bool:
 def steps_named(text: str) -> list[str]:
     """Return the deal steps other than the closing that the text names, in a fixed order."""
     return [name for name, pattern in _STEPS if pattern.search(text)]
+
+
+def _template(text: str) -> str:
+    names = "|".join(re.escape(name) for name, _ in _STEPS)
+    before, after = text.split("{steps}")
+    return rf"{re.escape(before)}(?:{names})(?:, (?:{names}))*{re.escape(after)}"
+
+
+_HOLD = re.compile(rf"{re.escape(NO_CLOSING_WORDS)}|{_template(_OTHER_STEP)}|{_template(_BESIDE)}")
+
+
+def is_deal_step_hold(reason: str) -> bool:
+    """Say whether a reason is one `deal_step_hold` gives, word for word."""
+    return _HOLD.fullmatch(reason) is not None
 
 
 def deal_step_hold(quote: str, date_text: str | None) -> str | None:
