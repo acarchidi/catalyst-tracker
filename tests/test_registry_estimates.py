@@ -21,9 +21,10 @@ from uuid import UUID, uuid4
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from sqlalchemy import insert, select
+from sqlalchemy import event, insert, select, text, update
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst import cli
 from catalyst.api.access import Access
 from catalyst.api.read import Query, catalyst, read_session, upcoming
 from catalyst.collectors.documents import FetchedDocument, store_fetched
@@ -41,6 +42,7 @@ from catalyst.publish.estimates import (
     field_check,
     field_quote,
     next_step,
+    preview_estimates,
     publish_estimates,
 )
 from catalyst.references import record_trial, trial_from_study
@@ -54,6 +56,8 @@ from catalyst.schemas import (
     CheckOutcome,
     Claim,
     ClaimSubject,
+    Company,
+    CompanyTicker,
     DateConfidence,
     DatePrecision,
     DocumentMatch,
@@ -437,18 +441,20 @@ def test_a_completed_trial_resolves_its_estimate(
     assert quotes == {'"primaryCompletionDateStruct":{"date":"2026-11-02","type":"ACTUAL"}'}
 
 
-def _company_catalyst(session: Session, company: UUID, trial: UUID, learned: datetime) -> UUID:
+def _company_catalyst(
+    session: Session, company: UUID, trial: UUID, learned: datetime, filing: int = 99
+) -> UUID:
     """Publish a company-stated readout for the trial, written as the catalyst writer writes one."""
     doc = SourceDocument(
-        source_key="sec:0001104506-26-000099:ex99-1.htm",
-        url="https://www.sec.gov/Archives/edgar/data/1104506/000110450626000099/ex99-1.htm",
+        source_key=f"sec:0001104506-26-{filing:06d}:ex99-1.htm",
+        url=f"https://www.sec.gov/Archives/edgar/data/1104506/0001104506260{filing:05d}/ex99-1.htm",
         publisher="SEC EDGAR",
         source_tier=SourceTier.REGULATOR_OR_SEC,
         document_type="8-K EX-99.1",
         published_at=learned,
         retrieved_at=learned,
-        sha256="0" * 64,
-        snapshot_key="sha256/00/" + "0" * 64,
+        sha256=f"{filing:064d}",
+        snapshot_key=f"sha256/00/{filing:064d}",
         content_type="text/html",
     )
     session.execute(insert(TABLES[SourceDocument]).values(**doc.model_dump()))
@@ -577,3 +583,234 @@ def test_a_copy_that_does_not_match_its_hash_writes_nothing(
     assert report.created == 0
     assert report.copies_unreadable == 1
     assert _rows(session_factory, Catalyst) == []
+
+
+# --- The dry run: what would publish, with nothing written (ADR 0067, consequences) ---------------
+
+
+def _trial(nct_id: str, name: str, **changes: Any) -> dict[str, Any]:
+    """ARISE's record, renumbered and renamed as another trial of the same sponsor."""
+    study = _record(**changes)
+    identification = study["protocolSection"]["identificationModule"]
+    identification["nctId"] = nct_id
+    identification["acronym"] = name
+    identification["briefTitle"] = f"A study named {name}"
+    return study
+
+
+_ALL_ROWS = "md5(coalesce(string_agg(r::text, chr(10) ORDER BY r::text), ''))"
+
+
+def _fingerprint(session_factory: sessionmaker[Session]) -> dict[str, Any]:
+    """Every row of every table, and every sequence, as Postgres writes them out as text."""
+    with session_factory() as session:
+        tables = session.execute(
+            text("SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename")
+        ).scalars()
+        found: dict[str, Any] = {
+            name: session.execute(
+                text(f'SELECT count(*), {_ALL_ROWS} FROM "{name}" r')  # noqa: S608 - names from pg_tables
+            ).one()
+            for name in list(tables)
+        }
+        found["sequences"] = session.execute(
+            text("SELECT sequencename, last_value FROM pg_sequences WHERE schemaname = 'public' ORDER BY 1")
+        ).all()
+    return found
+
+
+LATER = NOW + timedelta(hours=1)
+
+
+def _every_step(session_factory: sessionmaker[Session], store: SnapshotStore) -> UUID:
+    """Publish four estimates, then store what calls for each step and for each reason to skip."""
+    insmed = _insmed(session_factory)
+    with session_factory.begin() as session:
+        session.execute(
+            update(TABLES[Company]).where(TABLES[Company].c.id == insmed).values(display_name="Insmed")
+        )
+        ticker = CompanyTicker(
+            company_id=insmed, ticker="INSM", exchange="Nasdaq", valid_from=date(2000, 6, 1)
+        )
+        session.execute(insert(TABLES[CompanyTicker]).values(**ticker.model_dump()))
+    for nct_id, name in (
+        ("NCT09000001", "MOVE"),
+        ("NCT09000002", "HOLD"),
+        ("NCT09000003", "CLOSE"),
+        ("NCT09000004", "REPLACE"),
+    ):
+        _store_record(session_factory, store, _trial(nct_id, name), insmed)
+    assert _run(session_factory, store).created == 4
+    newer = "2026-11-20"
+    later_records = [
+        _trial("NCT09000001", "MOVE", completion={"date": "2027-05", "type": "ESTIMATED"}, updated=newer),
+        _trial("NCT09000002", "HOLD", completion={"date": "2028-01", "type": "ESTIMATED"}, updated=newer),
+        _trial(
+            "NCT09000003",
+            "CLOSE",
+            completion={"date": "2026-11-02", "type": "ACTUAL"},
+            status="COMPLETED",
+            updated=newer,
+        ),
+        _trial("NCT09000005", "NEW", completion={"date": "2027-06", "type": "ESTIMATED"}),
+        _trial("NCT09000006", "DAY", completion={"date": "2027-08-15", "type": "ESTIMATED"}),
+        _trial("NCT09000007", "EARLY", phases=("PHASE1",)),
+        _trial("NCT09000008", "DATED"),
+        _trial("NCT09000009", "PASSED", completion={"date": "2026-10", "type": "ESTIMATED"}),
+    ]
+    for study in later_records:
+        _store_record(session_factory, store, study, insmed)
+    _store_record(session_factory, store, _trial("NCT09000010", "OTHER"), None)  # no covered company
+    with session_factory.begin() as session:
+        trials = {r.nct_id: r.id for r in session.execute(select(TABLES[Trial].c.nct_id, TABLES[Trial].c.id))}
+        _company_catalyst(session, insmed, trials["NCT09000004"], NOW + timedelta(minutes=10), filing=98)
+        _company_catalyst(session, insmed, trials["NCT09000008"], NOW + timedelta(minutes=10), filing=97)
+    return insmed
+
+
+EXPECTED_SKIPS = {
+    "the trial is not phase 2 or later": 1,
+    "the trial has a company-stated date": 1,
+    "the estimated date has passed": 1,
+    "the record is not linked to exactly one covered company": 1,
+}
+
+
+def test_the_dry_run_counts_every_step_and_writes_nothing(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _every_step(session_factory, store)
+    before = _fingerprint(session_factory)
+    preview = preview_estimates(session_factory, store, lambda: LATER)
+    assert _fingerprint(session_factory) == before  # byte for byte: every row and every sequence
+    counts = preview.counts()
+    assert counts["nothing_written"] is True
+    assert (counts["would_create"], counts["would_move"], counts["would_close"]) == (2, 1, 1)
+    assert counts["would_hold_over_6_months"] == 1
+    assert counts["would_hold_passed"] == 0
+    assert counts["would_be_replaced_by_company_date"] == 1
+    assert counts["skipped"] == EXPECTED_SKIPS
+    # The real job, run next on the same rows, does exactly what the dry run said it would.
+    report = publish_estimates(session_factory, store, lambda: LATER)
+    assert report.summary() == preview.report.summary()
+    assert _fingerprint(session_factory) != before
+
+
+def test_the_dry_run_counts_by_month_for_the_next_12_months_and_by_company(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _every_step(session_factory, store)
+    counts = preview_estimates(session_factory, store, lambda: LATER).counts()
+    months = counts["by_month"]
+    assert list(months) == [f"2026-{m}" for m in ("11", "12")] + [f"2027-{m:02d}" for m in range(1, 11)] + [
+        "later"
+    ]
+    # New and moved estimates are what the issue would print: May (moved), June, and 15 August.
+    assert {k: v for k, v in months.items() if v} == {"2027-05": 1, "2027-06": 1, "2027-08": 1}
+    assert counts["by_company_top_20"] == [{"company": "Insmed", "ticker": "INSM", "count": 3}]
+
+
+def test_the_sample_rows_read_as_the_issue_would_print_them(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _every_step(session_factory, store)
+    rows = preview_estimates(session_factory, store, lambda: LATER).sample()
+    assert [r["trial_number"] for r in rows] == ["NCT09000001", "NCT09000005", "NCT09000006"]
+    assert rows[0] == {
+        "company": "Insmed",
+        "ticker": "INSM",
+        "trial_number": "NCT09000001",
+        "trial_title": "A study named MOVE",
+        "phase": "Phase 3",
+        "estimated": "Estimated May 2027",
+        "registry_link": "https://clinicaltrials.gov/study/NCT09000001",
+        "change": "moved",
+    }
+    assert (rows[1]["estimated"], rows[1]["change"]) == ("Estimated June 2027", "new")
+    assert rows[2]["estimated"] == "Estimated 15 August 2027"
+
+
+def test_the_dry_run_opens_only_a_read_only_transaction(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _every_step(session_factory, store)
+    engine = session_factory.kw["bind"]
+    statements: list[str] = []
+
+    def seen(_conn: Any, _cursor: Any, statement: str, *_args: Any) -> None:
+        statements.append(statement.strip().upper())
+
+    event.listen(engine, "before_cursor_execute", seen)
+    try:
+        preview_estimates(session_factory, store, lambda: LATER)
+    finally:
+        event.remove(engine, "before_cursor_execute", seen)
+    assert statements[0] == "SET TRANSACTION READ ONLY"
+    assert not [s for s in statements if s.startswith(("INSERT", "UPDATE", "DELETE", "TRUNCATE"))]
+
+
+def test_the_dry_run_checks_each_field_as_the_real_job_does(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    # A copy whose bytes do not match its hash is counted as unreadable, and nothing would be made.
+    store = LocalSnapshotStore(tmp_path)
+    _store_record(session_factory, store, _record(), _insmed(session_factory))
+    counts = preview_estimates(session_factory, _BrokenStore(tmp_path), lambda: NOW).counts()
+    assert counts["would_create"] == 0
+    assert counts["skipped"] == {"the stored copy could not be read or did not match its hash": 1}
+    # A field written twice in the copy has no one place, so no claim, and no entry, would be made.
+    twice = _trial("NCT09000011", "TWICE")
+    twice["derivedSection"]["primaryCompletionDateStruct"] = {"date": "2027-03", "type": "ESTIMATED"}
+    _store_record(session_factory, store, twice, _insmed(session_factory))
+    counts = preview_estimates(session_factory, store, lambda: NOW).counts()
+    assert counts["would_create"] == 1  # ARISE
+    assert counts["skipped"] == {"the field is not written once in the stored copy": 1}
+
+
+@pytest.mark.parametrize("total", [0, 1, 49, 50, 51, 400])
+def test_the_sample_spreads_up_to_50_rows_across_the_dates(total: int) -> None:
+    picked = estimates.spread(list(range(total)), 50)
+    assert len(picked) == min(total, 50)
+    assert picked == sorted(set(picked))
+    if total:
+        assert (picked[0], picked[-1]) == (0, total - 1)
+
+
+def test_the_dry_run_command_prints_counts_and_keeps_the_rows_in_the_file(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshots = tmp_path / "snapshots"
+    store = LocalSnapshotStore(snapshots)
+    _every_step(session_factory, store)
+    before = _fingerprint(session_factory)
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    monkeypatch.setattr(cli, "_utc_now", lambda: LATER)
+    sample = tmp_path / "sample.json"
+    argv = ["publish-estimates", "--dry-run", "--snapshot-dir", str(snapshots), "--sample-out", str(sample)]
+    assert cli.main(argv) == 0
+    out = capsys.readouterr()
+    counts = json.loads(out.out)
+    assert counts["would_create"] == 2
+    # The printed counts and the logs name no trial: the rows go only to the file.
+    for printed in (out.out, out.err):
+        assert "NCT0900" not in printed
+        assert "A study named" not in printed
+    rows = json.loads(sample.read_text())["rows"]
+    assert [r["trial_number"] for r in rows] == ["NCT09000001", "NCT09000005", "NCT09000006"]
+    assert _fingerprint(session_factory) == before
+    assert cli.main(argv) == 1  # never writes over an existing file
+    assert "already exists" in capsys.readouterr().err
+
+
+def test_the_sample_file_is_only_for_a_dry_run(capsys: pytest.CaptureFixture[str], tmp_path: Path) -> None:
+    assert cli.main(["publish-estimates", "--sample-out", str(tmp_path / "sample.json")]) == 2
+    assert "--dry-run" in capsys.readouterr().err
+    assert not (tmp_path / "sample.json").exists()
