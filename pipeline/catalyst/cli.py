@@ -74,7 +74,7 @@ from catalyst.outreach.digest import (
     render_html,
     render_page,
 )
-from catalyst.publish.estimates import publish_estimates
+from catalyst.publish.estimates import SAMPLE_ROWS, preview_estimates, publish_estimates
 from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
@@ -261,6 +261,16 @@ def _parser() -> argparse.ArgumentParser:
         ),
     )
     _store_arguments(estimated)
+    estimated.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Run every step and check in a read-only transaction, write nothing, and print the counts.",
+    )
+    estimated.add_argument(
+        "--sample-out",
+        type=Path,
+        help="With --dry-run: write up to 50 new or moved entries here (JSON); keep it private.",
+    )
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -1143,6 +1153,13 @@ def _publish_claims(args: argparse.Namespace) -> int:
 
 
 def _publish_estimates(args: argparse.Namespace) -> int:
+    sample: Path | None = args.sample_out
+    if sample is not None and not args.dry_run:
+        print("--sample-out needs --dry-run: only a dry run writes a sample.", file=sys.stderr)
+        return 2
+    if sample is not None and sample.exists():
+        print(f"Nothing written: {sample} already exists.", file=sys.stderr)
+        return 1
     try:
         database = settings.database_url()
         store = _open_store(args, create_bucket=False)
@@ -1151,10 +1168,24 @@ def _publish_estimates(args: argparse.Namespace) -> int:
         return 2
     engine = create_engine(database)
     try:
-        report = publish_estimates(sessionmaker(engine), store, _utc_now)
+        if not args.dry_run:
+            report = publish_estimates(sessionmaker(engine), store, _utc_now)
+            print(json.dumps(report.summary(), indent=2))
+            return 0
+        preview = preview_estimates(sessionmaker(engine), store, _utc_now)
     finally:
         engine.dispose()
-    print(json.dumps(report.summary(), indent=2))
+    if sample is not None:
+        rows = preview.sample()
+        total = len(preview.entries)
+        note = f"Up to {SAMPLE_ROWS} of the {total} new or moved estimates, spread across the dates."
+        try:
+            with sample.open("x", encoding="utf-8") as stream:
+                json.dump({"note": note, "rows": rows}, stream, indent=2)
+        except FileExistsError:
+            print(f"Nothing written: {sample} already exists.", file=sys.stderr)
+            return 1
+    print(json.dumps(preview.counts(), indent=2))  # counts only: the rows name trials
     return 0
 
 

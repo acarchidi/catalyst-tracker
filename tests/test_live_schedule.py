@@ -33,7 +33,7 @@ def _runs_on_schedule(condition: str, default_mode: str) -> bool:
     expression = expression.replace(f"(inputs.mode || '{default_mode}')", f"'{default_mode}'")
     expression = expression.replace("inputs.mode", "''").replace("!cancelled()", "True")
     expression = expression.replace("||", " or ").replace("&&", " and ").replace("!=", " != ")
-    assert re.fullmatch(r"[\s'a-z_=!()A-Z]+", expression), expression
+    assert re.fullmatch(r"[\s'a-z_=!()A-Z-]+", expression), expression
     return bool(eval(expression))  # noqa: S307 - a fixed expression built from the repository's own file
 
 
@@ -61,13 +61,19 @@ def test_a_scheduled_extraction_reads_at_most_60_releases_and_nothing_private() 
     workflow = _load("extract-live.yml")
     steps = _steps(workflow, "extract")
     # The steps checked below exist, so "not in ran" cannot pass because one was renamed.
-    assert {"Export published and held catalysts", "Score a reader on the gold set"} <= set(steps)
+    private = {
+        "Export published and held catalysts",
+        "Score a reader on the gold set",
+        "Preview estimated dates, writing nothing",
+    }
+    assert private <= set(steps)
     ran = {name for name, cond in steps.items() if _runs_on_schedule(cond, "extract")}
     assert "Extract catalysts from the newest press releases" in ran
     assert "Build alerts from this run" in ran
     # The export and the gold-set scoring never run without an explicit choice.
     assert "Export published and held catalysts" not in ran
     assert "Score a reader on the gold set" not in ran
+    assert "Preview estimated dates, writing nothing" not in ran
     body = (WORKFLOWS / "extract-live.yml").read_text(encoding="utf-8")
     assert "LIMIT: ${{ inputs.limit || 60 }}" in body  # ADR 0064: 20 before the time budget
 

@@ -547,7 +547,7 @@ def when(catalyst: CatalystSummary) -> str:
     """
     window = catalyst.window
     if catalyst.date_confidence is DateConfidence.REGISTRY_ESTIMATE:
-        return f"Estimated {_registry_words(window.start, window.end)}."  # ADR 0067
+        return f"{estimated(window.start, window.end)}."  # ADR 0067
     if window.start == window.end:
         who = _DAY_LABELS[catalyst.date_confidence]
         return f"{_day(window.start)}{f' ({who})' if who else ''}."
@@ -558,6 +558,11 @@ def when(catalyst: CatalystSummary) -> str:
     if catalyst.date_confidence is DateConfidence.REGULATOR_SCHEDULED:
         return f"The regulator expects {event} {words}."
     return f"Our estimate: {event} {words}."
+
+
+def estimated(start: date, end: date) -> str:
+    """Return a registry estimate as the issue prints it: "Estimated March 2027" (ADR 0067)."""
+    return f"Estimated {_registry_words(start, end)}"
 
 
 def _registry_words(start: date, end: date) -> str:

@@ -12,6 +12,9 @@ name: Extract catalysts (live)
 #   2026-10-18). No model call. The repository is public (2026-10-20), so the file goes to the
 #   run log only sealed to the one-off public key given as the public_key input; the private
 #   half stays with the coding session (ADR 0034, decision 9). Without a key, export stops.
+# - estimates-sample: the estimated-dates job (ADR 0067) as a dry run on the live database, in a
+#   read-only transaction: it writes nothing. The counts go to the job summary; up to 50 sample
+#   rows leave the job only sealed to public_key, exactly as the export does. Without a key, it stops.
 # Extract and export first bring the live database up to date, so the checks' tables exist.
 # Started by hand from the Actions tab or by the coding session, and on a weekday schedule (ADR 0051); costs a few cents per
 # release, inside the daily cap of the role that runs (extractor or verifier; config/models.toml).
@@ -28,9 +31,9 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "extract (newest press releases), evaluate (score on the gold set), or export (published and held catalysts to JSON)"
+        description: "extract (newest press releases), evaluate (score on the gold set), export (published and held catalysts to JSON), or estimates-sample (what estimated dates would publish; writes nothing)"
         type: choice
-        options: [extract, evaluate, export]
+        options: [extract, evaluate, export, estimates-sample]
         default: extract
       limit:
         description: "Most press releases to read in this run"
@@ -43,7 +46,7 @@ on:
         options: [extract_catalysts, verify_catalysts, indicate_catalysts, check_indication]
         default: extract_catalysts
       public_key:
-        description: "export (required) or extract (optional): the one-line public key from `catalyst seal-keygen`; files are printed only sealed to it"
+        description: "export and estimates-sample (required) or extract (optional): the one-line public key from `catalyst seal-keygen`; files are printed only sealed to it"
         type: string
         required: false
         default: ""
@@ -137,6 +140,34 @@ jobs:
           uv run catalyst seal --to "$PUBLIC_KEY" --in "$RUNNER_TEMP/export.json" > "$RUNNER_TEMP/export.sealed"
           echo "::group::Export (sealed)"
           cat "$RUNNER_TEMP/export.sealed"
+          echo "::endgroup::"
+
+      # Free: no model call, and nothing written: a read-only transaction (ADR 0067).
+      - name: Preview estimated dates, writing nothing
+        if: ${{ inputs.mode == 'estimates-sample' }}
+        timeout-minutes: 30
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+          SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          PUBLIC_KEY: ${{ inputs.public_key }}
+        run: |
+          set -euo pipefail
+          # The sample rows name trials and the log is public: they leave this job only sealed.
+          if [ -z "$PUBLIC_KEY" ]; then
+            echo "No public key was given, so nothing was run. Ask the coding session for one (catalyst seal-keygen)." \
+              | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          uv run catalyst publish-estimates --dry-run --snapshot-store supabase \
+            --sample-out "$RUNNER_TEMP/estimates-sample.json" > "$RUNNER_TEMP/estimates-counts.json"
+          { echo "## Estimated dates: what would publish (nothing was written)"; echo '```json'
+            cat "$RUNNER_TEMP/estimates-counts.json"; echo '```'; } | tee -a "$GITHUB_STEP_SUMMARY"
+          # Seal first, print after: a refused key prints nothing of the file.
+          uv run catalyst seal --to "$PUBLIC_KEY" --in "$RUNNER_TEMP/estimates-sample.json" > "$RUNNER_TEMP/estimates-sample.sealed"
+          echo "::group::Sample rows (sealed)"
+          cat "$RUNNER_TEMP/estimates-sample.sealed"
           echo "::endgroup::"
 
       # Free: no model call. Runs even when the extraction failed, so the failure is reported.
