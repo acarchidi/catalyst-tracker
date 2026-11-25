@@ -143,8 +143,9 @@ class LiveCatalyst:
     key: Key
     source: Rank  # the claim behind its current window
     last_learned: datetime  # its newest change row's time; a later change must come after it
-    # A closed deal's parties (ADR 0080): its counterparty names and the company's own; else empty.
+    # A closed deal's names (ADR 0080): its counterparty names and the company's own; else empty.
     names: frozenset[str] = frozenset()
+    parties: frozenset[str] = frozenset()  # a closed deal's counterparty names alone; else empty
 
     @property
     def window(self) -> tuple[date, date]:
@@ -205,12 +206,13 @@ class LiveIndex:
         """Say whether the claim is about a deal found closed, from a source no newer (ADR 0080).
 
         Matched on company, type, drugs and trials as `was_withdrawn` is, and held by default: a
-        claim goes through only when a deal party it names (`names`) is none of the closed deal's
-        own (its counterparties and the company's own names), so it is about another deal of the
-        company (Opus reviews of PR #163). Only a document published after the completion document
-        is new.
+        claim that names any counterparty of the closed deal is held, even beside a new name; one
+        goes through only when it names a deal party (`names`) outside the closed deal's names (its
+        counterparties and the company's own), so it is about another deal of the company (Opus
+        reviews of PR #163). Only a document published after the completion document is new.
         """
-        return _set_aside([c for c in self.closed if not names - c.names], key, published_at)
+        held = [c for c in self.closed if names & c.parties or not names - c.names]
+        return _set_aside(held, key, published_at)
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
@@ -230,6 +232,17 @@ def _set_aside(catalysts: Iterable[LiveCatalyst], key: Key, published_at: dateti
         and (c.key.trials == key.trials or not c.key.trials or not key.trials)
     ]
     return any(published_at <= c.source.published_at for c in same)
+
+
+def _listed(stated: Mapping[str, Any], parts: Iterable[str]) -> frozenset[str]:
+    """Return the names a closing claim's value lists under `parts` (ADR 0080)."""
+    return frozenset(
+        name
+        for part in parts
+        if isinstance(listed := stated.get(part), list)
+        for name in cast(list[object], listed)
+        if isinstance(name, str)
+    )
 
 
 def load_live(session: Session) -> LiveIndex:
@@ -253,6 +266,7 @@ def load_live(session: Session) -> LiveIndex:
     status_source: dict[UUID, Rank] = {}
     status_agent: dict[UUID, str] = {}
     status_names: dict[UUID, frozenset[str]] = {}
+    status_parties: dict[UUID, frozenset[str]] = {}
     changes = (
         select(
             change.c.catalyst_id,
@@ -280,13 +294,8 @@ def load_live(session: Session) -> LiveIndex:
             )
             status_agent[row.catalyst_id] = row.agent
             stated = claim_value(row.value) if closer else {}
-            status_names[row.catalyst_id] = frozenset(
-                name
-                for part in ("names", "deal_names", "own_names")  # every party of the closed deal
-                if isinstance(listed := stated.get(part), list)
-                for name in cast(list[object], listed)
-                if isinstance(name, str)
-            )
+            status_parties[row.catalyst_id] = _listed(stated, ("names", "deal_names"))  # its counterparties
+            status_names[row.catalyst_id] = status_parties[row.catalyst_id] | _listed(stated, ("own_names",))
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
@@ -309,7 +318,14 @@ def load_live(session: Session) -> LiveIndex:
             indication.get(live.id, ""),
         )
         (withdrawn if gone else closed if done else found).append(
-            LiveCatalyst(live, key, source, last_learned[live.id], status_names.get(live.id, frozenset()))
+            LiveCatalyst(
+                live,
+                key,
+                source,
+                last_learned[live.id],
+                status_names.get(live.id, frozenset()),
+                status_parties.get(live.id, frozenset()),
+            )
         )
     return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed)
 

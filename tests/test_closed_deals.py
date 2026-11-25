@@ -655,13 +655,18 @@ def test_the_hold_follows_the_counterparty_and_the_completion_date() -> None:
     )
     closing = NOW + 19 * DAY
     known = frozenset({"mentari", "inmed", "inm"})  # the deal's counterparties and the company's own names
-    done = LiveCatalyst(row, key, Rank(SourceTier.REGULATOR_OR_SEC, closing), LATER, known)
+    rank = Rank(SourceTier.REGULATOR_OR_SEC, closing)
+    done = LiveCatalyst(row, key, rank, LATER, known, frozenset({"mentari"}))
     index = LiveIndex(cited={}, catalysts=(), closed=(done,))
     assert index.was_closed(key, closing - DAY, frozenset({"mentari"}))
     assert index.was_closed(key, closing - DAY, frozenset({"inmed"}))  # only the company's own name
     assert index.was_closed(key, closing - DAY, frozenset())  # names no one: held by default
     assert not index.was_closed(key, closing - DAY, frozenset({"zentara"}))  # another deal
-    assert not index.was_closed(key, closing - DAY, frozenset({"mentari", "zentara"}))
+    # A party of the closed deal is named: held, even beside a new name (Opus review of PR #163 at f544bf1).
+    assert index.was_closed(key, closing - DAY, frozenset({"mentari", "zentara"}))
+    assert not index.was_closed(
+        key, closing - DAY, frozenset({"inmed", "zentara"})
+    )  # own name plus a new one
     assert not index.was_closed(key, closing + DAY, frozenset({"mentari"}))  # newer than the completion
 
 
