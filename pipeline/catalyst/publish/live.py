@@ -143,6 +143,7 @@ class LiveCatalyst:
     key: Key
     source: Rank  # the claim behind its current window
     last_learned: datetime  # its newest change row's time; a later change must come after it
+    names: frozenset[str] = frozenset()  # a closed deal's counterparty names (ADR 0080); else empty
 
     @property
     def window(self) -> tuple[date, date]:
@@ -186,7 +187,8 @@ class LiveIndex:
     catalysts: Sequence[LiveCatalyst]
     # Withdrawn catalysts (ADR 0070); each `source.published_at` is when it was withdrawn.
     withdrawn: Sequence[LiveCatalyst] = ()
-    # Deals found closed (ADR 0080); each `source.published_at` is when the closing was recorded.
+    # Deals found closed (ADR 0080); each `source.published_at` is when its completion document was
+    # published, and `names` are the counterparty names it matched.
     closed: Sequence[LiveCatalyst] = ()
 
     def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
@@ -198,12 +200,15 @@ class LiveIndex:
         """
         return _set_aside(self.withdrawn, key, published_at)
 
-    def was_closed(self, key: Key, published_at: datetime) -> bool:
-        """Say whether the claim's event is a deal found closed, and its source is no newer (ADR 0080).
+    def was_closed(self, key: Key, published_at: datetime, names: frozenset[str]) -> bool:
+        """Say whether the claim is about a deal found closed, from a source no newer (ADR 0080).
 
-        Matched as `was_withdrawn` is: a release older than the closing never brings the deal back.
+        Matched on company, type, drugs and trials as `was_withdrawn` is, and also on the deal's
+        counterparty: the claim must name one of the closed deal's names after a deal word, so a
+        claim about another deal of the company is never held (Opus review of PR #163, B3). Only a
+        document published after the completion document is new.
         """
-        return _set_aside(self.closed, key, published_at)
+        return _set_aside([c for c in self.closed if c.names & names], key, published_at)
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
@@ -245,6 +250,7 @@ def load_live(session: Session) -> LiveIndex:
     last_learned: dict[UUID, datetime] = {}
     status_source: dict[UUID, Rank] = {}
     status_agent: dict[UUID, str] = {}
+    status_names: dict[UUID, frozenset[str]] = {}
     changes = (
         select(
             change.c.catalyst_id,
@@ -266,8 +272,17 @@ def load_live(session: Session) -> LiveIndex:
         if row.field in WINDOW_FIELDS:
             window_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
         elif row.field == CatalystField.STATUS.value:  # the last one withdrew or closed it, if it is
-            status_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.learned_at)
+            closer = row.agent == DEAL_CLOSER  # a closing dates from its completion document
+            status_source[row.catalyst_id] = Rank(
+                SourceTier(row.source_tier), row.published_at if closer else row.learned_at
+            )
             status_agent[row.catalyst_id] = row.agent
+            listed = claim_value(row.value).get("names") if closer else None
+            status_names[row.catalyst_id] = (
+                frozenset(n for n in cast(list[object], listed) if isinstance(n, str))
+                if isinstance(listed, list)
+                else frozenset()
+            )
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
@@ -290,7 +305,7 @@ def load_live(session: Session) -> LiveIndex:
             indication.get(live.id, ""),
         )
         (withdrawn if gone else closed if done else found).append(
-            LiveCatalyst(live, key, source, last_learned[live.id])
+            LiveCatalyst(live, key, source, last_learned[live.id], status_names.get(live.id, frozenset()))
         )
     return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed)
 

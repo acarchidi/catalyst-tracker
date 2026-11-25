@@ -42,8 +42,8 @@ what the reviewed withdrawal list names (ADR 0070): first, every live catalyst a
 stands behind is withdrawn, with a status change in its history; a listed claim is then held.
 Next, every open merger or acquisition entry that a later stored document of its company says was
 completed is closed (`catalyst.publish.closed_deals`, ADR 0080), with a status change citing that
-document's sentence; a claim about a closed deal from a document published before the closing was
-recorded is then held, so the deal never comes back.
+document's sentence; a claim naming that deal's counterparty, from a document published no later
+than the completion document, is then held, so the deal never comes back.
 """
 
 from __future__ import annotations
@@ -67,7 +67,7 @@ from catalyst.extract.agent import ROLE
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
 from catalyst.publish import gate
-from catalyst.publish.closed_deals import CLOSED_EVENT, close_deals
+from catalyst.publish.closed_deals import CLOSED_EVENT, claim_deal_names, close_deals
 from catalyst.publish.live import (
     Key,
     LiveCatalyst,
@@ -492,7 +492,8 @@ def _write(session: Session, ready: list[_Ready], live: LiveIndex, run: _Run) ->
             run.results.setdefault(item.claim.id, []).append(result)
             _hold(run, item, WITHDRAWN_EVENT)
             continue
-        if live.was_closed(item.key, item.candidate.rank.published_at):
+        named = claim_deal_names(item.claim.quote, item.claim.value)
+        if live.was_closed(item.key, item.candidate.rank.published_at, named):
             # A release from before the closing must not bring the closed deal back (ADR 0080).
             result = CheckResult(gate.WRITER_CHECK, CheckOutcome.FAIL, CLOSED_EVENT)
             run.results.setdefault(item.claim.id, []).append(result)

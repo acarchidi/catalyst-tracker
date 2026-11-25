@@ -29,9 +29,11 @@ from catalyst.publish.closed_deals import (
     DEAL_CLOSER,
     completion_sentences,
     counterparties,
+    deal_names,
     names_in,
     reports_completion_item,
 )
+from catalyst.publish.live import Key, LiveCatalyst, LiveIndex, Rank
 from catalyst.publish.write import publish_claims
 from catalyst.schemas import (
     Catalyst,
@@ -284,6 +286,38 @@ def test_names_are_the_distinctive_words_not_the_deal_words() -> None:
     )
 
 
+def test_only_the_names_after_the_deal_word_are_counterparties() -> None:
+    """Opus review of PR #163, B2: a regulator, a state or a law is never a counterparty."""
+    claim = (
+        "The acquisition of Pacira BioSciences is expected to close in the fourth quarter of 2026, subject to"
+        " Hart-Scott-Rodino clearance and approval under Delaware law by the Federal Trade Commission."
+    )
+    assert counterparties([claim], ["Viatris Inc.", "VTRS"]) == {"pacira"}
+    by = counterparties(["Closing of the acquisition of Pacira by Viatris"], ["Pacira BioSciences, Inc."])
+    assert by == {"viatris"}
+    rights = "Harrow expects to close the acquisition of the U.S. rights to TYRVAYA® (varenicline)."
+    assert deal_names(rights) == {"tyrvaya"}
+
+
+def test_a_condition_after_the_completion_words_does_not_count() -> None:
+    assert completion_sentences("The merger has been completed, subject to court approval.") == []
+    assert completion_sentences("InMed completed the acquisition of Mentari pending the final payment.") == []
+
+
+def test_a_past_deal_does_not_count() -> None:
+    """Opus review of PR #163, B1: "previously completed" and a deal of an earlier year are history."""
+    assert completion_sentences("Viatris previously completed its acquisition of Heron.") == []
+    assert completion_sentences("In 2021, Pacira completed its acquisition of Flexion.", year=2026) == []
+    assert completion_sentences("About Pacira: Pacira completed its acquisition of Flexion.") == []
+    this_year = "On November 6, 2026, InMed completed the acquisition of Mentari."
+    assert len(completion_sentences(this_year, year=2026)) == 1
+
+
+def test_a_semicolon_ends_a_sentence() -> None:
+    (found,) = completion_sentences("The acquisition of Zentara was completed; Mentari remains pending.")
+    assert found.sentence == "The acquisition of Zentara was completed;"
+
+
 def test_an_8k_reports_item_2_01_or_5_01() -> None:
     assert reports_completion_item("Item 2.01 Completion of Acquisition or Disposition of Assets.") == "2.01"
     assert reports_completion_item("Item 5.01. Changes in Control of Registrant.") == "5.01"
@@ -484,3 +518,145 @@ def test_an_older_release_about_the_closed_deal_does_not_bring_it_back(world: Wo
     assert [(r.outcome, r.reason) for r in held] == [("fail", CLOSED_EVENT)]
     assert [r.status for r in world.rows(Catalyst)] == ["resolved"]
     assert _status(world, catalyst) == "resolved"
+
+
+# --- Opus review of PR #163: whose deal finished, and which claims a closed deal holds ---
+
+
+def _viatris(world: World) -> UUID:
+    _company(world, 21, "Viatris Inc.", "VTRS")
+    return _open_deal(
+        world, "Viatris expects the acquisition of Pacira BioSciences to close in the fourth quarter of 2026."
+    )
+
+
+def _pacira(world: World) -> UUID:
+    _company(world, 22, "Pacira BioSciences, Inc.", "PCRX")
+    return _open_deal(
+        world,
+        "The acquisition is expected to close in the fourth quarter of 2026.",
+        title="Closing of the acquisition of Pacira by Viatris",
+    )
+
+
+def _page(*paragraphs: str) -> str:
+    return "<html><body>" + "".join(f"<p>{p}</p>" for p in paragraphs) + "</body></html>"
+
+
+@pytest.mark.parametrize(
+    "paragraphs",
+    [
+        ("Viatris reports results.", "About Pacira", "In 2021, Pacira completed its acquisition of Flexion."),
+        ("About Pacira: Pacira completed its acquisition of Flexion Therapeutics.",),
+        ("Pacira completed its acquisition of Flexion Therapeutics.",),  # Pacira bought, it was not bought
+        ("Viatris previously completed its acquisition of Pacira's rival, Heron.",),
+        ("Viatris completed its acquisition of Pacira's rival, Heron.",),
+    ],
+)
+def test_the_acquirer_s_entry_closes_only_when_it_bought_the_counterparty(
+    world: World, paragraphs: tuple[str, ...]
+) -> None:
+    catalyst = _viatris(world)
+    _document(world, _page(*paragraphs), NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 0
+    assert _status(world, catalyst) == "upcoming"
+
+
+def test_the_acquirer_s_entry_closes_on_its_own_completion(world: World) -> None:
+    catalyst = _viatris(world)
+    done = "Viatris Inc. today announced that it has completed its acquisition of Pacira BioSciences."
+    _document(world, _page(done), NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 1
+    assert _status(world, catalyst) == "resolved"
+
+
+@pytest.mark.parametrize(
+    "paragraphs",
+    [
+        ("Pacira reports results.", "About Viatris", "Viatris completed its acquisition of Mylan in 2020."),
+        ("Viatris completed its acquisition of Mylan.",),  # Viatris bought someone else
+        ("Viatris completed its acquisition of Pacira's rival, Heron.",),
+    ],
+)
+def test_the_target_s_entry_closes_only_when_it_was_bought(world: World, paragraphs: tuple[str, ...]) -> None:
+    catalyst = _pacira(world)
+    _document(world, _page(*paragraphs), NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 0
+    assert _status(world, catalyst) == "upcoming"
+
+
+def test_a_regulator_named_in_the_claim_never_closes_it(world: World) -> None:
+    _company(world, 21, "Viatris Inc.", "VTRS")
+    catalyst = _open_deal(
+        world,
+        "The acquisition of Pacira BioSciences is expected to close in the fourth quarter of 2026, subject to"
+        " Hart-Scott-Rodino clearance.",
+    )
+    other = "Viatris completed its acquisition of Xyzzy Ltd after Hart-Scott-Rodino clearance."
+    _document(world, _page(other), NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 0
+    assert _status(world, catalyst) == "upcoming"
+
+
+def _two_deals(world: World, second: str) -> tuple[UUID, UUID]:
+    """InMed with two open deals, told apart by the trial each names; returns (Mentari's, the other)."""
+    _company(world, 4, "InMed Pharmaceuticals Inc.", "INM")
+    kind: dict[str, Any] = {"catalyst_type": "merger_acquisition", "drug": None, "indication": None}
+    first = (
+        f"The acquisition of Mentari Bioscience, sponsor of RAINIER trial, is expected to close in the {Q4}."
+    )
+    world.claim(Q4, sentence=first, **kind)
+    other = f"The acquisition of {second}, sponsor of the SYMMETRY trial, is expected to close in the {Q4}."
+    world.claim(Q4, sentence=other, trial=world.other_trial, **kind)
+    assert _publish(world, NOW)["catalysts_created"] == 2
+    by_title = {row.title: row.id for row in world.rows(Catalyst)}
+    return by_title["Merger or acquisition: RAINIER trial"], by_title["Merger or acquisition: SYMMETRY trial"]
+
+
+def test_of_two_open_deals_only_the_one_that_closed_is_closed(world: World) -> None:
+    mentari, zentara = _two_deals(world, "Zentara Labs")
+    _document(world, "inmed-mentari-ex99-1.htm", NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 1
+    assert (_status(world, mentari), _status(world, zentara)) == ("resolved", "upcoming")
+
+
+def test_a_name_two_open_deals_share_closes_neither(world: World) -> None:
+    mentari, both = _two_deals(world, "Zentara Labs and Mentari Bioscience")
+    _document(world, _page("InMed completed its acquisition of Mentari Bioscience."), NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 0
+    assert (_status(world, mentari), _status(world, both)) == ("upcoming", "upcoming")
+
+
+def test_another_deal_of_the_same_company_is_not_held_by_a_closed_one(world: World) -> None:
+    """Opus review of PR #163, B3: only a claim naming the closed deal's counterparty is held."""
+    _inmed(world)
+    _document(world, "inmed-mentari-ex99-1.htm", NOW + 19 * DAY)
+    assert _publish(world, LATER)["deals_closed"] == 1
+    _deal(world, "The acquisition of Zentara Labs is expected to close in the fourth quarter of 2026.", "")
+    summary = _publish(world, LATER + DAY)
+    assert (summary["catalysts_created"], summary["top_reasons"]) == (1, {})
+
+
+def test_the_hold_follows_the_counterparty_and_the_completion_date() -> None:
+    company = UUID(int=1)
+    key = Key(company, "merger_acquisition", frozenset(), frozenset(), "")
+    row = Catalyst.model_validate(
+        {
+            "catalyst_type": "merger_acquisition",
+            "company_id": company,
+            "title": "Merger or acquisition",
+            "window_start": date(2026, 10, 1),
+            "window_end": date(2026, 12, 31),
+            "window_precision": "quarter",
+            "window_raw_text": Q4,
+            "date_confidence": "company_confirmed",
+            "status": "resolved",
+        }
+    )
+    closing = NOW + 19 * DAY
+    done = LiveCatalyst(row, key, Rank(SourceTier.REGULATOR_OR_SEC, closing), LATER, frozenset({"mentari"}))
+    index = LiveIndex(cited={}, catalysts=(), closed=(done,))
+    assert index.was_closed(key, closing - DAY, frozenset({"mentari"}))
+    assert not index.was_closed(key, closing - DAY, frozenset({"zentara"}))
+    assert not index.was_closed(key, closing - DAY, frozenset())
+    assert not index.was_closed(key, closing + DAY, frozenset({"mentari"}))  # newer than the completion

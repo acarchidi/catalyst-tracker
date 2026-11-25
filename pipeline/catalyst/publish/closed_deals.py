@@ -9,10 +9,17 @@ after the source of the catalyst's current window:
 - an 8-K that reports Item 2.01 (Completion of Acquisition or Disposition of Assets) or Item 5.01
   (Changes in Control of Registrant), and
 - the company's press releases filed as 8-K Exhibit 99,
-and looks for one visible sentence that says the deal happened ("completed", "closed",
-"consummated", "became effective"), not that it will, and that names the counterparty or asset the
-catalyst's own claims name. The company's own names do not count, and a catalyst whose claims name
-no counterparty is never closed: when unsure, nothing happens.
+and looks, outside any "About ..." section, for one visible sentence that says the deal happened
+("completed", "closed", "consummated", "became effective"), not that it will, that it did once
+before ("previously completed", "in 2021"), or that it did on a condition ("subject to").
+
+Whose deal finished is read from the sentence (Opus review of PR #163): the counterparty or asset
+the catalyst's claims name after a deal word ("acquisition of Mentari", "acquisition of Pacira by
+Viatris") must be the thing bought, by the company itself ("InMed completed its acquisition of
+Mentari", "the Company completed ..."); or, for the company being bought, the counterparty must be
+the buyer and the company itself the thing bought ("Viatris completes acquisition of Pacira").
+A name another open deal of the same company also gives does not count, and a catalyst whose claims
+name no counterparty is never closed: when unsure, nothing happens.
 
 A match becomes a claim of its own (agent `deal_closer`, the sentence as its verbatim quote, placed
 in the stored copy's text), and a `status` change from the open status to `resolved` citing it,
@@ -25,7 +32,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -64,14 +71,16 @@ from catalyst.snapshots import SnapshotStore, SnapshotStoreError, snapshot_key
 __all__ = [
     "CLOSED_EVENT",
     "DEAL_CLOSER",
+    "claim_deal_names",
     "close_deals",
     "completion_sentences",
     "counterparties",
+    "deal_names",
     "names_in",
     "reports_completion_item",
 ]
 
-RULE_VERSION = "1.0.0"
+RULE_VERSION = "1.1.0"
 PROMPT_ID = "closed_deals"  # no prompt: plain code; the field names the rule set and its version
 PROVIDER = MODEL = "plain code"
 FIELD_PREFIX = "deal_closed:"
@@ -105,19 +114,29 @@ _NOUN = re.compile(
     rf"(?:completion|closing|consummation)\s+of\s+{_ARTICLE}{_ANNOUNCED}{_DEAL}\b",
     re.IGNORECASE,
 )
-# A word before the statement that makes it a plan, a condition or a denial, not a fact.
+# A word before the statement that makes it a plan, a condition, a denial, or history, not news.
 _NOT_YET = re.compile(
     r"\b(?:expect\w*|anticipat\w*|will|would|shall|(?-i:may)|might|could|should|intend\w*|plan\w*|to\s+be|"
     r"upon|once|if|until|unless|subject\s+to|prior\s+to|before|following|after|pending|not|no|"
-    r"seek\w*|aim\w*|agree\w*|propos\w*|when|whether)\b",
+    r"seek\w*|aim\w*|agree\w*|propos\w*|when|whether|previously|earlier|formerly|already|historically)\b",
     re.IGNORECASE,
 )
+# A word after the statement that leaves the deal unfinished: "completed, subject to court approval".
+_STILL_OPEN = re.compile(
+    r"\b(?:subject\s+to|pending|conditional|conditioned|until|upon|expected|anticipated|remains?|"
+    r"not\s+yet|unless|if|still)\b",
+    re.IGNORECASE,
+)
+_YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
+_IN_YEAR = re.compile(r"\bin\s+(?:[A-Z][a-z]+\s+)?((?:19|20)\d{2})\b")
 _ABBREVIATION_WORDS = (
     "inc corp co ltd plc llc lp fla calif mass n.y u.s u.k jan feb mar apr jun jul aug sep sept oct nov dec "
     "no nos mr ms mrs dr st vs e.g i.e approx"
 )
 _ABBREVIATIONS = frozenset(_ABBREVIATION_WORDS.split())
-_END = re.compile(r"[.!?](?=\s+[A-Z])")
+_END = re.compile(r"[.!?](?=\s+[A-Z])|;(?=\s|$)")
+_ABOUT = re.compile(r"^\s*About\b")
+_ABOUT_HEADING = re.compile(r"(?m)^[ \t]*About\s+[A-Z][^\n]{0,80}$")
 _ITEM = re.compile(
     r"\bItem\s+(2\.01|5\.01)\b\.?\s+(?:Completion\s+of\s+Acquisition|Changes?\s+in\s+Control)", re.IGNORECASE
 )
@@ -125,53 +144,74 @@ _ITEM = re.compile(
 
 @dataclass(frozen=True)
 class Completion:
-    """A sentence that says a deal happened, with where it stands in the text it was found in."""
+    """A sentence that says a deal happened, where it stands in its text, and where its statement is."""
 
     start: int
     end: int
     sentence: str
+    at: int = 0  # where the statement starts in the sentence
+    passive: bool = False
 
 
 def _sentences(text: str) -> Iterable[tuple[int, int]]:
-    """Yield each sentence's span: lines first, then sentence ends that are not after an abbreviation."""
+    """Yield each sentence's span: lines, then sentence ends not after an abbreviation, and semicolons."""
     for line in re.finditer(r"[^\n]+", text):
         start = line.start()
         for end in _END.finditer(line.group(0)):
             words = line.group(0)[: end.start()].split()
             last = words[-1].strip("(),\"'\u201c\u201d\u2018\u2019").casefold() if words else ""
-            if last in _ABBREVIATIONS or (len(last) == 1 and last.isalpha()):
+            if end.group(0) == "." and (last in _ABBREVIATIONS or (len(last) == 1 and last.isalpha())):
                 continue
             yield start, line.start() + end.end()
             start = line.start() + end.end()
         yield start, line.end()
 
 
-def _states_completion(sentence: str) -> bool:
-    """Say whether the sentence states, as a fact, that a deal happened.
+def _earlier_year(text: str, year: int | None, *, anywhere: bool) -> bool:
+    if year is None:
+        return False
+    found = _YEAR.finditer(text) if anywhere else _IN_YEAR.finditer(text)
+    return any(int(m.group(1) if m.groups() else m.group(0)) < year for m in found)
 
-    Nothing before the statement, and for the passive nothing between the deal and its verb, may
-    make it a plan, a condition or a denial ("expected to", "will", "if", "upon", "not").
+
+def _statement(sentence: str, year: int | None) -> tuple[int, bool] | None:
+    """Return where the sentence states, as news, that a deal happened, and whether in the passive.
+
+    Nothing before the statement (and, for the passive, between the deal and its verb) may make it
+    a plan, a condition, a denial or history; nothing after it may leave the deal unfinished; and
+    no earlier year may date it.
     """
     for pattern in (_ACTIVE, _PASSIVE, _NOUN):
         for found in pattern.finditer(sentence):
+            before, after = sentence[: found.start()], sentence[found.end() :]
             inner = (
                 re.sub(rf"^{_DEAL}", "", found.group(0), flags=re.IGNORECASE) if pattern is _PASSIVE else ""
             )
-            if not _NOT_YET.search(sentence[: found.start()]) and not _NOT_YET.search(inner):
-                return True
-    return False
+            if _NOT_YET.search(before) or _NOT_YET.search(inner) or _STILL_OPEN.search(after):
+                continue
+            if _earlier_year(before, year, anywhere=True) or _earlier_year(after, year, anywhere=False):
+                continue
+            return found.start(), pattern is _PASSIVE
+    return None
 
 
-def completion_sentences(text: str) -> list[Completion]:
-    """Return every sentence of `text` that says a deal was completed, closed or consummated."""
+def completion_sentences(text: str, year: int | None = None) -> list[Completion]:
+    """Return every sentence of `text` that says a deal was completed, closed or consummated.
+
+    `year` is the document's: a deal dated to an earlier year is history. A sentence that opens an
+    "About ..." paragraph is boilerplate and never counts.
+    """
     found: list[Completion] = []
     for start, end in _sentences(text):
         raw = text[start:end]
         sentence = raw.strip()
-        if not sentence or len(sentence) > MAX_QUOTE_CHARS or not _states_completion(sentence):
+        if not sentence or len(sentence) > MAX_QUOTE_CHARS or _ABOUT.match(sentence):
+            continue
+        statement = _statement(sentence, year)
+        if statement is None:
             continue
         offset = start + raw.index(sentence)
-        found.append(Completion(offset, offset + len(sentence), sentence))
+        found.append(Completion(offset, offset + len(sentence), sentence, *statement))
     return found
 
 
@@ -205,6 +245,23 @@ _COMMON_WORDS = """
     new york time eastern nasal spray injection tablets tablet oral solution capsules phase trial
 """
 _COMMON = frozenset(_COMMON_WORDS.split())
+# A deal word and what it takes: "acquisition of X", "merger with X", "acquire X", "acquired by X".
+_OBJECT = re.compile(
+    r"\b(?:(?:acquisition|purchase|sale|divestiture|merger|combination|tender\s+offer)\s+(?:of|for|with)|"
+    r"acquire[sd]?|acquiring)\s+",
+    re.IGNORECASE,
+)
+# Where the thing a deal word takes ends: a clause mark, a sentence end, or the next part of speech.
+_STOP = re.compile(
+    r"[,;:(]|\.(?=\s+(?-i:[A-Z])|\s*$)|\s(?:to\s+(?:close|be|complete|occur)|is|are|was|were|will|would|has|have|"
+    r"had|expected|in|on|for|subject|pursuant|under|after|following|which|that|at|as|by|from|"
+    r"and\s+(?:the|its|is|will|was))\b",
+    re.IGNORECASE,
+)
+_BY = re.compile(r"\s*by\s+", re.IGNORECASE)
+_POSSESSIVE = re.compile(r"['\u2019]s\b")
+_SELF = re.compile(r"\b(?:the\s+[\"\u201c]?Company|we|us|our\s+company)\b", re.IGNORECASE)
+_PHRASE_CHARS = 120
 
 
 def names_in(text: str) -> frozenset[str]:
@@ -221,15 +278,93 @@ def names_in(text: str) -> frozenset[str]:
     return frozenset(names)
 
 
+def _cut(text: str) -> str:
+    stop = _STOP.search(text)
+    return (text[: stop.start()] if stop else text)[:_PHRASE_CHARS]
+
+
+@dataclass(frozen=True)
+class _Phrase:
+    """One deal word's parties: what it takes ("of Mentari") and who does it ("by Viatris"), as written."""
+
+    taken: str
+    by: str
+
+
+def _phrases(text: str) -> list[_Phrase]:
+    phrases: list[_Phrase] = []
+    for found in _OBJECT.finditer(text):
+        rest = text[found.end() :]
+        if found.group(0).lower().startswith("acquired") and rest.lower().startswith("by "):
+            phrases.append(_Phrase("", _cut(rest[3:])))  # "acquired by Viatris": who acts, nothing taken
+            continue
+        taken = _cut(rest)
+        by = _BY.match(rest[len(taken) :])
+        phrases.append(_Phrase(taken, _cut(rest[len(taken) + by.end() :]) if by else ""))
+    return phrases
+
+
+def deal_names(text: str) -> frozenset[str]:
+    """Return the names a text gives as a deal's parties: only those after a deal word or its "by"."""
+    names: set[str] = set()
+    for phrase in _phrases(text):
+        names |= names_in(phrase.taken) | names_in(phrase.by)
+    return frozenset(names)
+
+
+def claim_deal_names(quote: str, value: object) -> frozenset[str]:
+    """Return the deal parties an extractor claim's quote and its proposed title name."""
+    title = claim_value(value).get("title")
+    named = deal_names(quote)
+    return named | deal_names(title) if isinstance(title, str) else named
+
+
+def _own(names: Iterable[str]) -> frozenset[str]:
+    found: set[str] = set()
+    for name in names:
+        found |= names_in(name)
+    return frozenset(found)
+
+
 def counterparties(texts: Iterable[str], own: Iterable[str]) -> frozenset[str]:
-    """Return the names the claims give that are not the company's own: its counterparty or asset."""
-    mine: set[str] = set()
-    for name in own:
-        mine |= names_in(name)
+    """Return the deal parties the claims name that are not the company's own: its counterparty or asset."""
     found: set[str] = set()
     for text in texts:
-        found |= names_in(text)
-    return frozenset(found - mine)
+        found |= deal_names(text)
+    return frozenset(found - _own(own))
+
+
+def _closed_by(completion: Completion, own: frozenset[str], counterparty: frozenset[str]) -> frozenset[str]:
+    """Return the counterparty names the sentence shows finishing this company's deal; empty if none.
+
+    Either the company bought the counterparty or asset (the company is the one acting, the
+    counterparty what is taken), or the counterparty bought the company. Anything else, such as the
+    company or the counterparty buying someone else, or a possessive ("Pacira's rival"), closes
+    nothing.
+    """
+    sentence = completion.sentence
+    phrases = _phrases(sentence[completion.at :])
+    if not phrases:
+        return frozenset()
+    phrase = phrases[0]
+    if _POSSESSIVE.search(phrase.taken):
+        return frozenset()
+    taken = names_in(phrase.taken)
+    taken_self = bool(taken & own) or bool(_SELF.search(phrase.taken))
+    if completion.passive:
+        actor_text = phrase.by
+        actor = names_in(actor_text)
+        acting_self = not actor_text or bool(actor & own) or bool(_SELF.search(actor_text))
+    else:
+        actor_text = sentence[: completion.at]
+        actor = names_in(actor_text) | names_in(phrase.by)
+        acting_self = bool(actor & own) or bool(_SELF.search(actor_text))
+    acting_counterparty = actor & counterparty
+    if acting_self and not acting_counterparty and taken & counterparty and not taken_self:
+        return taken & counterparty
+    if acting_counterparty and not acting_self and taken_self and not taken & counterparty:
+        return acting_counterparty
+    return frozenset()
 
 
 # --- The job ---
@@ -238,29 +373,28 @@ def counterparties(texts: Iterable[str], own: Iterable[str]) -> frozenset[str]:
 @dataclass(frozen=True)
 class _Deal:
     live: LiveCatalyst
-    names: frozenset[str]
+    names: frozenset[str]  # its own counterparty names, less those another open deal gives
+    own: frozenset[str]
 
 
 @dataclass(frozen=True)
 class _Found:
     completion: Completion  # placed in the stored copy's text, as every claim's quote is
     item: str | None
-    names: frozenset[str]
 
 
-def _claim_texts(session: Session, ids: Sequence[UUID]) -> dict[UUID, list[str]]:
-    """Every extractor claim's quote and proposed title behind each catalyst's history."""
+def _claim_texts(session: Session, ids: Sequence[UUID]) -> dict[UUID, list[tuple[str, object]]]:
+    """Every extractor claim's quote and value behind each catalyst's history."""
     change, claim = TABLES[CatalystChange], TABLES[Claim]
     query = (
-        select(change.c.catalyst_id, claim.c.quote, claim.c.value)
+        select(change.c.catalyst_id, claim.c.id, claim.c.quote, claim.c.value)
         .join(claim, claim.c.id == change.c.claim_id)
         .where(change.c.catalyst_id.in_(ids), claim.c.agent == ROLE)
         .distinct()
     )
-    texts: defaultdict[UUID, list[str]] = defaultdict(list)
+    texts: defaultdict[UUID, list[tuple[str, object]]] = defaultdict(list)
     for row in session.execute(query):
-        title = claim_value(row.value).get("title")
-        texts[row.catalyst_id] += [row.quote, *([title] if isinstance(title, str) else [])]
+        texts[row.catalyst_id].append((row.quote, row.value))
     return texts
 
 
@@ -280,6 +414,31 @@ def _own_names(session: Session, companies: Sequence[UUID]) -> dict[UUID, list[s
     ):
         own[row.company_id].append(row.ticker)
     return own
+
+
+def _deals(
+    open_deals: Sequence[LiveCatalyst],
+    texts: Mapping[UUID, list[tuple[str, object]]],
+    own_names: Mapping[UUID, list[str]],
+) -> dict[UUID, list[_Deal]]:
+    """Each company's deals that name a counterparty no other open deal of that company names."""
+    named: dict[UUID, frozenset[str]] = {}
+    for c in open_deals:
+        found: set[str] = set()
+        for quote, value in texts.get(c.row.id, []):
+            found |= claim_deal_names(quote, value)
+        named[c.row.id] = frozenset(found) - _own(own_names.get(c.key.company_id, []))
+    deals: defaultdict[UUID, list[_Deal]] = defaultdict(list)
+    for c in open_deals:
+        others: set[str] = set()
+        for o in open_deals:
+            if o.key.company_id == c.key.company_id and o.row.id != c.row.id:
+                others |= named[o.row.id]
+        names = named[c.row.id] - others
+        if names:  # a claim that names no counterparty, or only a shared one, is never closed: unsure
+            own = _own(own_names.get(c.key.company_id, []))
+            deals[c.key.company_id].append(_Deal(c, names, own))
+    return deals
 
 
 def _documents(session: Session, earliest: dict[UUID, datetime]) -> list[Any]:
@@ -308,7 +467,10 @@ def _documents(session: Session, earliest: dict[UUID, datetime]) -> list[Any]:
 
 
 def _read(store: SnapshotStore, row: Any) -> list[_Found]:
-    """Return each completion sentence the document shows a reader, placed in its stored text."""
+    """Return each completion sentence the document shows a reader, placed in its stored text.
+
+    Text from the first "About ..." heading on is the companies' boilerplate and is not read.
+    """
     if row.content_type.split(";")[0].strip().lower() not in TEXT_TYPES or row.snapshot_key != snapshot_key(
         row.sha256
     ):
@@ -321,23 +483,29 @@ def _read(store: SnapshotStore, row: Any) -> list[_Found]:
     item = reports_completion_item(visible)
     if row.document_type == MAIN_8K and item is None:
         return []
+    heading = _ABOUT_HEADING.search(visible)
+    body = visible[: heading.start()] if heading else visible
     found: list[_Found] = []
-    for completion in completion_sentences(visible):
+    for completion in completion_sentences(body, year=row.published_at.year):
         span = find_quote(text, completion.sentence)
         if span is None or invisible_characters(span.quote):
             continue
-        placed = Completion(span.start, span.end, span.quote)
-        found.append(_Found(placed, item if row.document_type == MAIN_8K else None, names_in(span.quote)))
+        statement = _statement(span.quote, row.published_at.year)  # the stored text may space it otherwise
+        if statement is None:
+            continue
+        placed = Completion(span.start, span.end, span.quote, *statement)
+        found.append(_Found(placed, item if row.document_type == MAIN_8K else None))
     return found
 
 
-def _close(session: Session, deal: _Deal, row: Any, found: _Found, at: datetime) -> None:
+def _close(
+    session: Session, deal: _Deal, row: Any, found: _Found, matched: frozenset[str], at: datetime
+) -> None:
     live = deal.live.row
-    matched = sorted(found.names & deal.names)
     value: dict[str, JsonValue] = {
         "status": CatalystStatus.RESOLVED.value,
         "event": "deal_closed",
-        "names": list[JsonValue](matched),
+        "names": list[JsonValue](sorted(matched)),
         "item": found.item,
         "document_type": str(row.document_type),
         "text_version": TEXT_VERSION,
@@ -405,14 +573,9 @@ def close_deals(session: Session, store: SnapshotStore, at: datetime) -> int:
     ]
     if not open_deals:
         return 0
-    ids = [c.row.id for c in open_deals]
-    texts = _claim_texts(session, ids)
-    own = _own_names(session, list({c.key.company_id for c in open_deals}))
-    deals: defaultdict[UUID, list[_Deal]] = defaultdict(list)
-    for c in open_deals:
-        names = counterparties(texts[c.row.id], own[c.key.company_id])
-        if names:  # a claim that names no counterparty or asset is never closed: unsure
-            deals[c.key.company_id].append(_Deal(c, names))
+    texts = _claim_texts(session, [c.row.id for c in open_deals])
+    own_names = _own_names(session, list({c.key.company_id for c in open_deals}))
+    deals = _deals(open_deals, texts, own_names)
     if not deals:
         return 0
     earliest = {company: min(d.live.source.published_at for d in group) for company, group in deals.items()}
@@ -429,8 +592,10 @@ def close_deals(session: Session, store: SnapshotStore, at: datetime) -> int:
         if row.id not in read:
             read[row.id] = _read(store, row)
         for deal in waiting:
-            match = next((f for f in read[row.id] if f.names & deal.names), None)
-            if match is not None:
-                _close(session, deal, row, match, at)
-                closed.add(deal.live.row.id)
+            for found in read[row.id]:
+                matched = _closed_by(found.completion, deal.own, deal.names)
+                if matched:
+                    _close(session, deal, row, found, matched, at)
+                    closed.add(deal.live.row.id)
+                    break
     return len(closed)
