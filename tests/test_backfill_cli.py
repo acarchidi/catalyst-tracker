@@ -119,3 +119,51 @@ def test_backfill_collect_prints_its_counts_and_fails_on_a_company_error(
     assert asked["companies"] == 466  # every covered company by default
     assert asked["max_minutes"] == 90
     assert json.loads(capsys.readouterr().out)["sources"][0]["error"] == "HTTPError: 500"
+
+
+def _record_the_reading_order(monkeypatch: pytest.MonkeyPatch, credit: bool) -> list[tuple[str, Any]]:
+    """Record which reader ran first, with its deadline and guard (owner, 2026-11-25; ADR 0081)."""
+    _stand_in_for_the_pipeline(monkeypatch, None)
+    order: list[tuple[str, Any]] = []
+
+    def extract(*_args: object, **options: Any) -> ExtractionReport:
+        order.append(("releases", options["deadline"]))
+        return ExtractionReport()
+
+    def filings(*_args: object, **options: Any) -> FilingReport:
+        order.append(("filings", options["deadline"]))
+        order.append(("guard", options["guard"]))
+        return FilingReport()
+
+    monkeypatch.setattr(cli, "extract_documents", extract)
+    monkeypatch.setattr(cli, "read_filings", filings)
+    monkeypatch.setattr(cli, "credit_holds", lambda *_a: credit)  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    return order
+
+
+def test_on_the_credit_filings_go_first_with_half_the_reading_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _record_the_reading_order(monkeypatch, credit=True)
+    assert main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"]) == 0
+    assert [name for name, _ in order] == ["filings", "guard", "releases"]
+    assert order[0][1] == NOW + timedelta(minutes=60)  # half the reading time; the releases keep the rest
+    assert order[2][1] == NOW + timedelta(minutes=120)
+    assert order[1][1].on_credit()
+
+
+def test_off_the_credit_filings_follow_the_releases_as_before(monkeypatch: pytest.MonkeyPatch) -> None:
+    order = _record_the_reading_order(monkeypatch, credit=False)
+    assert main(["extract-catalysts", "--since", "2025-01-01", "--max-minutes", "120", "--stop-is-expected"]) == 0
+    assert [name for name, _ in order] == ["releases", "filings", "guard"]
+    assert order[0][1] == order[1][1] == NOW + timedelta(minutes=120)
+    assert not order[2][1].on_credit()
+
+
+def test_a_credit_check_that_cannot_reach_the_database_keeps_the_usual_caps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real = cli.credit_holds
+    order = _record_the_reading_order(monkeypatch, credit=True)
+    monkeypatch.setattr(cli, "credit_holds", real)  # the test's engine refuses every connection
+    assert main(["extract-catalysts", "--max-minutes", "120", "--stop-is-expected"]) == 0
+    assert [name for name, _ in order] == ["releases", "filings", "guard"]
+    assert not order[2][1].on_credit()
