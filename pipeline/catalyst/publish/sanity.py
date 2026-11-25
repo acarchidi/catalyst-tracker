@@ -9,7 +9,12 @@ when a person must decide:
   while the published one has not (B2), or either end would move more than 6 months, unless the
   new window lies inside the old one (spec: Change sanity);
 - a source of the same rank gives other dates for the same event: another claim not yet
-  published (both wait), or the published one's source (CP4 review, O2). A tie decides nothing.
+  published (both wait), or the published one's source (CP4 review, O2). A tie decides nothing;
+- it outranks a published merger or acquisition and would move its close window, and its quote
+  dates another step of the deal (a vote, a waiting period or regulatory clearance, a tender
+  offer's expiry, a record date) or has no closing words for the deal (ADR 0083,
+  `catalyst.publish.deal_steps`). It is listed beside any other reason, so a person approving a
+  move sees it. Only the automatic move is blocked: a person may approve it.
 
 Against a published catalyst, every failing reason is given, in order, joined by "; ". When one
 of them is a date move or a window that does not overlap, both windows follow ("(from
@@ -43,6 +48,7 @@ from catalyst.db.tables import TABLES
 from catalyst.extract.agent import EXTRACTOR_PROMPT, ROLE
 from catalyst.extract.run import NEW_YORK
 from catalyst.logs import log_event
+from catalyst.publish.deal_steps import deal_step_hold, is_deal_step_hold
 from catalyst.publish.gate import WRITER_CHECK
 from catalyst.publish.live import (
     Key,
@@ -54,7 +60,16 @@ from catalyst.publish.live import (
     load_live,
     ranks_above,
 )
-from catalyst.schemas import CheckOutcome, Claim, Drug, DrugName, DrugRole, SourceDocument, SourceTier
+from catalyst.schemas import (
+    CatalystType,
+    CheckOutcome,
+    Claim,
+    Drug,
+    DrugName,
+    DrugRole,
+    SourceDocument,
+    SourceTier,
+)
 from catalyst.verify.incremental import Found, load_stamps, write_checks
 from catalyst.verify.rules import CheckResult, Match, months_after
 from catalyst.verify.run import load_matches
@@ -74,10 +89,17 @@ PERSON_MAY_APPROVE: frozenset[str] = frozenset({NOT_OVERLAPPING, TOO_FAR})
 _WINDOWS = " (from "
 
 
+def _may_approve(part: str) -> bool:
+    return part in PERSON_MAY_APPROVE or is_deal_step_hold(part)
+
+
 def person_may_approve(reason: str) -> bool:
-    """Say whether a person may lift this `safe_to_write` reason: each part is a yes-or-no date hold."""
+    """Say whether a person may lift this `safe_to_write` reason: each part is a yes-or-no date hold.
+
+    A deal-step hold (ADR 0083) is one too: it asks whether the claim's date is the deal's close.
+    """
     parts = reason.split(_WINDOWS, 1)[0].split("; ")
-    return all(part in PERSON_MAY_APPROVE for part in parts)
+    return all(_may_approve(part) for part in parts)
 
 
 _JOIN = (
@@ -249,9 +271,17 @@ def _against_live(candidate: Candidate, live: LiveCatalyst, today: date) -> Chec
             reasons.append(PASSED)
         if too_far(live.window, window):
             reasons.append(TOO_FAR)
+        if live.key.catalyst_type == CatalystType.MERGER_ACQUISITION.value:
+            # A vote, waiting period, tender expiry or record date never replaces the close on its
+            # own (ADR 0083). The reason is listed beside any other, so a person approving a long
+            # move sees the vote too (Opus re-review of PR #173 at ffd136d).
+            date_text = candidate.value.get("date_text")
+            step = deal_step_hold(candidate.quote, date_text if isinstance(date_text, str) else None)
+            if step is not None:
+                reasons.append(step)
     if not reasons:
         return CheckResult(WRITER_CHECK, CheckOutcome.PASS)
-    moved = f"{_WINDOWS}{_span(live.window)} to {_span(window)})" if PERSON_MAY_APPROVE & set(reasons) else ""
+    moved = f"{_WINDOWS}{_span(live.window)} to {_span(window)})" if any(map(_may_approve, reasons)) else ""
     return _fail("; ".join(reasons) + moved)
 
 
