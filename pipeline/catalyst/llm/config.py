@@ -25,6 +25,10 @@ PROVIDERS = frozenset({"anthropic", "fake"})
 # check at the same record every day (ADR 0041).
 DEFAULT_MAX_INPUT_TOKENS: dict[str, int] = {"extractor": 40_000, "analyst": 30_000}
 
+# The owner allowed filings at most half of a raised cap, so the press-release backfill keeps the
+# rest (owner, in writing, 2026-11-25; ADR 0081). A larger share in the file is refused.
+FILINGS_SHARE_MOST = Decimal("0.5")
+
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
@@ -41,6 +45,15 @@ class RaisedCap(BaseModel):
     first_day: date
     last_day: date
     approved: str = Field(min_length=1, description="Who approved it in writing, when, and why.")
+    filings_share: Decimal = Field(
+        default=Decimal(0),
+        ge=0,
+        le=FILINGS_SHARE_MOST,
+        description="Most of this cap that 10-Q, 10-K and exhibit reads may use; 0: none (ADR 0081).",
+    )
+    filings_approved: str | None = Field(
+        default=None, description="Who approved the filings' share in writing, when, and why."
+    )
 
     @model_validator(mode="after")
     def _in_order(self) -> Self:
@@ -48,6 +61,8 @@ class RaisedCap(BaseModel):
             raise ValueError(
                 f"a raised cap's last_day {self.last_day} is before its first_day {self.first_day}"
             )
+        if self.filings_share > 0 and not self.filings_approved:
+            raise ValueError("a filings_share needs filings_approved: who allowed it in writing, and when")
         return self
 
 
@@ -82,6 +97,13 @@ class RoleConfig(BaseModel):
             if raised.first_day <= day <= raised.last_day:
                 return raised.cap_usd
         return self.daily_cap_usd
+
+    def filings_line(self, day: date) -> Decimal | None:
+        """Return the filings' share of a raised cap on `day`, or None when no share applies that day."""
+        for raised in self.raised_caps:
+            if raised.first_day <= day <= raised.last_day and raised.filings_share > 0:
+                return raised.cap_usd * raised.filings_share
+        return None
 
 
 class ModelConfig(BaseModel):
