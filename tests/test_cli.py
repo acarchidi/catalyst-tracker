@@ -21,6 +21,7 @@ from catalyst.extract.filings import FilingReport, FilingResult
 from catalyst.extract.indicate import IndicationReport
 from catalyst.extract.run import DocumentResult, ExtractionReport
 from catalyst.links import LinkReport, LinkResult, LinkStatus
+from catalyst.publish.estimates import EstimateReport
 from catalyst.publish.indication import IndicationWrites
 from catalyst.publish.run import DecisionReport
 from catalyst.publish.sanity import SafeReport
@@ -530,6 +531,23 @@ def test_publish_claims_prints_the_counts(
     )
     assert printed["top_reasons"] == {"window_not_past failed": 2}
     assert models == ["claude-sonnet-5-5"]
+
+
+def test_publish_estimates_prints_the_counts(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    def publish(_factory: object, _store: object, _now: object) -> EstimateReport:
+        report = EstimateReport(trials_read=4, created=2, replaced=1)
+        report.held.update({"the estimate would move more than 6 months": 1})
+        return report
+
+    monkeypatch.setenv("CATALYST_DATABASE_URL", "postgresql+psycopg://localhost/unused_test")
+    monkeypatch.setattr(cli, "create_engine", lambda *_args: _FakeEngine())  # pyright: ignore[reportUnknownLambdaType, reportUnknownArgumentType]
+    monkeypatch.setattr(cli, "publish_estimates", publish)
+    assert main(["publish-estimates", "--snapshot-dir", "var/test-snapshots"]) == 0
+    printed = json.loads(capsys.readouterr().out)
+    assert (printed["trials_read"], printed["created"], printed["replaced"]) == (4, 2, 1)
+    assert printed["estimates_held"] == {"the estimate would move more than 6 months": 1}
 
 
 def test_publish_claims_with_the_supabase_store_names_the_missing_setting(

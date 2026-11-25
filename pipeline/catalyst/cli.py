@@ -74,6 +74,7 @@ from catalyst.outreach.digest import (
     render_html,
     render_page,
 )
+from catalyst.publish.estimates import publish_estimates
 from catalyst.publish.indication import publish_indications
 from catalyst.publish.run import decide_claims
 from catalyst.publish.sanity import check_safe_to_write
@@ -251,6 +252,15 @@ def _parser() -> argparse.ArgumentParser:
         help="Check again each claim marked to publish, and write the live catalysts (free; no model calls).",
     )
     _store_arguments(publish)
+    estimated = commands.add_parser(
+        "publish-estimates",
+        help=(
+            "Write each covered trial's estimated primary completion date from its stored registry "
+            "record, labelled Estimated, where no company date exists (free; no model calls; ADR 0067). "
+            "Run only by hand until its workflow step is added."
+        ),
+    )
+    _store_arguments(estimated)
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -522,6 +532,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "post-issues": _post_issues,
         "decide-claims": _decide_claims,
         "publish-claims": _publish_claims,
+        "publish-estimates": _publish_estimates,
         "api": _serve,
         "mcp": _serve,
         "export-catalysts": _export,
@@ -1100,6 +1111,22 @@ def _publish_claims(args: argparse.Namespace) -> int:
     finally:
         engine.dispose()
     print(json.dumps(report.summary() | indications.summary(), indent=2))
+    return 0
+
+
+def _publish_estimates(args: argparse.Namespace) -> int:
+    try:
+        database = settings.database_url()
+        store = _open_store(args, create_bucket=False)
+    except settings.MissingSettingError as error:
+        print(error, file=sys.stderr)
+        return 2
+    engine = create_engine(database)
+    try:
+        report = publish_estimates(sessionmaker(engine), store, _utc_now)
+    finally:
+        engine.dispose()
+    print(json.dumps(report.summary(), indent=2))
     return 0
 
 

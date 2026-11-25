@@ -303,7 +303,12 @@ class Catalyst(Entity):
     window_precision: DatePrecision = Field(description="How precisely the date is known.")
     window_raw_text: Name = Field(description="The date exactly as the source wrote it, for example '2H26'.")
     date_confidence: DateConfidence = Field(description="Who stands behind the date.")
-    status: CatalystStatus = Field(description="Upcoming, slipped, resolved, or withdrawn after review.")
+    status: CatalystStatus = Field(
+        description=(
+            "Upcoming, slipped, resolved, replaced (a registry estimate a company date replaced), "
+            "or withdrawn after review."
+        )
+    )
 
     @model_validator(mode="after")
     def _window(self) -> Self:

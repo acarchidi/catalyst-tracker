@@ -141,6 +141,9 @@ WORDS: Mapping[CatalystType, tuple[str, ...]] = MappingProxyType(
             r"results\s+of\s+operations",
             r"fiscal",
         ),
+        # Only the registry field states this type (ADR 0067). A release's "primary completion" is
+        # not one of its words, so the extractor's checks read every release exactly as before.
+        T.PRIMARY_COMPLETION: (r"(?-i:primaryCompletionDateStruct)",),
     }
 )
 # The fixed words a title starts with, and how a reason names the type.
@@ -160,6 +163,7 @@ LABELS: Mapping[CatalystType, str] = MappingProxyType(
         T.SHELF_FILING: "Shelf registration",
         T.MERGER_ACQUISITION: "Merger or acquisition",
         T.EARNINGS: "Earnings report",
+        T.PRIMARY_COMPLETION: "Primary completion",
     }
 )
 # An article for the types a reason names with one ("an FDA decision date"); the rest take none.
