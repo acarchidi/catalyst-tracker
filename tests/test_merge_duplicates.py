@@ -15,27 +15,36 @@ from uuid import UUID, uuid4
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
+from sqlalchemy import update
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalyst.api.access import Access
 from catalyst.api.read import SAME_EVENT, Query, published, upcoming
 from catalyst.api.read import catalyst as read_catalyst
+from catalyst.db.tables import TABLES
 from catalyst.export import build_export
 from catalyst.outreach.digest import build_digest
+from catalyst.publish.closed_deals import CLOSED_EVENT, DEAL_CLOSER
 from catalyst.publish.duplicates import (
     DEDUPLICATOR,
     Entry,
     meeting_names,
     merge_plan,
+    normal_title,
     same_event,
+    title_marks,
 )
-from catalyst.publish.live import Rank
-from catalyst.publish.write import publish_claims
+from catalyst.publish.live import MERGED_EVENT, Rank
+from catalyst.publish.withdrawals import Withdrawal
+from catalyst.publish.write import WITHDRAWN_EVENT, publish_claims
 from catalyst.schemas import (
     Catalyst,
     CatalystChange,
+    CatalystField,
     CatalystMergedSource,
     Claim,
+    ClaimCheck,
+    ClaimSubject,
     Drug,
     DrugName,
     DrugNameKind,
@@ -52,9 +61,18 @@ SEC, WIRE = SourceTier.REGULATOR_OR_SEC, SourceTier.WIRE
 OLDER, NEWER = OCT_14, OCT_16
 
 
+TITLE = "Phase 3 topline data for pegozafermin in MASH"
+
+
 def _entry(**changes: Any) -> Entry:
-    """Return a topline readout of pegozafermin in MASH, from an SEC filing, unless changed."""
+    """Return a Phase 3 topline readout of pegozafermin in MASH, from an SEC filing, unless changed.
+
+    A `title` is the extractor's own (never published); its marks are read from it unless given.
+    """
+    title = changes.pop("title", TITLE)
     fields: dict[str, Any] = {
+        "title": normal_title(title),
+        "marks": title_marks(title),
         "id": uuid4(),
         "company_id": COMPANY,
         "catalyst_type": "topline_readout",
@@ -107,6 +125,10 @@ def test_two_entries_of_one_event_are_the_same(first: dict[str, Any], second: di
         {"trials": frozenset({OTHER_TRIAL})},  # different trials
         {"trials": frozenset({TRIAL, OTHER_TRIAL})},
         {"window": (date(2028, 1, 1), date(2028, 6, 30))},  # windows that do not overlap
+        {"title": "Phase 2 topline data for pegozafermin in MASH"},  # another phase
+        {"title": "Phase 3 interim data for pegozafermin in MASH"},  # interim is not topline
+        {"title": "Phase 3 final data for pegozafermin in MASH"},
+        {"title": "Phase 3 topline data for pegozafermin in MASH in Japan"},  # a region of its own
     ],
 )
 def test_a_near_miss_is_never_the_same(change: dict[str, Any]) -> None:
@@ -114,6 +136,55 @@ def test_a_near_miss_is_never_the_same(change: dict[str, Any]) -> None:
     b = _entry(**change)
     assert not same_event(a, b)
     assert not same_event(b, a)
+
+
+def test_a_phase_2_readout_without_a_trial_is_not_the_phase_3_trial_s_readout() -> None:
+    """Opus review of 66ecb0f, finding 1: "Phase 2 topline 2H26" (no trial), a Phase 3 trial's "2026"."""
+    phase_2 = _entry(
+        title="Phase 2 topline data for pegozafermin expected in 2H26",
+        trials=frozenset[UUID](),
+        window=(date(2026, 7, 1), date(2026, 12, 31)),
+    )
+    phase_3 = _entry(
+        title="Phase 3 RAINIER topline data for pegozafermin in 2026",
+        window=(date(2026, 1, 1), date(2026, 12, 31)),
+    )
+    assert not same_event(phase_2, phase_3)
+    # One side naming a trial and the other none needs the very same title, not only the same marks.
+    reworded = _entry(title="Phase 3 topline results for pegozafermin in MASH", trials=frozenset[UUID]())
+    assert not same_event(_entry(), reworded)
+    assert same_event(_entry(), _entry(trials=frozenset[UUID]()))
+
+
+def test_a_us_submission_is_not_a_european_one() -> None:
+    """Opus review of 66ecb0f, finding 1: "BLA to FDA 2H26" and "MAA to EMA 2H26"."""
+    kind: dict[str, Any] = {"catalyst_type": "regulatory_submission", "trials": frozenset[UUID]()}
+    window = (date(2026, 7, 1), date(2026, 12, 31))
+    bla = _entry(**kind, title="BLA submission to the FDA for pegozafermin in 2H26", window=window)
+    maa = _entry(**kind, title="MAA submission to the EMA for pegozafermin in 2H26", window=window)
+    assert title_marks("BLA submission to the FDA") == {"region:us"}
+    assert title_marks("MAA submission to the EMA") == {"region:eu"}
+    assert not same_event(bla, maa)
+    unnamed = _entry(**kind, title="Regulatory submission for pegozafermin in 2H26", window=window)
+    assert not same_event(bla, unnamed)  # one side names a regulator, the other none: unsure
+
+
+@pytest.mark.parametrize(
+    ("title", "marks"),
+    [
+        ("Phase 3 RAINIER topline data", {"phase:3", "stage:topline"}),
+        ("Phase III top-line results", {"phase:3", "stage:topline"}),
+        ("Phase 1/2 interim data", {"phase:1/2", "stage:interim"}),
+        ("Phase IIb final analysis", {"phase:2b", "stage:final"}),
+        ("sNDA filing with the U.S. FDA", {"region:us"}),
+        ("CHMP opinion in the European Union", {"region:eu"}),
+        ("PMDA submission in Japan", {"region:jp"}),
+        ("NMPA acceptance in China", {"region:cn"}),
+        ("Data for pegozafermin", set[str]()),
+    ],
+)
+def test_title_marks_read_the_phase_the_stage_and_the_region(title: str, marks: set[str]) -> None:
+    assert title_marks(title) == marks
 
 
 def test_two_entries_without_a_drug_are_never_the_same() -> None:
@@ -167,6 +238,10 @@ def test_a_conference_needs_the_same_meeting_or_the_same_exact_dates() -> None:
         ("at ESMO 2027", set[str]()),  # no meeting word: not read as a name
         ("at the Annual Meeting of stockholders", set[str]()),  # nothing but meeting words
         ("at a medical meeting in the second half of 2027", set[str]()),
+        # A session is part of a meeting, never its name (Opus review of 66ecb0f, nit).
+        ("presented during the Late-Breaking Session at ESMO 2027", set[str]()),
+        ("presented during the Late-Breaking Session at ASCO 2027", set[str]()),
+        ("in an Oral Session at the EASL Congress", {"easl congress"}),
     ],
 )
 def test_meeting_names_are_read_from_the_quote(quote: str, names: set[str]) -> None:
@@ -218,6 +293,9 @@ _ENTRIES = st.lists(
             ]
         ),
         meetings=st.sampled_from([frozenset[str](), AASLD, EASL]),
+        title=st.sampled_from(
+            [TITLE, "Phase 2 topline data for pegozafermin", "Phase 3 interim data", "BLA to FDA"]
+        ),
         rank=st.builds(
             Rank,
             st.sampled_from([SEC, WIRE]),
@@ -353,15 +431,133 @@ def test_re_running_changes_nothing(world: World) -> None:
     assert (world.counts(), len(world.rows(Claim)), len(world.rows(CatalystMergedSource))) == counts
 
 
-def test_a_later_release_about_the_merged_entry_updates_the_kept_one(world: World) -> None:
+def test_a_later_release_that_fits_only_the_merged_entry_waits_for_a_person(world: World) -> None:
     _two_entries(world)
     statuses = _statuses(world)
     assert sorted(statuses.values()) == ["merged", "upcoming"]
-    _readout(world, "December 2026", published=NEWER + timedelta(days=1))  # the merged entry's drug record
+    claim = _readout(world, "December 2026", published=NEWER + timedelta(days=1))  # the merged entry's drug
     summary = _publish(world, NOW + timedelta(days=2))
     assert summary["catalysts_created"] == 0  # the duplicate does not come back
-    assert summary["not_written_same_dates"] == 1  # placed on the kept entry, whose dates it confirms
+    assert summary["top_reasons"] == {
+        MERGED_EVENT: 1
+    }  # never sent to the kept entry (Opus review, finding 2)
+    assert _check(world, claim) == ("fail", MERGED_EVENT)
     assert _statuses(world) == statuses
+
+
+def _same_name_record(world: World) -> UUID:
+    """Add a second drug record that goes by the same name, as a stray copy in the reference tables does."""
+    drug = world.add(Drug(company_id=world.company, preferred_name="pegozafermin"))
+    world.add(DrugName(drug_id=drug, name="pegozafermin", kind=DrugNameKind.INN))
+    return drug
+
+
+def test_a_claim_about_another_trial_never_moves_the_kept_entry(world: World) -> None:
+    """Opus review of 66ecb0f, finding 2: B (no trial) merged into A (RAINIER); a claim names SYMMETRY."""
+    stray = _same_name_record(world)
+    _readout(world, "fourth quarter of 2026", published=OLDER, drug_id=stray)  # B: no trial
+    _publish(world)
+    _readout(world, "December 2026", published=NEWER, trial=True)  # A: RAINIER, the same title
+    assert _publish(world)["duplicates_merged"] == 1
+    (kept,) = [r for r in world.rows(Catalyst) if r.status == "upcoming"]
+    sentence = "Topline data from the Phase 3 SYMMETRY trial of pegozafermin are expected in the March 2027."
+    claim = world.claim(
+        "March 2027",
+        sentence=sentence,
+        published=NEWER + timedelta(days=1),
+        drug_id=stray,
+        trial=world.other_trial,
+    )
+    summary = _publish(world, NOW + timedelta(days=1))
+    assert (summary["catalysts_created"], summary["catalysts_updated"]) == (0, 0)
+    assert _check(world, claim) == ("fail", MERGED_EVENT)
+    (after,) = [r for r in world.rows(Catalyst) if r.id == kept.id]
+    assert (after.window_start, after.window_end) == (kept.window_start, kept.window_end)
+
+
+def _check(world: World, claim: UUID) -> tuple[str, str | None]:
+    (row,) = [r for r in world.rows(ClaimCheck) if r.claim_id == claim and r.check_name == "safe_to_write"]
+    return row.outcome, row.reason
+
+
+def _window_claim(world: World, catalyst_id: UUID) -> UUID:
+    (claim_id,) = {c.claim_id for c in world.rows(CatalystChange) if c.catalyst_id == catalyst_id}
+    return claim_id
+
+
+def test_a_withdrawn_kept_entry_takes_its_merged_entry_with_it(world: World) -> None:
+    """Opus review of 66ecb0f, finding 3: withdrawing A must not let B's event back in (ADR 0070 cutoff)."""
+    _, kept, _ = _two_entries(world)
+    entry = Withdrawal(
+        claim=str(_window_claim(world, kept)),
+        reason="superseded",
+        evidence="own source",
+        added=date(2026, 11, 25),
+    )
+    withdrawn_at = NOW + timedelta(days=1)
+    summary = publish_claims(
+        world.factory, world.store, lambda: withdrawn_at, verifier_model=VERIFIER_MODEL, withdrawals=[entry]
+    )
+    assert summary.catalysts_withdrawn == 1
+    older = _readout(world, "December 2026", published=NEWER + timedelta(hours=2))  # before the withdrawal
+    summary = publish_claims(
+        world.factory,
+        world.store,
+        lambda: withdrawn_at + timedelta(days=1),
+        verifier_model=VERIFIER_MODEL,
+        withdrawals=[entry],
+    )
+    assert summary.catalysts_created == 0
+    assert _check(world, older) == ("fail", WITHDRAWN_EVENT)
+    _readout(world, "January 2027", published=withdrawn_at + timedelta(hours=1))  # after it: a new event
+    summary = publish_claims(
+        world.factory,
+        world.store,
+        lambda: withdrawn_at + timedelta(days=2),
+        verifier_model=VERIFIER_MODEL,
+        withdrawals=[entry],
+    )
+    assert summary.catalysts_created == 1
+
+
+def test_a_closed_kept_entry_takes_its_merged_entry_with_it(world: World) -> None:
+    """Opus review of 66ecb0f, finding 3: a closing (ADR 0080) must not let B's event back in."""
+    _, kept, _ = _two_entries(world)
+    source = _window_claim(world, kept)
+    (claim,) = [c for c in world.rows(Claim) if c.id == source]
+    closing = Claim(
+        source_document_id=claim.source_document_id,
+        subject_type=ClaimSubject.CATALYST,
+        subject_id=kept,
+        field=f"deal_closed:{kept}",
+        value={"status": "resolved", "names": [], "deal_names": [], "own_names": []},
+        quote=claim.quote,
+        quote_start=claim.quote_start,
+        quote_end=claim.quote_end,
+        agent=DEAL_CLOSER,
+        prompt_id="closed_deals",
+        prompt_version="1.1.0",
+        provider="plain code",
+        model="plain code",
+        extracted_at=NOW,
+    )
+    world.add(closing)
+    world.add(
+        CatalystChange(
+            catalyst_id=kept, field=CatalystField.STATUS, old_value="upcoming", new_value="resolved",
+            claim_id=closing.id, learned_at=NOW + timedelta(hours=1),
+        )
+    )  # fmt: skip
+    with world.factory.begin() as session:
+        session.execute(
+            update(TABLES[Catalyst]).where(TABLES[Catalyst].c.id == kept).values(status="resolved")
+        )
+    older = _readout(
+        world, "December 2026", published=OLDER + timedelta(days=1)
+    )  # before the completion document
+    summary = _publish(world, NOW + timedelta(days=1))
+    assert summary["catalysts_created"] == 0
+    assert _check(world, older) == ("fail", CLOSED_EVENT)
 
 
 @pytest.mark.parametrize(
@@ -369,17 +565,14 @@ def test_a_later_release_about_the_merged_entry_updates_the_kept_one(world: Worl
     [
         {"indication": "NSCLC"},  # different indications
         {"date_text": "first half of 2027"},  # windows that do not overlap
-        {"trial": True},  # one side names a trial, the other none: the same event, so merged
+        {"trial": True},  # one side names a trial, the other none, and the titles differ: unsure
     ],
 )
 def test_near_misses_on_the_database(world: World, second: dict[str, Any]) -> None:
-    merges = second == {"trial": True}
     summary = _two_entries(world, **second)[2]
-    assert summary["duplicates_merged"] == int(merges)
+    assert summary["duplicates_merged"] == 0
     assert _publish(world, NOW + timedelta(days=1))["duplicates_merged"] == 0
-    assert sorted(_statuses(world).values()) == (
-        ["merged", "upcoming"] if merges else ["upcoming", "upcoming"]
-    )
+    assert sorted(_statuses(world).values()) == ["upcoming", "upcoming"]
 
 
 def _talk(world: World, date_text: str, meeting: str, **changes: Any) -> UUID:

@@ -59,7 +59,8 @@ def truncate_all(engine: Engine) -> None:
     with engine.begin() as connection:
         present = set(inspect(connection).get_table_names())
         names = ", ".join(table.name for table in metadata.sorted_tables if table.name in present)
-        connection.exec_driver_sql(f"TRUNCATE {names}")
+        if names:  # none at the base revision
+            connection.exec_driver_sql(f"TRUNCATE {names}")
 
 
 @pytest.fixture

@@ -13,7 +13,8 @@ already cites is about that change's catalyst. Resolved catalysts are left out, 
 the same kind (a new FDA date after a refusal) becomes a new catalyst; but a deal that plain code
 found closed (ADR 0080) is kept aside, like a withdrawn one, so an older release of its "expected to
 close" date never makes it a new catalyst again. An entry merged into another as the same event
-(ADR 0082) is open no more; a claim that would fit only it is placed on the entry it was merged into.
+(ADR 0082) is open no more; a claim that would fit only it waits for a person, and when the entry it
+was merged into is withdrawn or closed, the merged entry is set aside with it.
 
 Once a catalyst is live, its date passing is a change for the outcome tracker, not a reason to
 hold a claim about it, so `window_not_past` does not apply to such claims.
@@ -24,7 +25,7 @@ from __future__ import annotations
 import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime
 from typing import Any, cast
 from uuid import UUID
@@ -57,6 +58,7 @@ if WINDOW_CHECK not in gate.RULE_CHECKS or WINDOW_CHECK not in gate.MAY_NOT_APPL
     raise RuntimeError(f"{WINDOW_CHECK} must be a rule check that may not apply")
 SEVERAL = "the claim matches more than one published catalyst"
 OTHER_INDICATION = "the indication differs from the published one"
+MERGED_EVENT = "the claim fits only an entry merged into another as the same event; a person must decide"
 # The fields whose newest change row names the claim behind the current dates (B1; round 2, N1).
 WINDOW_FIELDS = frozenset(
     {
@@ -186,24 +188,16 @@ def place(key: Key, catalysts: Iterable[LiveCatalyst]) -> Place:
 
 
 def place_among(key: Key, catalysts: Sequence[LiveCatalyst], merged: Sequence[LiveCatalyst] = ()) -> Place:
-    """Place a claim like `place`; a new event that fits a merged entry is its kept entry's (ADR 0082).
+    """Place a claim like `place`; one that would be a new event but fits a merged entry waits (ADR 0082).
 
-    So a later release naming the event as the merged entry named it updates the kept entry, and
-    never brings the duplicate back. A claim fitting several merged entries waits for a person.
+    It is never sent to the kept entry: the merged entry may have named no trial, so the claim may be
+    another trial's event (Opus review of 66ecb0f, finding 2). A person decides.
     """
     where = place(key, catalysts)
     if where.catalyst is not None or where.hold is not None or not merged:
         return where
     alias = place(key, merged)
-    if alias.catalyst is None:
-        return Place(hold=alias.hold)
-    target, seen = alias.catalyst, set[UUID]()
-    by_id = {c.row.id: c for c in merged}
-    while (into := target.into) in by_id and into is not None and target.row.id not in seen:
-        seen.add(target.row.id)  # merged into an entry merged since: follow it
-        target = by_id[into]
-    kept = next((c for c in catalysts if c.row.id == target.into), None)
-    return Place(catalyst=kept) if kept is not None else where
+    return Place(hold=MERGED_EVENT) if alias.catalyst is not None or alias.hold is not None else where
 
 
 @dataclass(frozen=True)
@@ -365,7 +359,35 @@ def load_live(session: Session) -> LiveIndex:
                 status_into.get(live.id),
             )
         )
+    merged = _set_aside_with_kept(merged, withdrawn, closed)
     return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed, merged=merged)
+
+
+def _set_aside_with_kept(
+    merged: list[LiveCatalyst], withdrawn: list[LiveCatalyst], closed: list[LiveCatalyst]
+) -> list[LiveCatalyst]:
+    """Set each merged entry aside as its kept entry is, withdrawn or closed (Opus review, finding 3).
+
+    It takes the kept entry's cutoff (when it was withdrawn, or when its completion document was
+    published) and a closed deal's names, so a claim fitting only the merged entry is held by the
+    same rules as ADR 0070 and ADR 0080. Return the merged entries whose kept entry is still open.
+    """
+    by_id = {c.row.id: c for c in merged}
+    aside = {c.row.id: c for c in withdrawn} | {c.row.id: c for c in closed}
+    gone = {c.row.id for c in withdrawn}
+    still: list[LiveCatalyst] = []
+    for entry in merged:
+        target, seen = entry.into, {entry.row.id}
+        while target is not None and target in by_id and target not in seen:  # merged again: follow it
+            seen.add(target)
+            target = by_id[target].into
+        kept = aside.get(target) if target is not None else None
+        if kept is None:
+            still.append(entry)
+            continue
+        moved = replace(entry, source=kept.source, names=kept.names, parties=kept.parties)
+        (withdrawn if kept.row.id in gone else closed).append(moved)
+    return still
 
 
 def excuse_passed_window(claim_id: UUID, checks: Iterable[ClaimCheck], at: datetime) -> list[ClaimCheck]:

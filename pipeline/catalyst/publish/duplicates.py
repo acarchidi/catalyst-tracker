@@ -11,7 +11,9 @@ night's claims. Two open entries are one event only when every test holds:
 - the same drug, as the second reading compares names (ADR 0062): "NAME (OTHER)" is one drug and
   "X with Y" is never X; both must name one, so two entries without a drug (most deals) are never
   merged; drug links on both sides must say the same (alone, or in combination);
-- trials that are the same, or one side names none;
+- the same phase, stage (interim, final, topline) and regulator or region words, read by plain code
+  from each entry's own title (the extractor's, never published) and quote (`title_marks`);
+- trials that are the same; or one side names none and the two titles are the same, word for word;
 - indications that are the same, or one side names none, both as stated and as matched;
 - windows that overlap;
 - for a conference presentation, the same meeting name read from their quotes, or the very same
@@ -62,9 +64,18 @@ from catalyst.schemas import (
 from catalyst.verify.second import SameDrug, drug_names_agree
 from catalyst.verify.second_run import same_drug_rule
 
-__all__ = ["DEDUPLICATOR", "Entry", "meeting_names", "merge_duplicates", "merge_plan", "same_event"]
+__all__ = [
+    "DEDUPLICATOR",
+    "Entry",
+    "meeting_names",
+    "merge_duplicates",
+    "merge_plan",
+    "normal_title",
+    "same_event",
+    "title_marks",
+]
 
-RULE_VERSION = "1.0.0"
+RULE_VERSION = "1.1.0"
 PROMPT_ID = "merge_duplicates"  # no prompt: plain code; the field names the rule and its version
 PROVIDER = MODEL = "plain code"
 FIELD_PREFIX = "merged_into:"
@@ -84,8 +95,6 @@ _MEETING_WORDS = frozenset(
         "symposium",
         "summit",
         "forum",
-        "session",
-        "sessions",
         "workshop",
         "week",
         "convention",
@@ -104,7 +113,8 @@ def meeting_names(quote: str) -> frozenset[str]:
 
     A name is a run of capitalised words after "at" or "during" that holds a meeting word
     ("Meeting", "Congress") and a word of its own; years, ordinals, "the" and "annual" are left out,
-    and case does not count. A name not written this way is not read: the dates must then agree.
+    and case does not count. A session ("Late-Breaking Session") is part of a meeting, never its
+    name. A name not written this way is not read: the dates must then agree.
     """
     found: set[str] = set()
     for match in _NAME.finditer(_ASIDE.sub("", quote)):
@@ -115,6 +125,57 @@ def meeting_names(quote: str) -> frozenset[str]:
         ):
             found.add(" ".join(folded))
     return frozenset(found)
+
+
+# --- What a title says: the phase, the stage, the regulator or region ---
+
+_PHASE = re.compile(
+    r"\bphase\s*([1-4]|iv|i{1,3})([ab])?(?:\s*/\s*([1-4]|iv|i{1,3})([ab])?)?(?![\w/])", re.IGNORECASE
+)
+_ROMAN = {"i": "1", "ii": "2", "iii": "3", "iv": "4"}
+_STAGES = (
+    ("interim", re.compile(r"\binterim\b", re.IGNORECASE)),
+    ("final", re.compile(r"\bfinal\b", re.IGNORECASE)),
+    ("topline", re.compile(r"\btop[\s-]?line\b", re.IGNORECASE)),
+)
+# Regulators and regions: acronyms in capitals only ("US", not "us"), place words in any case.
+_REGIONS = (
+    ("us", r"\b(?:FDA|BLA|sBLA|NDA|sNDA|PDUFA|US)\b|\bU\.S\.(?!\w)|(?i:\bunited\s+states\b)"),
+    ("eu", r"\b(?:EMA|MAA|CHMP|EU)\b|(?i:\beurope(?:an)?\b)"),
+    ("jp", r"\b(?:PMDA)\b|(?i:\bjapan(?:ese)?\b)"),
+    ("cn", r"\b(?:NMPA)\b|(?i:\bchin(?:a|ese)\b)"),
+    ("uk", r"\b(?:MHRA|UK)\b|(?i:\bunited\s+kingdom\b)"),
+    ("ca", r"(?i:\bcanad(?:a|ian)\b)"),
+)
+_REGION_PATTERNS = tuple((name, re.compile(pattern)) for name, pattern in _REGIONS)
+
+
+def _phase_part(number: str, letter: str | None) -> str:
+    return _ROMAN.get(number.casefold(), number) + (letter or "").casefold()
+
+
+def title_marks(text: str) -> frozenset[str]:
+    """Return what the text says of the phase, the stage and the regulator or region, as short marks.
+
+    "Phase 3 RAINIER topline data" gives `phase:3` and `stage:topline`; "BLA to the FDA" gives
+    `region:us`. Two entries are one event only when their marks are the same (ADR 0082).
+    """
+    marks: set[str] = set()
+    for found in _PHASE.finditer(text):
+        first = _phase_part(found.group(1), found.group(2))
+        marks.add(
+            f"phase:{first}/{_phase_part(found.group(3), found.group(4))}"
+            if found.group(3)
+            else f"phase:{first}"
+        )
+    marks |= {f"stage:{name}" for name, pattern in _STAGES if pattern.search(text)}
+    marks |= {f"region:{name}" for name, pattern in _REGION_PATTERNS if pattern.search(text)}
+    return frozenset(marks)
+
+
+def normal_title(text: object) -> str:
+    """Return a title for comparison: its words, case-folded, punctuation and spacing ignored."""
+    return " ".join(re.findall(r"\w+", text.casefold())) if isinstance(text, str) else ""
 
 
 # --- The rule ---
@@ -135,6 +196,8 @@ class Entry:
     window: tuple[date, date]
     meetings: frozenset[str]  # the meeting names its quotes give
     rank: Rank  # the source behind its window
+    title: str = ""  # the creating claim's own title (never published), normalised
+    marks: frozenset[str] = frozenset()  # what its title and quote say of phase, stage and region
 
     def order(self) -> tuple[int, float]:
         """Best first: a higher tier, then a later publication."""
@@ -160,14 +223,21 @@ def same_event(a: Entry, b: Entry, same_drug: SameDrug = _names_only) -> bool:
         return False
     if not _agree(a.roles, b.roles) or not drug_names_agree(a.drug, b.drug, same_drug):
         return False
+    if a.marks != b.marks:
+        return False  # another phase, stage or region is another event
     if not (_agree(a.trials, b.trials) and _agree(a.indication, b.indication)):
         return False
+    if a.trials != b.trials and not (a.title and a.title == b.title):
+        return False  # a trial on one side only: the same event only by the very same title
     if not _agree(a.indication_id, b.indication_id):
         return False
     if a.window[0] > b.window[1] or b.window[0] > a.window[1]:
         return False
-    if a.catalyst_type != CatalystType.CONFERENCE_PRESENTATION.value:
-        return True
+    return a.catalyst_type != CatalystType.CONFERENCE_PRESENTATION.value or _same_meeting(a, b)
+
+
+def _same_meeting(a: Entry, b: Entry) -> bool:
+    """Say whether two talks are at one meeting: the same named meeting, or the very same dates."""
     mine, theirs = _meeting(a), _meeting(b)
     if (a.meetings and mine is None) or (b.meetings and theirs is None):
         return False  # an entry that names two meetings names neither for sure
@@ -214,6 +284,8 @@ class _Facts:
     """What the rule reads of each entry beyond the live index."""
 
     drug: dict[UUID, str | None]
+    title: dict[UUID, str]  # the creating claim's own title and quote
+    creating: dict[UUID, str]
     quotes: defaultdict[UUID, list[str]]
     claims: defaultdict[UUID, list[UUID]]  # the claims its history cites, oldest first
     window_claim: dict[UUID, UUID]  # the claim behind its window
@@ -222,7 +294,7 @@ class _Facts:
 
 def _facts(session: Session, ids: Sequence[UUID]) -> _Facts:
     change, claim, link = TABLES[CatalystChange], TABLES[Claim], TABLES[CatalystDrug]
-    facts = _Facts({}, defaultdict(list), defaultdict(list), {}, defaultdict(set))
+    facts = _Facts({}, {}, {}, defaultdict(list), defaultdict(list), {}, defaultdict(set))
     rows = session.execute(
         select(
             change.c.catalyst_id,
@@ -244,8 +316,11 @@ def _facts(session: Session, ids: Sequence[UUID]) -> _Facts:
             if row.agent == ROLE:
                 facts.quotes[row.catalyst_id].append(row.quote)
         if row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
-            drug = claim_value(row.value).get("drug")
+            stated = claim_value(row.value)
+            drug, title = stated.get("drug"), stated.get("title")
             facts.drug[row.catalyst_id] = drug if isinstance(drug, str) else None
+            facts.title[row.catalyst_id] = title if isinstance(title, str) else ""
+            facts.creating[row.catalyst_id] = row.quote
         elif row.field in WINDOW_FIELDS:
             facts.window_claim[row.catalyst_id] = row.claim_id
     for row in session.execute(select(link.c.catalyst_id, link.c.role).where(link.c.catalyst_id.in_(ids))):
@@ -268,6 +343,8 @@ def _entry(live: LiveCatalyst, facts: _Facts) -> Entry:
         window=live.window,
         meetings=meetings,
         rank=live.source,
+        title=normal_title(facts.title.get(catalyst_id)),
+        marks=title_marks(f"{facts.title.get(catalyst_id, '')}\n{facts.creating.get(catalyst_id, '')}"),
     )
 
 

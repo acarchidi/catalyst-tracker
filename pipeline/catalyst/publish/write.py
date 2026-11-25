@@ -46,7 +46,7 @@ document's sentence; a claim naming that deal's counterparty, from a document pu
 than the completion document, is then held, so the deal never comes back. Last, two open entries
 that are surely one event are made one (`catalyst.publish.duplicates`, ADR 0082): one is kept as it
 is, the other marked merged, with a status change in its history and its claims shown as the kept
-entry's extra sources; a later claim that fits only the merged entry is placed on the kept one.
+entry's extra sources; a later claim that fits only the merged entry waits for a person.
 """
 
 from __future__ import annotations
