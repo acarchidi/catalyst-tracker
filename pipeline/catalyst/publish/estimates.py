@@ -23,6 +23,10 @@ place, and that the field at that path holds that value.
 
 Safe to re-run: claims are unique per record, field, and place, and a step happens only when what
 the record says differs from what is published. It runs under the catalyst writer's lock.
+
+`preview_estimates` is the dry run: the same steps and checks in a transaction the database itself
+keeps read-only, so it writes nothing. It counts what the job would do and keeps the new and moved
+entries, for a private sample (ADR 0067, consequences).
 """
 
 from __future__ import annotations
@@ -46,10 +50,14 @@ from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
 
+from catalyst.api.read import company_views, read_session
+from catalyst.api.views import CompanyView
+from catalyst.collectors.sources.ctgov import STUDY_URL
 from catalyst.db.tables import TABLES
 from catalyst.extract.run import NEW_YORK
 from catalyst.extract.text import TEXT_VERSION, document_text
 from catalyst.logs import log_event
+from catalyst.outreach.digest import estimated
 from catalyst.publish import gate
 from catalyst.publish.sanity import too_far
 from catalyst.publish.title import compose_title
@@ -85,6 +93,7 @@ COMPLETION_PATH = ("protocolSection", "statusModule", "primaryCompletionDateStru
 STATUS_PATH = ("protocolSection", "statusModule", "overallStatus")
 PHASES_PATH = ("protocolSection", "designModule", "phases")
 ID_PATH = ("protocolSection", "identificationModule", "nctId")
+TITLE_PATH = ("protocolSection", "identificationModule", "briefTitle")
 ACTIVE = frozenset({"NOT_YET_RECRUITING", "RECRUITING", "ENROLLING_BY_INVITATION", "ACTIVE_NOT_RECRUITING"})
 STOPPED = frozenset({"TERMINATED", "WITHDRAWN", "SUSPENDED"})
 PHASE_2_OR_LATER = frozenset({"PHASE2", "PHASE3", "PHASE4"})
@@ -106,6 +115,9 @@ _DAY = re.compile(r"\d{4}-\d{2}-\d{2}")
 COMPANY_DATED = "the trial has a company-stated date"
 TOO_FAR = "the estimate would move more than 6 months"
 PAST = "the new estimate has passed while the published one has not"
+UNREADABLE = "the stored copy could not be read or did not match its hash"
+NOT_ONCE = "the field is not written once in the stored copy"
+SAMPLE_ROWS = 50
 
 _log = logging.getLogger(__name__)
 
@@ -430,8 +442,10 @@ def _company_dates(session: Session) -> dict[tuple[UUID, UUID], UUID]:
     return {(row.trial_id, row.company_id): row.claim_id for row in session.execute(query)}  # newest wins
 
 
-def _claim(session: Session, record: _Record, trial: Any, path: Sequence[str], at: datetime) -> UUID | None:
-    """Store the registry-field claim for the field at `path`, checked first; return its id."""
+def _checked_claim(
+    record: _Record, trial: Any, path: Sequence[str], at: datetime
+) -> tuple[Claim, tuple[CheckResult, ...]] | None:
+    """Build the registry-field claim for the field at `path` and check it; None when a check fails."""
     found = field_quote(record.text, record.study, path)
     if found is None:
         return None
@@ -459,6 +473,21 @@ def _claim(session: Session, record: _Record, trial: Any, path: Sequence[str], a
     checks = (gate.match_quote(claim, record.text), field_check(claim, record.text, record.study))
     if any(result.outcome is not CheckOutcome.PASS for result in checks):
         return None
+    return claim, checks
+
+
+def _claim(run: _Run, record: _Record, trial: Any, path: Sequence[str]) -> UUID | None:
+    """Store the registry-field claim for the field at `path`, checked first; return its id.
+
+    A dry run checks it the same way and stores nothing.
+    """
+    checked = _checked_claim(record, trial, path, run.at)
+    if checked is None:
+        return None
+    claim, checks = checked
+    if run.preview is not None:
+        return claim.id
+    session, at = run.session, run.at
     table = TABLES[Claim]
     key = (
         "source_document_id",
@@ -488,8 +517,8 @@ def _change(
     ).model_dump()
 
 
-def _create(session: Session, record: _Record, trial: Any, at: datetime) -> bool:
-    claim = _claim(session, record, trial, COMPLETION_PATH, at)
+def _create(run: _Run, record: _Record, trial: Any) -> bool:
+    claim = _claim(run, record, trial, COMPLETION_PATH)
     window = _estimated(_facts(record.study))
     if claim is None or window is None:
         return False
@@ -505,6 +534,10 @@ def _create(session: Session, record: _Record, trial: Any, at: datetime) -> bool
         date_confidence=DateConfidence.REGISTRY_ESTIMATE,
         status=CatalystStatus.UPCOMING,
     )
+    if run.preview is not None:
+        run.preview.keep(record, trial, start, end, "new")
+        return True
+    session, at = run.session, run.at
     session.execute(insert(TABLES[Catalyst]).values(**row.model_dump()))
     values = row.model_dump(mode="json")
     changes = [
@@ -519,28 +552,32 @@ def _create(session: Session, record: _Record, trial: Any, at: datetime) -> bool
     return True
 
 
-def _update(
-    session: Session, live: _Live, updated: Mapping[CatalystField, Any], claim: UUID, at: datetime
-) -> None:
-    """Change the entry's fields, each with a change row citing `claim`, after its newest change."""
-    at = max(at, live.last_learned + timedelta(microseconds=1))
+def _update(run: _Run, live: _Live, updated: Mapping[CatalystField, Any], claim: UUID) -> None:
+    """Change the entry's fields, each with a change row citing `claim`, after its newest change.
+
+    A dry run builds the same changes and writes none.
+    """
+    session = run.session
+    at = max(run.at, live.last_learned + timedelta(microseconds=1))
     old = live.row.model_dump(mode="json")
     new = live.row.model_copy(update={name.value: value for name, value in updated.items()}).model_dump(
         mode="json"
     )
     changed = [name for name in updated if old[name.value] != new[name.value]]
+    rows = [_change(live.row.id, name, old[name.value], new[name.value], claim, at) for name in changed]
+    if run.preview is not None:
+        return
     table = TABLES[Catalyst]
     session.execute(
         update(table)
         .where(table.c.id == live.row.id)
         .values(**{name.value: updated[name] for name in changed})
     )
-    rows = [_change(live.row.id, name, old[name.value], new[name.value], claim, at) for name in changed]
     session.execute(insert(TABLES[CatalystChange]).values(rows))
 
 
-def _move(session: Session, record: _Record, trial: Any, live: _Live, at: datetime) -> bool:
-    claim = _claim(session, record, trial, COMPLETION_PATH, at)
+def _move(run: _Run, record: _Record, trial: Any, live: _Live) -> bool:
+    claim = _claim(run, record, trial, COMPLETION_PATH)
     window = _estimated(_facts(record.study))
     if claim is None or window is None:
         return False
@@ -552,17 +589,22 @@ def _move(session: Session, record: _Record, trial: Any, live: _Live, at: dateti
         CatalystField.WINDOW_PRECISION: precision,
         CatalystField.WINDOW_RAW_TEXT: raw,
     }
-    _update(session, live, fields, claim, at)
+    _update(run, live, fields, claim)
+    if run.preview is not None:
+        run.preview.keep(record, trial, start, end, "moved")
+        return True
     log_event(_log, "estimate_moved", catalyst_id=str(live.row.id), nct_id=record.nct_id)
     return True
 
 
-def _resolve(session: Session, record: _Record, trial: Any, live: _Live, at: datetime) -> bool:
+def _resolve(run: _Run, record: _Record, trial: Any, live: _Live) -> bool:
     actual = (_facts(record.study).completion or {}).get("type") == "ACTUAL"
-    claim = _claim(session, record, trial, COMPLETION_PATH if actual else STATUS_PATH, at)
+    claim = _claim(run, record, trial, COMPLETION_PATH if actual else STATUS_PATH)
     if claim is None:
         return False
-    _update(session, live, {CatalystField.STATUS: CatalystStatus.RESOLVED}, claim, at)
+    _update(run, live, {CatalystField.STATUS: CatalystStatus.RESOLVED}, claim)
+    if run.preview is not None:
+        return True
     log_event(_log, "estimate_resolved", catalyst_id=str(live.row.id), nct_id=record.nct_id)
     return True
 
@@ -576,6 +618,7 @@ class _Run:
     trials: dict[str, Any]
     estimates: dict[UUID, _Live]
     company_dates: dict[tuple[UUID, UUID], UUID]
+    preview: EstimatePreview | None = None  # a dry run: check everything, write nothing
 
 
 def _unchanged(trial: Any, live: _Live | None, document_id: UUID, company_dated: bool) -> str | None:
@@ -595,6 +638,12 @@ def _unchanged(trial: Any, live: _Live | None, document_id: UUID, company_dated:
     return None
 
 
+def _note(run: _Run, event: str, **fields: str) -> None:
+    """Log one trial's step; a dry run logs none, so no trial is named in its log."""
+    if run.preview is None:
+        log_event(_log, event, **fields)
+
+
 def _one(run: _Run, row: Any, company_id: UUID) -> None:
     """Read one trial's latest record and take the step it calls for."""
     report, today = run.report, run.at.astimezone(NEW_YORK).date()
@@ -611,32 +660,65 @@ def _one(run: _Run, row: Any, company_id: UUID) -> None:
     record = _read(run.store, row, company_id)
     if record is None:
         report.copies_unreadable += 1
-        log_event(_log, "estimate_copy_unreadable", document_id=str(row.id))
+        _note(run, "estimate_copy_unreadable", document_id=str(row.id))
         return
     report.trials_read += 1
     estimate = Estimate(live.row.status, (live.row.window_start, live.row.window_end)) if live else None
     step, reason = next_step(_facts(record.study), estimate, company_claim is not None, today)
     done = False
     if step is Step.CREATE:
-        done = _create(run.session, record, trial, run.at)
+        done = _create(run, record, trial)
         report.created += done
     elif step is Step.MOVE and live is not None:
-        done = _move(run.session, record, trial, live, run.at)
+        done = _move(run, record, trial, live)
         report.moved += done
     elif step is Step.REPLACE and live is not None and company_claim is not None:
-        _update(run.session, live, {CatalystField.STATUS: CatalystStatus.REPLACED}, company_claim, run.at)
-        log_event(_log, "estimate_replaced", catalyst_id=str(live.row.id), claim_id=str(company_claim))
+        _update(run, live, {CatalystField.STATUS: CatalystStatus.REPLACED}, company_claim)
+        _note(run, "estimate_replaced", catalyst_id=str(live.row.id), claim_id=str(company_claim))
         report.replaced += 1
         done = True
     elif step is Step.RESOLVE and live is not None:
-        done = _resolve(run.session, record, trial, live, run.at)
+        done = _resolve(run, record, trial, live)
         report.resolved += done
     elif step is Step.HOLD:
         report.held[reason] += 1
-        log_event(_log, "estimate_held", nct_id=record.nct_id, reason=reason)
+        _note(run, "estimate_held", nct_id=record.nct_id, reason=reason)
         return
     if not done:
-        report.left[reason if step is Step.NONE else "the field is not written once in the stored copy"] += 1
+        report.left[reason if step is Step.NONE else NOT_ONCE] += 1
+
+
+def _every_trial(
+    session: Session,
+    store: SnapshotStore,
+    at: datetime,
+    report: EstimateReport,
+    preview: EstimatePreview | None,
+) -> None:
+    """Take, or for a dry run only count, the step each covered trial's latest record calls for."""
+    session.execute(select(func.pg_advisory_xact_lock(LOCK)))
+    documents = _latest_documents(session)
+    sponsors = _sponsors(session, [row.id for row in documents])
+    trial = TABLES[Trial]
+    run = _Run(
+        session=session,
+        store=store,
+        at=at,
+        report=report,
+        trials={
+            row.nct_id: row
+            for row in session.execute(select(trial.c.id, trial.c.nct_id, trial.c.study_name, trial.c.phase))
+        },
+        estimates=_estimates(session),
+        company_dates=_company_dates(session),
+        preview=preview,
+    )
+    for row in documents:
+        companies = sponsors.get(row.id, set())
+        if len(companies) != 1:
+            report.left["the record is not linked to exactly one covered company"] += 1
+            continue
+        _one(run, row, next(iter(companies)))
 
 
 def publish_estimates(
@@ -645,29 +727,138 @@ def publish_estimates(
     """Write, move, replace, or resolve each covered trial's estimate entry, in one transaction."""
     report = EstimateReport()
     with session_factory.begin() as session:
-        session.execute(select(func.pg_advisory_xact_lock(LOCK)))
-        documents = _latest_documents(session)
-        sponsors = _sponsors(session, [row.id for row in documents])
-        trial = TABLES[Trial]
-        run = _Run(
-            session=session,
-            store=store,
-            at=now(),
-            report=report,
-            trials={
-                row.nct_id: row
-                for row in session.execute(
-                    select(trial.c.id, trial.c.nct_id, trial.c.study_name, trial.c.phase)
-                )
-            },
-            estimates=_estimates(session),
-            company_dates=_company_dates(session),
-        )
-        for row in documents:
-            companies = sponsors.get(row.id, set())
-            if len(companies) != 1:
-                report.left["the record is not linked to exactly one covered company"] += 1
-                continue
-            _one(run, row, next(iter(companies)))
+        _every_trial(session, store, now(), report, None)
     log_event(_log, "estimates_published", **report.summary())
     return report
+
+
+# --- The dry run --------------------------------------------------------------------------------------
+
+
+_PHASE_WORDS = {
+    TrialPhase.PHASE_1_2.value: "Phase 1/2",
+    TrialPhase.PHASE_2.value: "Phase 2",
+    TrialPhase.PHASE_2_3.value: "Phase 2/3",
+    TrialPhase.PHASE_3.value: "Phase 3",
+    TrialPhase.PHASE_4.value: "Phase 4",
+}
+
+
+@dataclass(frozen=True)
+class _Entry:
+    """An estimate entry the job would write or move to a new date."""
+
+    start: date
+    end: date
+    company_id: UUID
+    nct_id: str
+    title: str | None
+    phase: str | None
+    change: str  # "new" or "moved"
+
+
+def spread[T](items: Sequence[T], limit: int) -> list[T]:
+    """Pick up to `limit` items spread evenly from first to last, keeping their order."""
+    if len(items) <= limit:
+        return list(items)
+    if limit == 1:
+        return [items[0]]
+    return [items[round(i * (len(items) - 1) / (limit - 1))] for i in range(limit)]
+
+
+@dataclass
+class EstimatePreview:
+    """What one run would do, found in a read-only transaction: the counts, and the entries it would show."""
+
+    report: EstimateReport
+    today: date
+    entries: list[_Entry] = field(default_factory=list[_Entry])
+    companies: dict[UUID, CompanyView] = field(default_factory=dict[UUID, CompanyView])
+
+    def keep(self, record: _Record, trial: Any, start: date, end: date, change: str) -> None:
+        """Keep an entry the job would write, or move to a new date."""
+        title = at_path(record.study, TITLE_PATH)
+        phase = _PHASE_WORDS.get(str(trial.phase)) if trial.phase is not None else None
+        entry = _Entry(
+            start,
+            end,
+            record.company_id,
+            record.nct_id,
+            title if isinstance(title, str) else None,
+            phase,
+            change,
+        )
+        self.entries.append(entry)
+
+    def _company(self, company_id: UUID) -> tuple[str, str | None]:
+        view = self.companies.get(company_id)
+        return (view.display_name, view.ticker) if view else (str(company_id), None)
+
+    def _sorted(self) -> list[_Entry]:
+        return sorted(self.entries, key=lambda e: (e.start, e.end, self._company(e.company_id)[0], e.nct_id))
+
+    def counts(self) -> dict[str, Any]:
+        """Return the counts as plain JSON: no trial is named, so they may go to a public log."""
+        report = self.report
+        skipped = Counter(report.left)
+        if report.copies_unreadable:
+            skipped[UNREADABLE] += report.copies_unreadable
+        months = [
+            (self.today.year + (self.today.month - 1 + i) // 12, (self.today.month - 1 + i) % 12 + 1)
+            for i in range(12)
+        ]
+        by_month = {f"{year}-{month:02d}": 0 for year, month in months} | {"later": 0}
+        for entry in self.entries:
+            key = f"{entry.start.year}-{entry.start.month:02d}"
+            by_month[key if key in by_month else "later"] += 1
+        companies = Counter(entry.company_id for entry in self.entries)
+        ranked = sorted(companies.items(), key=lambda item: (-item[1], self._company(item[0])[0]))
+        return {
+            "nothing_written": True,
+            "trials_read": report.trials_read,
+            "would_create": report.created,
+            "would_move": report.moved,
+            "would_hold_over_6_months": report.held[TOO_FAR],
+            "would_hold_passed": report.held[PAST],
+            "would_close": report.resolved,
+            "would_be_replaced_by_company_date": report.replaced,
+            "skipped": dict(skipped.most_common()),
+            "by_month": by_month,
+            "by_company_top_20": [
+                {"company": name, "ticker": ticker, "count": count}
+                for company_id, count in ranked[:20]
+                for name, ticker in [self._company(company_id)]
+            ],
+        }
+
+    def sample(self, limit: int = SAMPLE_ROWS) -> list[dict[str, str | None]]:
+        """Return up to `limit` new or moved entries, spread across the dates, as the issue prints them."""
+        rows: list[dict[str, str | None]] = []
+        for entry in spread(self._sorted(), limit):
+            company, ticker = self._company(entry.company_id)
+            rows.append(
+                {
+                    "company": company,
+                    "ticker": ticker,
+                    "trial_number": entry.nct_id,
+                    "trial_title": entry.title,
+                    "phase": entry.phase,
+                    "estimated": estimated(entry.start, entry.end),
+                    "registry_link": STUDY_URL.format(nct_id=entry.nct_id),
+                    "change": entry.change,
+                }
+            )
+        return rows
+
+
+def preview_estimates(
+    session_factory: sessionmaker[Session], store: SnapshotStore, now: Callable[[], datetime]
+) -> EstimatePreview:
+    """Run every step and check of `publish_estimates` in a read-only transaction; write nothing."""
+    at = now()
+    preview = EstimatePreview(EstimateReport(), at.astimezone(NEW_YORK).date())
+    with read_session(session_factory) as session:
+        _every_trial(session, store, at, preview.report, preview)
+        preview.companies = company_views(session, sorted({entry.company_id for entry in preview.entries}))
+    log_event(_log, "estimates_previewed", **preview.report.summary())
+    return preview
