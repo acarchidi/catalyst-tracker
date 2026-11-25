@@ -10,7 +10,9 @@ they share the company, the catalyst type, and the matched drugs, and then:
 When a claim fits more than one catalyst, or fits one except for the indication, it waits for a
 person: plain code cannot tell a reworded indication from another event. A claim a change row
 already cites is about that change's catalyst. Resolved catalysts are left out, so a new event of
-the same kind (a new FDA date after a refusal) becomes a new catalyst.
+the same kind (a new FDA date after a refusal) becomes a new catalyst; but a deal that plain code
+found closed (ADR 0080) is kept aside, like a withdrawn one, so an older release of its "expected to
+close" date never makes it a new catalyst again.
 
 Once a catalyst is live, its date passing is a change for the outcome tracker, not a reason to
 hold a claim about it, so `window_not_past` does not apply to such claims.
@@ -63,6 +65,8 @@ WINDOW_FIELDS = frozenset(
         CatalystField.DATE_CONFIDENCE.value,
     }
 )
+# The plain-code role whose claims close a deal that a stored document says was completed (ADR 0080).
+DEAL_CLOSER = "deal_closer"
 _TIERS: tuple[SourceTier, ...] = tuple(SourceTier)  # highest first (spec: Provenance, source ranking)
 _WORD = re.compile(r"\w+")
 
@@ -139,6 +143,9 @@ class LiveCatalyst:
     key: Key
     source: Rank  # the claim behind its current window
     last_learned: datetime  # its newest change row's time; a later change must come after it
+    # A closed deal's names (ADR 0080): its counterparty names and the company's own; else empty.
+    names: frozenset[str] = frozenset()
+    parties: frozenset[str] = frozenset()  # a closed deal's counterparty names alone; else empty
 
     @property
     def window(self) -> tuple[date, date]:
@@ -182,6 +189,9 @@ class LiveIndex:
     catalysts: Sequence[LiveCatalyst]
     # Withdrawn catalysts (ADR 0070); each `source.published_at` is when it was withdrawn.
     withdrawn: Sequence[LiveCatalyst] = ()
+    # Deals found closed (ADR 0080); each `source.published_at` is when its completion document was
+    # published, and `names` are the counterparty names it matched.
+    closed: Sequence[LiveCatalyst] = ()
 
     def was_withdrawn(self, key: Key, published_at: datetime) -> bool:
         """Say whether the claim's event was withdrawn after review and its source is no newer.
@@ -190,14 +200,19 @@ class LiveIndex:
         never lets a stale event back in. Only a document published after the withdrawal itself is
         new: later releases often repeat the stale date (Opus re-review of PR #151).
         """
-        same = [
-            c
-            for c in self.withdrawn
-            if (c.key.company_id, c.key.catalyst_type, c.key.drugs)
-            == (key.company_id, key.catalyst_type, key.drugs)
-            and (c.key.trials == key.trials or not c.key.trials or not key.trials)
-        ]
-        return any(published_at <= c.source.published_at for c in same)
+        return _set_aside(self.withdrawn, key, published_at)
+
+    def was_closed(self, key: Key, published_at: datetime, names: frozenset[str]) -> bool:
+        """Say whether the claim is about a deal found closed, from a source no newer (ADR 0080).
+
+        Matched on company, type, drugs and trials as `was_withdrawn` is, and held by default: a
+        claim that names any counterparty of the closed deal is held, even beside a new name; one
+        goes through only when it names a deal party (`names`) outside the closed deal's names (its
+        counterparties and the company's own), so it is about another deal of the company (Opus
+        reviews of PR #163). Only a document published after the completion document is new.
+        """
+        held = [c for c in self.closed if names & c.parties or not names - c.names]
+        return _set_aside(held, key, published_at)
 
     def place(self, key: Key | None) -> Place:
         """Place a claim's event among the open published catalysts (a new event when it has no key)."""
@@ -206,6 +221,28 @@ class LiveIndex:
     def is_live(self, claim_id: UUID, key: Key | None) -> bool:
         """Say whether the claim is about a catalyst that is already published."""
         return claim_id in self.cited or self.place(key).catalyst is not None
+
+
+def _set_aside(catalysts: Iterable[LiveCatalyst], key: Key, published_at: datetime) -> bool:
+    same = [
+        c
+        for c in catalysts
+        if (c.key.company_id, c.key.catalyst_type, c.key.drugs)
+        == (key.company_id, key.catalyst_type, key.drugs)
+        and (c.key.trials == key.trials or not c.key.trials or not key.trials)
+    ]
+    return any(published_at <= c.source.published_at for c in same)
+
+
+def _listed(stated: Mapping[str, Any], parts: Iterable[str]) -> frozenset[str]:
+    """Return the names a closing claim's value lists under `parts` (ADR 0080)."""
+    return frozenset(
+        name
+        for part in parts
+        if isinstance(listed := stated.get(part), list)
+        for name in cast(list[object], listed)
+        if isinstance(name, str)
+    )
 
 
 def load_live(session: Session) -> LiveIndex:
@@ -227,12 +264,16 @@ def load_live(session: Session) -> LiveIndex:
     indication: dict[UUID, str] = {}
     last_learned: dict[UUID, datetime] = {}
     status_source: dict[UUID, Rank] = {}
+    status_agent: dict[UUID, str] = {}
+    status_names: dict[UUID, frozenset[str]] = {}
+    status_parties: dict[UUID, frozenset[str]] = {}
     changes = (
         select(
             change.c.catalyst_id,
             change.c.claim_id,
             change.c.field,
             change.c.learned_at,
+            claim.c.agent,
             claim.c.value,
             document.c.source_tier,
             document.c.published_at,
@@ -246,16 +287,27 @@ def load_live(session: Session) -> LiveIndex:
         last_learned[row.catalyst_id] = row.learned_at
         if row.field in WINDOW_FIELDS:
             window_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.published_at)
-        elif row.field == CatalystField.STATUS.value:  # the last one withdrew a withdrawn catalyst
-            status_source[row.catalyst_id] = Rank(SourceTier(row.source_tier), row.learned_at)
+        elif row.field == CatalystField.STATUS.value:  # the last one withdrew or closed it, if it is
+            closer = row.agent == DEAL_CLOSER  # a closing dates from its completion document
+            status_source[row.catalyst_id] = Rank(
+                SourceTier(row.source_tier), row.published_at if closer else row.learned_at
+            )
+            status_agent[row.catalyst_id] = row.agent
+            stated = claim_value(row.value) if closer else {}
+            status_parties[row.catalyst_id] = _listed(stated, ("names", "deal_names"))  # its counterparties
+            status_names[row.catalyst_id] = status_parties[row.catalyst_id] | _listed(stated, ("own_names",))
         elif row.field == CatalystField.TITLE.value:  # set once, by the claim that created it
             indication[row.catalyst_id] = normal_indication(claim_value(row.value).get("indication"))
     found: list[LiveCatalyst] = []
     withdrawn: list[LiveCatalyst] = []
-    for row in session.execute(select(catalyst).where(catalyst.c.status != CatalystStatus.RESOLVED.value)):
+    closed: list[LiveCatalyst] = []
+    for row in session.execute(select(catalyst)):
         live = Catalyst.model_validate(row, from_attributes=True)
         gone = live.status is CatalystStatus.WITHDRAWN
-        source = (status_source if gone else window_source).get(live.id)
+        done = live.status is CatalystStatus.RESOLVED
+        if done and status_agent.get(live.id) != DEAL_CLOSER:  # resolved another way: left out
+            continue
+        source = (status_source if gone or done else window_source).get(live.id)
         if source is None:  # no change row: not written by the gate, so never matched to a claim
             continue
         key = Key(
@@ -265,8 +317,17 @@ def load_live(session: Session) -> LiveIndex:
             frozenset(trials[live.id]),
             indication.get(live.id, ""),
         )
-        (withdrawn if gone else found).append(LiveCatalyst(live, key, source, last_learned[live.id]))
-    return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn)
+        (withdrawn if gone else closed if done else found).append(
+            LiveCatalyst(
+                live,
+                key,
+                source,
+                last_learned[live.id],
+                status_names.get(live.id, frozenset()),
+                status_parties.get(live.id, frozenset()),
+            )
+        )
+    return LiveIndex(cited=cited, catalysts=found, withdrawn=withdrawn, closed=closed)
 
 
 def excuse_passed_window(claim_id: UUID, checks: Iterable[ClaimCheck], at: datetime) -> list[ClaimCheck]:

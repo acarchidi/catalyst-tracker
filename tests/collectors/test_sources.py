@@ -7,7 +7,7 @@ import pytest
 
 from catalyst.collectors.http import RobotsDisallowedError
 from catalyst.collectors.run import build_clients
-from catalyst.collectors.sec.edgar import ExhibitRef, FilingRef, list_documents
+from catalyst.collectors.sec.edgar import ExhibitRef, FilingRef, list_documents, recent_filings_of
 from catalyst.collectors.sec.filings import collect_filings, documents_to_keep
 from catalyst.collectors.sources import ctgov, fedreg, openfda, wires
 from catalyst.schemas import SourceTier
@@ -133,6 +133,28 @@ def test_an_8k_keeps_every_exhibit_99() -> None:
     ]
     kept = documents_to_keep(_filing("8-K", "0000875320-26-000256"), documents)
     assert [d.type for d in kept] == ["EX-99.1", "EX-99.2"]
+
+
+@pytest.mark.parametrize(
+    ("items", "kept_main"), [("2.01,9.01", True), ("5.01", True), ("8.01,9.01", False), ("", False)]
+)
+def test_an_8k_reporting_a_completed_deal_keeps_its_main_document(items: str, kept_main: bool) -> None:
+    """Item 2.01 or 5.01 is stated only in the 8-K itself, so its text is kept (ADR 0080)."""
+    documents = [
+        ExhibitRef(type="8-K", description="", url="https://www.sec.gov/a/8k.htm"),
+        ExhibitRef(type="EX-99.1", description="", url="https://www.sec.gov/a/ex991.htm"),
+    ]
+    filing = _filing("8-K", "0000875320-26-000256").model_copy(update={"items": items})
+    kept = documents_to_keep(filing, documents)
+    assert [d.type for d in kept] == (["8-K", "EX-99.1"] if kept_main else ["EX-99.1"])
+
+
+def test_the_filing_list_gives_each_filing_its_items() -> None:
+    server = RecordedServer("sec/875320")
+    submissions = server.responses["https://data.sec.gov/submissions/CIK0000875320.json"][1]
+    eight_ks = recent_filings_of(submissions, frozenset({"8-K"}))
+    assert all(isinstance(f.items, str) for f in eight_ks)
+    assert "2.02,9.01" in {f.items for f in eight_ks}
 
 
 def test_sec_filings_since_a_date_with_already_stored_filings_skipped() -> None:
