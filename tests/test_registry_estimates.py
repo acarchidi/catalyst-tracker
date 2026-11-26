@@ -814,3 +814,180 @@ def test_the_sample_file_is_only_for_a_dry_run(capsys: pytest.CaptureFixture[str
     assert cli.main(["publish-estimates", "--sample-out", str(tmp_path / "sample.json")]) == 2
     assert "--dry-run" in capsys.readouterr().err
     assert not (tmp_path / "sample.json").exists()
+
+
+# --- The dry run on a large set: a time limit, a repeatable sample, progress (ADR 0067) ---------
+
+
+def _many(session_factory: sessionmaker[Session], store: SnapshotStore) -> None:
+    """Store ten trials whose copies must be read, and two settled without reading.
+
+    Six of the ten would get an estimate and four have finished; of the two, one is phase 1 and
+    one is not linked to a covered company.
+    """
+    insmed = _insmed(session_factory)
+    for number in range(10):
+        status = "RECRUITING" if number < 6 else "COMPLETED"
+        _store_record(
+            session_factory, store, _trial(f"NCT0910{number:04d}", f"T{number}", status=status), insmed
+        )
+    _store_record(session_factory, store, _trial("NCT09200001", "EARLY", phases=("PHASE1",)), insmed)
+    _store_record(session_factory, store, _trial("NCT09200002", "OTHER"), None)
+
+
+NOT_ACTIVE = "the trial is not recruiting or active"
+SETTLED = {
+    "the trial is not phase 2 or later": 1,
+    "the record is not linked to exactly one covered company": 1,
+}
+
+
+class _Clock:
+    """A clock that moves one minute each time it is read."""
+
+    def __init__(self) -> None:
+        self.minutes = 0.0
+
+    def __call__(self) -> float:
+        self.minutes += 1
+        return self.minutes * 60
+
+
+def test_a_time_limit_stops_cleanly_with_the_counts_so_far(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    before = _fingerprint(session_factory)
+    # The limit is read once at the start; each trial checks the clock before its copy is read.
+    preview = preview_estimates(session_factory, store, lambda: NOW, max_minutes=3.5, clock=_Clock())
+    counts = preview.counts()
+    assert _fingerprint(session_factory) == before
+    assert (counts["checked"], counts["to_check"], counts["stopped_early"]) == (3, 10, True)
+    assert counts["sample_size"] is None
+    assert counts["scaled_up"] is False
+    assert counts["would_create"] == 3  # the first three trials, in order; nothing scaled
+    assert counts["skipped"] == SETTLED  # trials settled without a read are all counted
+
+
+def test_no_time_limit_checks_every_trial(session_factory: sessionmaker[Session], tmp_path: Path) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    counts = preview_estimates(session_factory, store, lambda: NOW).counts()
+    assert (counts["checked"], counts["to_check"], counts["stopped_early"]) == (10, 10, False)
+    assert counts["would_create"] == 6
+    assert counts["skipped"] == SETTLED | {NOT_ACTIVE: 4}
+
+
+def test_a_sample_checks_n_trials_and_scales_the_counts_to_the_whole_set(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    before = _fingerprint(session_factory)
+    preview = preview_estimates(session_factory, store, lambda: NOW, sample=5, seed=7)
+    counts = preview.counts()
+    assert _fingerprint(session_factory) == before
+    assert (counts["checked"], counts["to_check"], counts["sample_size"]) == (5, 10, 5)
+    assert counts["scaled_up"] is True
+    assert counts["stopped_early"] is False
+    created = preview.report.created  # what the 5 sampled trials gave, before scaling
+    assert counts["would_create"] == created * 2
+    assert counts["skipped"].get(NOT_ACTIVE, 0) == (5 - created) * 2
+    for reason, count in SETTLED.items():  # trials settled without a read are counted, not scaled
+        assert counts["skipped"][reason] == count
+    assert sum(counts["by_month"].values()) == created * 2
+    assert len(preview.sample()) == created  # the rows are real rows, never scaled
+
+
+def test_the_same_seed_samples_the_same_trials(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    first = preview_estimates(session_factory, store, lambda: NOW, sample=5, seed=7)
+    second = preview_estimates(session_factory, store, lambda: NOW, sample=5, seed=7)
+    assert first.counts() == second.counts()
+    assert first.sample() == second.sample()
+    assert [e.nct_id for e in first.entries] == [e.nct_id for e in second.entries]
+
+
+def test_a_sample_as_large_as_the_set_is_the_whole_set(
+    session_factory: sessionmaker[Session], tmp_path: Path
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    whole = preview_estimates(session_factory, store, lambda: NOW).counts()
+    sampled = preview_estimates(session_factory, store, lambda: NOW, sample=400).counts()
+    assert sampled["scaled_up"] is False
+    assert {k: v for k, v in sampled.items() if k != "sample_size"} == {
+        k: v for k, v in whole.items() if k != "sample_size"
+    }
+
+
+def test_progress_lines_give_counts_only(
+    session_factory: sessionmaker[Session], tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    estimates.PROGRESS_EVERY = 4
+    try:
+        with caplog.at_level("INFO", logger=estimates.__name__):
+            preview_estimates(session_factory, store, lambda: NOW)
+    finally:
+        estimates.PROGRESS_EVERY = 100
+    lines = [r for r in caplog.records if r.getMessage() == "estimates_progress"]
+    fields = [r.__dict__["catalyst_fields"] for r in lines]
+    assert [(f["checked"], f["of"]) for f in fields] == [(4, 10), (8, 10)]
+    for found in fields:
+        assert all(isinstance(value, int) for value in found.values())  # numbers only, no trial named
+    assert "NCT091" not in caplog.text
+
+
+def test_the_real_job_reports_progress_too(
+    session_factory: sessionmaker[Session], tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    store = LocalSnapshotStore(tmp_path)
+    _many(session_factory, store)
+    estimates.PROGRESS_EVERY = 5
+    try:
+        with caplog.at_level("INFO", logger=estimates.__name__):
+            assert publish_estimates(session_factory, store, lambda: NOW).created == 6
+    finally:
+        estimates.PROGRESS_EVERY = 100
+    assert len([r for r in caplog.records if r.getMessage() == "estimates_progress"]) == 2
+
+
+def test_the_command_takes_a_sample_and_a_time_limit(
+    session_factory: sessionmaker[Session],
+    tmp_path: Path,
+    database_url: str,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    snapshots = tmp_path / "snapshots"
+    _many(session_factory, LocalSnapshotStore(snapshots))
+    monkeypatch.setenv("CATALYST_DATABASE_URL", database_url)
+    monkeypatch.setattr(cli, "_utc_now", lambda: NOW)
+    argv = ["publish-estimates", "--dry-run", "--snapshot-dir", str(snapshots)]
+    assert cli.main([*argv, "--sample", "4", "--max-minutes", "20"]) == 0
+    out = capsys.readouterr()
+    counts = json.loads(out.out)
+    assert (counts["checked"], counts["to_check"], counts["sample_size"]) == (4, 10, 4)
+    assert "NCT091" not in out.out + out.err
+
+
+@pytest.mark.parametrize("extra", [["--sample", "400"], ["--max-minutes", "20"]])
+def test_a_sample_and_a_time_limit_are_only_for_a_dry_run(
+    extra: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["publish-estimates", *extra]) == 2
+    assert "--dry-run" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("extra", [["--sample", "0"], ["--max-minutes", "0"]])
+def test_a_sample_and_a_time_limit_must_be_positive(
+    extra: list[str], capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert cli.main(["publish-estimates", "--dry-run", *extra]) == 2
+    assert "more than 0" in capsys.readouterr().err

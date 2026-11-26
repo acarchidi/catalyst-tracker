@@ -271,6 +271,19 @@ def _parser() -> argparse.ArgumentParser:
         type=Path,
         help="With --dry-run: write up to 50 new or moved entries here (JSON); keep it private.",
     )
+    estimated.add_argument(
+        "--sample",
+        type=int,
+        help="With --dry-run: read only this many trials' copies, a repeatable random sample, and scale up.",
+    )
+    estimated.add_argument(
+        "--seed", type=int, default=0, help="With --sample: which repeatable sample (default 0)."
+    )
+    estimated.add_argument(
+        "--max-minutes",
+        type=float,
+        help="With --dry-run: stop reading copies after this many minutes and print the counts so far.",
+    )
     commands.add_parser(
         "resolve-claims", help="Match the names in extracted claims to companies, drugs, and trials (free)."
     )
@@ -1154,9 +1167,15 @@ def _publish_claims(args: argparse.Namespace) -> int:
 
 def _publish_estimates(args: argparse.Namespace) -> int:
     sample: Path | None = args.sample_out
-    if sample is not None and not args.dry_run:
-        print("--sample-out needs --dry-run: only a dry run writes a sample.", file=sys.stderr)
-        return 2
+    limited = {"--sample-out": sample, "--sample": args.sample, "--max-minutes": args.max_minutes}
+    for flag, value in limited.items():
+        if value is not None and not args.dry_run:
+            print(f"{flag} needs --dry-run: only a dry run takes it.", file=sys.stderr)
+            return 2
+    for flag, value in (("--sample", args.sample), ("--max-minutes", args.max_minutes)):
+        if value is not None and value <= 0:
+            print(f"{flag} must be more than 0.", file=sys.stderr)
+            return 2
     if sample is not None and sample.exists():
         print(f"Nothing written: {sample} already exists.", file=sys.stderr)
         return 1
@@ -1172,7 +1191,14 @@ def _publish_estimates(args: argparse.Namespace) -> int:
             report = publish_estimates(sessionmaker(engine), store, _utc_now)
             print(json.dumps(report.summary(), indent=2))
             return 0
-        preview = preview_estimates(sessionmaker(engine), store, _utc_now)
+        preview = preview_estimates(
+            sessionmaker(engine),
+            store,
+            _utc_now,
+            sample=args.sample,
+            seed=args.seed,
+            max_minutes=args.max_minutes,
+        )
     finally:
         engine.dispose()
     if sample is not None:
